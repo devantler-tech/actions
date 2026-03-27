@@ -24,6 +24,5 @@ jobs:
           app_id: ${{ vars.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
           working-directory: .github/fixtures/dotnet-test-action
 
