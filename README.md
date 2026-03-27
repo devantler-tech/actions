@@ -30,11 +30,7 @@ flowchart TD
 
 - **[Auto Merge Action](auto-merge-action/README.md)** - Composite action to approve and auto-merge PRs from specific bots/users
 - **[Cleanup GHCR Action](cleanup-ghcr-action/README.md)** - Clean up old GitHub Container Registry (GHCR) packages
-- **[Dockerfile Lint Action](dockerfile-lint-action/README.md)** - Lint Dockerfiles using Hadolint
 - **[.NET Test Action](dotnet-test-action/README.md)** - Test .NET solution or project
-- **[Flux GitOps Deploy Action](flux-gitops-deploy-action/README.md)** - Push manifests to OCI and deploy using Flux
-- **[Install Cilium Action](install-cilium-action/README.md)** - Installs Cilium using Helm in a Kubernetes cluster
-- **[Install Flux Action](install-flux-action/README.md)** - Installs Flux in a Kubernetes cluster using the Flux CLI
 - **[Setup KSail Action](setup-ksail-action/README.md)** - Installs KSail CLI via Homebrew
 - **[Sync Labels Action](sync-labels-action/README.md)** - Sync GitHub labels
 - **[TODOs Action](todos-action/README.md)** - A composite action to create GitHub issues from TODO comments
