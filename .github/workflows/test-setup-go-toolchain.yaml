@@ -79,6 +79,11 @@ jobs:
     needs: [test-setup-go-toolchain, test-private-modules]
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
       - name: Check status
         env:
           RESULT_SETUP: ${{ needs.test-setup-go-toolchain.result }}

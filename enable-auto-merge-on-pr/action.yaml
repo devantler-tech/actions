@@ -23,7 +23,7 @@ runs:
         private-key: ${{ inputs.app-private-key }}
 
     - name: ✅ Approve pull request
-      uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363 # v4.0.0
+      uses: step-security/auto-approve-action@0c28339628c8e79ab2f6813291e7e6cd584b4d30 # v4.0.0
       with:
         github-token: ${{ inputs.github-token }}
 
