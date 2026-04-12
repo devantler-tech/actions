@@ -1,0 +1,3 @@
+automation:
+  auto_pr_review: true
+  auto_issue_session: true
