@@ -1,0 +1,125 @@
+name: Upsert Issue
+description: Create, update, reopen, or close a GitHub issue by title. Useful for surfacing report data or recurring checks as issues.
+author: devantler-tech
+
+inputs:
+  title:
+    description: "Title of the issue to create or update"
+    required: true
+  body:
+    description: "Body content of the issue"
+    required: false
+  body-file:
+    description: "Path to a file containing the body content. Takes precedence over body."
+    required: false
+  labels:
+    description: "Comma-separated list of labels to assign to the issue"
+    required: false
+  open:
+    description: "Whether the issue should be open (true) or closed (false)"
+    required: false
+    default: "true"
+  close-comment:
+    description: "Comment to post when closing the issue. Only used when open is false."
+    required: false
+    default: "✅ Resolved — closing this issue."
+  repository:
+    description: "Repository to create/update the issue in (format: owner/repo). Defaults to the current repository."
+    required: false
+    default: ${{ github.repository }}
+  github-token:
+    description: "GitHub token with issues write permission"
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  issue-number:
+    description: "The number of the created or updated issue"
+    value: ${{ steps.upsert.outputs.issue-number }}
+  issue-url:
+    description: "The URL of the created or updated issue"
+    value: ${{ steps.upsert.outputs.issue-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: upsert
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+        BODY_FILE: ${{ inputs.body-file }}
+        LABELS: ${{ inputs.labels }}
+        OPEN: ${{ inputs.open }}
+        CLOSE_COMMENT: ${{ inputs.close-comment }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+
+        # Resolve body content
+        if [ -n "$BODY_FILE" ]; then
+          BODY=$(cat "$BODY_FILE")
+        fi
+
+        if [ -z "${BODY:-}" ]; then
+          echo "::error::Either 'body' or 'body-file' input must be provided"
+          exit 1
+        fi
+
+        # Search for existing issue by exact title (any state).
+        # Prefer an open issue; fall back to the most recent closed one.
+        ISSUE_NUMBER=$(
+          gh issue list \
+            --repo "$REPO" \
+            --state all \
+            --search "in:title \"${TITLE}\"" \
+            --json number,title,state \
+            --jq "
+              [ .[] | select(.title == \"${TITLE}\") ] |
+              ([ .[] | select(.state == \"OPEN\") ] | first // empty) as \$open |
+              if \$open then \$open.number
+              else (last // empty | .number)
+              end
+            "
+        )
+
+        if [ "$OPEN" = "true" ]; then
+          if [ -n "$ISSUE_NUMBER" ]; then
+            echo "Updating issue #${ISSUE_NUMBER} and ensuring it is open"
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
+            if [ -n "$LABELS" ]; then
+              gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "$LABELS"
+            fi
+            gh issue reopen "$ISSUE_NUMBER" --repo "$REPO" 2>/dev/null || true
+          else
+            echo "Creating new issue"
+            CREATE_ARGS=(--repo "$REPO" --title "$TITLE" --body "$BODY")
+            if [ -n "$LABELS" ]; then
+              CREATE_ARGS+=(--label "$LABELS")
+            fi
+            ISSUE_URL=$(gh issue create "${CREATE_ARGS[@]}")
+            ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
+          fi
+        else
+          if [ -n "$ISSUE_NUMBER" ]; then
+            ISSUE_STATE=$(
+              gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state --jq .state
+            )
+            if [ "$ISSUE_STATE" = "OPEN" ]; then
+              echo "Closing issue #${ISSUE_NUMBER}"
+              gh issue close "$ISSUE_NUMBER" --repo "$REPO" --comment "$CLOSE_COMMENT"
+            else
+              echo "Issue #${ISSUE_NUMBER} is already closed — nothing to do"
+            fi
+          else
+            echo "No existing issue found — nothing to do"
+          fi
+        fi
+
+        if [ -n "${ISSUE_NUMBER:-}" ]; then
+          ISSUE_URL="https://github.com/${REPO}/issues/${ISSUE_NUMBER}"
+          echo "issue-number=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "issue-url=${ISSUE_URL}" >> "$GITHUB_OUTPUT"
+          echo "Result: ${ISSUE_URL}"
+        fi
