@@ -8,3 +8,7 @@ rules:
         "*": hash-pin
   excessive-permissions:
     disable: true
+  secrets-inherit:
+    disable: true
+  secrets-outside-env:
+    disable: true
