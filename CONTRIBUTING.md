@@ -11,10 +11,10 @@ Use the `<active-verb>-<purpose>` pattern:
 
 ### Inputs and Outputs
 
-Use **kebab-case** for non-secret inputs, and **UPPER_SNAKE_CASE** for secret inputs:
+Use **kebab-case** for all action inputs, including secret-backed ones. Workflow inputs can keep their own conventions:
 
-- ✅ `app-id`, `go-version` (non-secret), `GITHUB_TOKEN`, `APP_PRIVATE_KEY` (secret)
-- ❌ `app_id`, `goVersion`, `github-token` (secret in kebab-case)
+- ✅ `app-id`, `go-version`, `github-token`, `app-private-key`
+- ❌ `app_id`, `goVersion`, `GITHUB_TOKEN`, `APP_PRIVATE_KEY`
 
 ## Action Structure
 

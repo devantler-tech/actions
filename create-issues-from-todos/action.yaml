@@ -5,7 +5,7 @@ inputs:
   app-id:
     description: GitHub App ID
     required: true
-  APP_PRIVATE_KEY:
+  app-private-key:
     description: GitHub App Private Key
     required: true
   project:
@@ -19,7 +19,7 @@ runs:
       id: app-token
       with:
         app-id: ${{ inputs.app-id }}
-        private-key: ${{ inputs.APP_PRIVATE_KEY }}
+        private-key: ${{ inputs.app-private-key }}
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false

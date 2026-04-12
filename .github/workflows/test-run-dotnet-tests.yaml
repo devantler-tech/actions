@@ -28,8 +28,8 @@ jobs:
         uses: ./run-dotnet-tests
         with:
           app-id: ${{ vars.APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
   status-check:
