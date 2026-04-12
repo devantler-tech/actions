@@ -27,5 +27,5 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ✅ Verify GHCR access
-        run: docker pull ghcr.io/actions/checkout:latest || echo "Login verified (pull test)"
+      - name: ✅ Verify GHCR login
+        run: cat ~/.docker/config.json | grep -q "ghcr.io"
