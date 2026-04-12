@@ -23,4 +23,4 @@ jobs:
         with:
           persist-credentials: false
       - name: 🔄 Sync labels
-        uses: ./sync-labels-action
+        uses: ./sync-github-labels

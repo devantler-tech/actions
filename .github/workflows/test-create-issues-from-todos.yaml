@@ -1,14 +1,17 @@
-name: 🧪 todos-action
+name: 🧪 create-issues-from-todos
 
 on:
+  push:
+    branches: ["main"]
   pull_request:
 
 permissions:
+  contents: read
   issues: write
 
 jobs:
-  test-todos-action:
-    runs-on: "ubuntu-latest"
+  test-create-issues-from-todos:
+    runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
@@ -20,9 +23,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run todos-action
-        uses: ./todos-action
+      - name: 🧪 Run create-issues-from-todos
+        uses: ./create-issues-from-todos
         with:
-          APP_ID: ${{ vars.APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-          PROJECT: organization/devantler-tech/5
+          app-id: ${{ vars.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          project: organization/devantler-tech/5

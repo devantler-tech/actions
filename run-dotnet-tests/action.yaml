@@ -1,13 +1,14 @@
-name: dotnet-test-action
+name: Run Dotnet Tests
 description: Test .NET solution or project
+author: devantler-tech
 inputs:
-  app_id:
+  app-id:
     description: GitHub App ID to generate a token
     required: true
-  app_private_key:
+  app-private-key:
     description: Private key of the GitHub App to generate a token
     required: true
-  github_token:
+  github-token:
     description: GitHub token to access the repository
     required: true
   codecov-token:
@@ -17,7 +18,7 @@ inputs:
     required: false
     default: .
 runs:
-  using: "composite"
+  using: composite
   steps:
     - name: ⚙️ Setup .NET
       uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
@@ -33,7 +34,7 @@ runs:
           "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
       env:
         GITHUB_ACTOR: ${{ github.actor }}
-        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       shell: bash
     - name: 🧪 Test
       run: dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
