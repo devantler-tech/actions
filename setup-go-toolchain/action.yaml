@@ -6,7 +6,7 @@ inputs:
     description: Go version to install
     required: false
     default: stable
-  token:
+  github-token:
     description: GitHub token for private module access
     required: false
 outputs:
@@ -23,10 +23,10 @@ runs:
         go-version: ${{ inputs.go-version }}
 
     - name: 🔑 Configure private modules
-      if: inputs.token != ''
+      if: inputs.github-token != ''
       shell: bash
       env:
-        TOKEN: ${{ inputs.token }}
+        TOKEN: ${{ inputs.github-token }}
       run: |
         go env -w GOPRIVATE=github.com/devantler-tech/*
         git config --global url."https://x-access-token:${TOKEN}@github.com/devantler-tech/".insteadOf "https://github.com/devantler-tech/"
