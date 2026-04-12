@@ -27,4 +27,4 @@ runs:
       shell: bash
       run: |
         go env -w GOPRIVATE=github.com/devantler-tech/*
-        git config --global url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf "https://github.com/"
+        git config --global url."https://x-access-token:${{ inputs.token }}@github.com/devantler-tech/".insteadOf "https://github.com/devantler-tech/"
