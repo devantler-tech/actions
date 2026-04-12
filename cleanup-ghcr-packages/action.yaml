@@ -1,5 +1,6 @@
-name: cleanup-ghcr-action
+name: Cleanup GHCR Packages
 description: Clean up old GitHub Container Registry (GHCR) packages
+author: devantler-tech
 inputs:
   older-than:
     description: "Delete images older than this duration (e.g., 1 year)"

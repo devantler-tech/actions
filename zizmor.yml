@@ -1,0 +1,8 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        actions/*: any-pin
+        github/*: any-pin
+        devantler-tech/*: any-pin
+        "*": hash-pin

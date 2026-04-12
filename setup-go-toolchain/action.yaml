@@ -1,0 +1,30 @@
+name: Setup Go Toolchain
+description: Setup Go with optional private module support for devantler-tech
+author: devantler-tech
+inputs:
+  go-version:
+    description: Go version to install
+    required: false
+    default: stable
+  token:
+    description: GitHub token for private module access
+    required: false
+outputs:
+  go-version:
+    description: The resolved Go version that was installed
+    value: ${{ steps.setup-go.outputs.go-version }}
+runs:
+  using: composite
+  steps:
+    - name: ⚙️ Setup Go
+      id: setup-go
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: 🔑 Configure private modules
+      if: inputs.token != ''
+      shell: bash
+      run: |
+        go env -w GOPRIVATE=github.com/devantler-tech/*
+        git config --global url."https://x-access-token:${{ inputs.token }}@github.com/".insteadOf "https://github.com/"

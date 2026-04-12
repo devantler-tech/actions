@@ -1,4 +1,4 @@
-name: 🧪 auto-merge-action
+name: 🧪 enable-auto-merge-on-pr
 on:
   pull_request:
 
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  test-auto-merge-action:
+  test-enable-auto-merge-on-pr:
     runs-on: ubuntu-latest
     if: startsWith(github.event_name, 'pull_request') && (github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.user.login == 'renovate[bot]' || github.event.pull_request.user.login == 'botantler[bot]' || github.event.pull_request.user.login == 'devantler')
     steps:
@@ -21,9 +21,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run auto-merge-action
-        uses: ./auto-merge-action
+      - name: 🧪 Run enable-auto-merge-on-pr
+        uses: ./enable-auto-merge-on-pr
         with:
-          app_id: ${{ vars.APP_ID }}
-          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          app-id: ${{ vars.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

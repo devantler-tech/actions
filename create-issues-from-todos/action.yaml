@@ -1,24 +1,25 @@
-name: "todos-action"
-description: "A composite action to create GitHub issues from TODO comments"
+name: Create Issues from TODOs
+description: Create GitHub issues from TODO comments in code
+author: devantler-tech
 inputs:
-  APP_ID:
-    description: "GitHub App ID"
+  app-id:
+    description: GitHub App ID
     required: true
-  APP_PRIVATE_KEY:
-    description: "GitHub App Private Key"
+  app-private-key:
+    description: GitHub App Private Key
     required: true
-  PROJECT:
-    description: "GitHub Project to add issues to"
+  project:
+    description: GitHub Project to add issues to
     required: false
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Generate GitHub App Token
+    - name: 🔑 Generate GitHub App Token
       uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
       id: app-token
       with:
-        app-id: ${{ inputs.APP_ID }}
-        private-key: ${{ inputs.APP_PRIVATE_KEY }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
@@ -26,5 +27,5 @@ runs:
       with:
         AUTO_ASSIGN: true
         CLOSE_ISSUES: true
-        PROJECT: ${{ inputs.PROJECT }}
+        PROJECT: ${{ inputs.project }}
         PROJECTS_SECRET: ${{ steps.app-token.outputs.token }}
