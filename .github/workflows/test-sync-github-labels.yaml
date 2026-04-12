@@ -27,3 +27,16 @@ jobs:
         with:
           config-file: .github/labels.yaml
           delete-other-labels: "false"
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-sync-github-labels]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status
+        env:
+          RESULT: ${{ needs.test-sync-github-labels.result }}
+        run: |
+          if [[ "$RESULT" == "failure" ]]; then
+            exit 1
+          fi

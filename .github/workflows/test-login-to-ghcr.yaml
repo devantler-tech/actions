@@ -29,3 +29,16 @@ jobs:
 
       - name: ✅ Verify GHCR login
         run: cat ~/.docker/config.json | grep -q "ghcr.io"
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-login-to-ghcr]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status
+        env:
+          RESULT: ${{ needs.test-login-to-ghcr.result }}
+        run: |
+          if [[ "$RESULT" == "failure" ]]; then
+            exit 1
+          fi
