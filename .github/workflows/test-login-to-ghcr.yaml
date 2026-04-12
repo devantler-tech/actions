@@ -25,7 +25,7 @@ jobs:
       - name: 🧪 Run login-to-ghcr
         uses: ./login-to-ghcr
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ✅ Verify GHCR login
         run: cat ~/.docker/config.json | grep -q "ghcr.io"
