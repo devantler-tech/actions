@@ -1,30 +1,31 @@
-name: auto-merge-action
-description: "Composite action to approve and auto-merge PRs from specific bots/users"
+name: Enable Auto Merge on PR
+description: Approve and auto-merge PRs from specific bots/users
+author: devantler-tech
 inputs:
-  app_id:
-    description: "GitHub App ID"
+  app-id:
+    description: GitHub App ID
     required: true
-  app_private_key:
-    description: "GitHub App Private Key"
+  app-private-key:
+    description: GitHub App Private Key
     required: true
-  github_token:
-    description: "GitHub Token"
+  github-token:
+    description: GitHub Token
     required: true
 
 runs:
-  using: "composite"
+  using: composite
   steps:
     - name: 🔑 Generate GitHub App Token
       uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
       id: app-token
       with:
-        app-id: ${{ inputs.app_id }}
-        private-key: ${{ inputs.app_private_key }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
 
     - name: ✅ Approve pull request
       uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363 # v4.0.0
       with:
-        github-token: "${{ inputs.github_token }}"
+        github-token: ${{ inputs.github-token }}
 
     - name: 🤖 Enable auto-merge
       shell: bash

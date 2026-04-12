@@ -1,6 +1,6 @@
-name: setup-ksail-action
-description: |
-  Installs KSail CLI via Homebrew
+name: Setup KSail CLI
+description: Install KSail CLI via Homebrew
+author: devantler-tech
 
 runs:
   using: "composite"

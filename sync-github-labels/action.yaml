@@ -1,10 +1,11 @@
-name: sync-labels-action
-description: Sync GitHub labels
+name: Sync GitHub Labels
+description: Sync GitHub labels from a configuration file
+author: devantler-tech
 inputs:
   config-file:
     description: "URL or path to the labels config file"
     required: false
-    default: "https://raw.githubusercontent.com/devantler-tech/github-actions/refs/heads/main/.github/labels.yaml"
+    default: "https://raw.githubusercontent.com/devantler-tech/actions/refs/heads/main/.github/labels.yaml"
   delete-other-labels:
     description: "Whether to delete labels not in the config"
     required: false

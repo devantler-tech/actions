@@ -1,0 +1,92 @@
+name: 🧪 setup-go-toolchain
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-setup-go-toolchain:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-go-toolchain
+        id: setup-go
+        uses: ./setup-go-toolchain
+        with:
+          go-version: stable
+
+      - name: ✅ Verify Go is installed
+        shell: bash
+        run: go version
+
+      - name: ✅ Verify output
+        shell: bash
+        env:
+          GO_VERSION: ${{ steps.setup-go.outputs.go-version }}
+        run: |
+          if [[ -z "$GO_VERSION" ]]; then
+            echo "::error::go-version output is empty"
+            exit 1
+          fi
+          echo "Go version: $GO_VERSION"
+
+  test-private-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-go-toolchain with token
+        uses: ./setup-go-toolchain
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ✅ Verify GOPRIVATE is set
+        shell: bash
+        run: |
+          goprivate=$(go env GOPRIVATE)
+          if [[ "$goprivate" != *"github.com/devantler-tech"* ]]; then
+            echo "::error::GOPRIVATE not set correctly: $goprivate"
+            exit 1
+          fi
+          echo "GOPRIVATE: $goprivate"
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-setup-go-toolchain, test-private-modules]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status
+        env:
+          RESULT_SETUP: ${{ needs.test-setup-go-toolchain.result }}
+          RESULT_PRIVATE: ${{ needs.test-private-modules.result }}
+        run: |
+          results=("$RESULT_SETUP" "$RESULT_PRIVATE")
+          for result in "${results[@]}"; do
+            if [[ "$result" == "failure" ]]; then
+              exit 1
+            fi
+          done

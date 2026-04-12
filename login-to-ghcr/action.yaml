@@ -1,0 +1,16 @@
+name: Login to GHCR
+description: Login to GitHub Container Registry (GHCR)
+author: devantler-tech
+inputs:
+  token:
+    description: GitHub token with packages:read (or packages:write) scope
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: 🔑 Login to GHCR
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}

@@ -1,0 +1,14 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        actions/*: any
+        github/*: any
+        devantler-tech/*: any
+        "*": hash-pin
+  excessive-permissions:
+    disable: true
+  secrets-inherit:
+    disable: true
+  secrets-outside-env:
+    disable: true
