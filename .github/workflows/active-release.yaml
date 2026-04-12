@@ -12,4 +12,4 @@ jobs:
   release:
     uses: devantler-tech/reusable-workflows/.github/workflows/create-release.yaml@main
     secrets:
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
