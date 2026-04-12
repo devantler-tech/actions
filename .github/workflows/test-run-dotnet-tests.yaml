@@ -1,5 +1,6 @@
 name: 🧪 run-dotnet-tests
 permissions:
+  contents: read
   packages: read
 on:
   push:
