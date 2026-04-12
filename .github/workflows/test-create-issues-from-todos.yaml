@@ -27,7 +27,7 @@ jobs:
         uses: ./create-issues-from-todos
         with:
           app-id: ${{ vars.APP_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
 
   status-check:

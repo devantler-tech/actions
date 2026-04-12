@@ -27,7 +27,7 @@ inputs:
     description: "Repository to create/update the issue in (format: owner/repo). Defaults to the current repository."
     required: false
     default: ${{ github.repository }}
-  github-token:
+  GITHUB_TOKEN:
     description: "GitHub token with issues write permission"
     required: false
     default: ${{ github.token }}
@@ -46,7 +46,7 @@ runs:
     - id: upsert
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.GITHUB_TOKEN }}
         TITLE: ${{ inputs.title }}
         BODY: ${{ inputs.body }}
         BODY_FILE: ${{ inputs.body-file }}
