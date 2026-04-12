@@ -1,0 +1,87 @@
+name: 🧪 upsert-issue
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  test-upsert-issue-create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Create or update an issue
+        id: upsert
+        uses: ./upsert-issue
+        with:
+          title: "[test] upsert-issue smoke test"
+          body: |
+            This issue is created by the `upsert-issue` test workflow.
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify outputs
+        env:
+          ISSUE_NUMBER: ${{ steps.upsert.outputs.issue-number }}
+          ISSUE_URL: ${{ steps.upsert.outputs.issue-url }}
+        run: |
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "::error::issue-number output is empty"
+            exit 1
+          fi
+          echo "Issue: $ISSUE_URL"
+
+  test-upsert-issue-close:
+    needs: [test-upsert-issue-create]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Close the issue
+        uses: ./upsert-issue
+        with:
+          title: "[test] upsert-issue smoke test"
+          body: "Closed by test."
+          open: "false"
+          close-comment: "🧪 Closed by test workflow."
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-upsert-issue-create, test-upsert-issue-close]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Check status
+        env:
+          CREATE_RESULT: ${{ needs.test-upsert-issue-create.result }}
+          CLOSE_RESULT: ${{ needs.test-upsert-issue-close.result }}
+        run: |
+          if [[ "$CREATE_RESULT" == "failure" || "$CLOSE_RESULT" == "failure" ]]; then
+            exit 1
+          fi
