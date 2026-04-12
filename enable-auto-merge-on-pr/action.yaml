@@ -1,34 +1,58 @@
 name: Enable Auto Merge on PR
-description: Approve and auto-merge PRs from specific bots/users
+description: Enable auto-merge on a pull request using GitHub CLI
 author: devantler-tech
+
 inputs:
-  app-id:
-    description: GitHub App ID
+  pr-number:
+    description: Pull request number to enable auto-merge on
     required: true
-  app-private-key:
-    description: GitHub App Private Key
-    required: true
-  github-token:
-    description: GitHub Token
-    required: true
+  merge-method:
+    description: "Merge method to use: merge, squash, or rebase"
+    required: false
+    default: "squash"
+  dry-run:
+    description: Validate only; do not enable auto-merge
+    required: false
+    default: "false"
 
 runs:
   using: composite
   steps:
-    - name: 🔑 Generate GitHub App Token
-      uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
-      id: app-token
-      with:
-        app-id: ${{ inputs.app-id }}
-        private-key: ${{ inputs.app-private-key }}
+    - name: 🔍 Check if auto-merge is enabled on repository
+      id: check-auto-merge
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
+        echo "auto-merge-enabled=${REPO_INFO}" >> "$GITHUB_OUTPUT"
 
-    - name: ✅ Approve pull request
-      uses: step-security/auto-approve-action@0c28339628c8e79ab2f6813291e7e6cd584b4d30 # v4.0.0
-      with:
-        github-token: ${{ inputs.github-token }}
+        if [[ "$REPO_INFO" != "true" ]]; then
+          echo "::warning::Auto-merge is not enabled on this repository. Contact a repository admin to enable it in Settings > Pull Requests > Allow auto-merge."
+        fi
 
     - name: 🤖 Enable auto-merge
+      if: steps.check-auto-merge.outputs.auto-merge-enabled == 'true' && inputs.dry-run != 'true'
       shell: bash
-      run: gh pr merge --auto --squash ${{ github.event.number }}
       env:
-        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        GH_TOKEN: ${{ github.token }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        if [[ ! "$MERGE_METHOD" =~ ^(merge|squash|rebase)$ ]]; then
+          echo "::error::Invalid merge method '${MERGE_METHOD}'. Must be 'merge', 'squash', or 'rebase'."
+          exit 1
+        fi
+
+        gh pr merge "$PR_NUMBER" --auto --"$MERGE_METHOD" --repo "$REPOSITORY"
+        echo "✅ Auto-merge enabled for PR #${PR_NUMBER} using ${MERGE_METHOD} method"
+
+    - name: 🔎 Dry-run notice
+      if: inputs.dry-run == 'true'
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: |
+        echo "::notice::Dry-run enabled — auto-merge was not enabled on PR #${PR_NUMBER}"

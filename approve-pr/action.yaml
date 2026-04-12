@@ -1,0 +1,48 @@
+name: Approve PR
+description: Approve a pull request using a GitHub App identity
+author: devantler-tech
+
+inputs:
+  app-id:
+    description: GitHub App ID
+    required: true
+  app-private-key:
+    description: GitHub App Private Key
+    required: true
+  pr-number:
+    description: Pull request number to approve
+    required: true
+  dry-run:
+    description: Validate only; do not approve the pull request
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: 🔑 Generate GitHub App Token
+      if: inputs.dry-run != 'true'
+      uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+      id: app-token
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+
+    - name: ✅ Approve pull request
+      if: inputs.dry-run != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        gh pr review "$PR_NUMBER" --approve --repo "$REPOSITORY"
+        echo "✅ PR #${PR_NUMBER} approved"
+
+    - name: 🔎 Dry-run notice
+      if: inputs.dry-run == 'true'
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: |
+        echo "::notice::Dry-run enabled — PR #${PR_NUMBER} was not approved"
