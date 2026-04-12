@@ -1,4 +1,4 @@
-name: 🧪 enable-auto-merge-on-pr
+name: 🧪 approve-pr
 on:
   pull_request:
 
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  test-enable-auto-merge-on-pr:
+  test-approve-pr:
     runs-on: ubuntu-latest
     if: startsWith(github.event_name, 'pull_request') && (github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.user.login == 'renovate[bot]' || github.event.pull_request.user.login == 'botantler[bot]' || github.event.pull_request.user.login == 'devantler')
     steps:
@@ -21,14 +21,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run enable-auto-merge-on-pr
-        uses: ./enable-auto-merge-on-pr
+      - name: 🧪 Run approve-pr
+        uses: ./approve-pr
         with:
+          app-id: ${{ vars.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           pr-number: ${{ github.event.pull_request.number }}
 
   status-check:
     if: ${{ !cancelled() }}
-    needs: [test-enable-auto-merge-on-pr]
+    needs: [test-approve-pr]
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -38,7 +40,7 @@ jobs:
 
       - name: Check status
         env:
-          RESULT: ${{ needs.test-enable-auto-merge-on-pr.result }}
+          RESULT: ${{ needs.test-approve-pr.result }}
         run: |
           if [[ "$RESULT" == "failure" ]]; then
             exit 1

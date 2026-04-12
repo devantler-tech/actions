@@ -26,9 +26,10 @@ flowchart TD
 
 | Action | Description |
 |--------|-------------|
+| [approve-pr](approve-pr/README.md) | Approve a PR using a GitHub App identity |
 | [cleanup-ghcr-packages](cleanup-ghcr-packages/README.md) | Clean up old GHCR packages |
 | [create-issues-from-todos](create-issues-from-todos/README.md) | Create GitHub issues from TODO comments |
-| [enable-auto-merge-on-pr](enable-auto-merge-on-pr/README.md) | Approve and auto-merge PRs from trusted bots/users |
+| [enable-auto-merge-on-pr](enable-auto-merge-on-pr/README.md) | Enable auto-merge on a pull request |
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
 | [run-dotnet-tests](run-dotnet-tests/README.md) | Test .NET solution or project with coverage |
 | [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with optional private module support |
