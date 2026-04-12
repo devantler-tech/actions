@@ -10,6 +10,6 @@ permissions: {}
 
 jobs:
   release:
-    uses: devantler-tech/reusable-workflows/.github/workflows/create-release.yaml@main
+    uses: devantler-tech/reusable-workflows/.github/workflows/create-release.yaml@e195335519da551c6d74e12b197159ed5484ff15 # devantler/refactor-secrets-to-kebab-case
     secrets:
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
