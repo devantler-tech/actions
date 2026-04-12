@@ -6,7 +6,7 @@ Login to GitHub Container Registry (GHCR) for pulling or pushing container image
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `github-token` | GitHub token with `packages:read` (or `packages:write`) scope | ✅ | - |
+| `GITHUB_TOKEN` | GitHub token with `packages:read` (or `packages:write`) scope | ✅ | - |
 
 ## Usage
 
@@ -15,5 +15,5 @@ steps:
   - name: Login to GHCR
     uses: devantler-tech/actions/login-to-ghcr@main
     with:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

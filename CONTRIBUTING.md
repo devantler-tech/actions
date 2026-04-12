@@ -11,10 +11,10 @@ Use the `<active-verb>-<purpose>` pattern:
 
 ### Inputs and Outputs
 
-Use **kebab-case**:
+Use **kebab-case** for non-secret inputs, and **UPPER_SNAKE_CASE** for secret inputs:
 
-- ✅ `app-id`, `go-version`, `github-token`
-- ❌ `app_id`, `goVersion`, `APP_ID`
+- ✅ `app-id`, `go-version` (non-secret), `GITHUB_TOKEN`, `APP_PRIVATE_KEY` (secret)
+- ❌ `app_id`, `goVersion`, `github-token` (secret in kebab-case)
 
 ## Action Structure
 

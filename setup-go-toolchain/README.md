@@ -7,7 +7,7 @@ Setup Go with optional private module support for devantler-tech repositories.
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
 | `go-version` | Go version to install | ❌ | `stable` |
-| `github-token` | GitHub token for private module access | ❌ | - |
+| `GITHUB_TOKEN` | GitHub token for private module access | ❌ | - |
 
 ## Outputs
 
@@ -42,5 +42,5 @@ steps:
   - name: Setup Go
     uses: devantler-tech/actions/setup-go-toolchain@main
     with:
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

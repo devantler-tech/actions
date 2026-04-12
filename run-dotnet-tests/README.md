@@ -7,9 +7,9 @@ Test .NET solutions or projects across multiple platforms with code coverage rep
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
 | `app-id` | GitHub App ID to generate a token | ✅ | - |
-| `app-private-key` | Private key of the GitHub App | ✅ | - |
-| `github-token` | GitHub token to access the repository | ✅ | - |
-| `codecov-token` | Token to upload code coverage to CodeCov | ❌ | - |
+| `APP_PRIVATE_KEY` | Private key of the GitHub App | ✅ | - |
+| `GITHUB_TOKEN` | GitHub token to access the repository | ✅ | - |
+| `CODECOV_TOKEN` | Token to upload code coverage to CodeCov | ❌ | - |
 | `working-directory` | Directory to run the tests in | ❌ | `.` |
 
 ## Usage
@@ -22,9 +22,9 @@ steps:
     uses: devantler-tech/actions/run-dotnet-tests@main
     with:
       app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-      codecov-token: ${{ secrets.CODECOV_TOKEN }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 ```
 
 ### Custom working directory
@@ -35,8 +35,8 @@ steps:
     uses: devantler-tech/actions/run-dotnet-tests@main
     with:
       app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       working-directory: src/MyProject
 ```
 
@@ -48,6 +48,6 @@ steps:
     uses: devantler-tech/actions/run-dotnet-tests@main
     with:
       app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      github-token: ${{ secrets.GITHUB_TOKEN }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

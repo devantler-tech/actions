@@ -7,7 +7,7 @@ Scan code for TODO comments and automatically create corresponding GitHub issues
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
 | `app-id` | GitHub App ID | ✅ | - |
-| `app-private-key` | GitHub App Private Key | ✅ | - |
+| `APP_PRIVATE_KEY` | GitHub App Private Key | ✅ | - |
 | `project` | GitHub Project to add issues to | ❌ | - |
 
 ## Usage
@@ -20,7 +20,7 @@ steps:
     uses: devantler-tech/actions/create-issues-from-todos@main
     with:
       app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
 ### With project integration
@@ -31,6 +31,6 @@ steps:
     uses: devantler-tech/actions/create-issues-from-todos@main
     with:
       app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
       project: "organization/devantler-tech/1"
 ```
