@@ -29,3 +29,16 @@ jobs:
           app-id: ${{ vars.APP_ID }}
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-create-issues-from-todos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check status
+        env:
+          RESULT: ${{ needs.test-create-issues-from-todos.result }}
+        run: |
+          if [[ "$RESULT" == "failure" ]]; then
+            exit 1
+          fi
