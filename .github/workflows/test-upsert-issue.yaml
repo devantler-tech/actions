@@ -31,7 +31,7 @@ jobs:
           body: |
             This issue is created by the `upsert-issue` test workflow.
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify outputs
         env:
@@ -65,7 +65,7 @@ jobs:
           body: "Closed by test."
           open: "false"
           close-comment: "🧪 Closed by test workflow."
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   status-check:
     if: ${{ !cancelled() }}

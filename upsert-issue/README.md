@@ -13,7 +13,7 @@ Create, update, reopen, or close a GitHub issue by title. Finds an existing issu
 | `open` | Whether the issue should be open (`true`) or closed (`false`) | ❌ | `true` |
 | `close-comment` | Comment to post when closing the issue | ❌ | `✅ Resolved — closing this issue.` |
 | `repository` | Target repository (`owner/repo`) | ❌ | `${{ github.repository }}` |
-| `GITHUB_TOKEN` | GitHub token with `issues: write` permission | ❌ | `${{ github.token }}` |
+| `github-token` | GitHub token with `issues: write` permission | ❌ | `${{ github.token }}` |
 
 ## Outputs
 

@@ -5,13 +5,13 @@ inputs:
   app-id:
     description: GitHub App ID to generate a token
     required: true
-  APP_PRIVATE_KEY:
+  app-private-key:
     description: Private key of the GitHub App to generate a token
     required: true
-  GITHUB_TOKEN:
+  github-token:
     description: GitHub token to access the repository
     required: true
-  CODECOV_TOKEN:
+  codecov-token:
     description: Token to upload code coverage to CodeCov
   working-directory:
     description: Directory to run the tests in
@@ -34,7 +34,7 @@ runs:
           "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
       env:
         GITHUB_ACTOR: ${{ github.actor }}
-        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       shell: bash
     - name: 🧪 Test
       run: dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
@@ -42,7 +42,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
     - name: 📄 Get Coverage Files
       id: get_coverage_files
-      if: matrix.os != 'windows-latest' && inputs.CODECOV_TOKEN != ''
+      if: matrix.os != 'windows-latest' && inputs.codecov-token != ''
       run: |
         coverage_files=$(find . -name 'coverage.cobertura.xml' -print0 | tr '\0' ',' | sed 's/,$//')
         echo "COVERAGE_FILES=$coverage_files" >> "$GITHUB_OUTPUT"
@@ -50,7 +50,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}
     - name: 📄 Get Coverage Files on Windows
       id: get_coverage_files_windows
-      if: matrix.os == 'windows-latest' && inputs.CODECOV_TOKEN != ''
+      if: matrix.os == 'windows-latest' && inputs.codecov-token != ''
       run: |
         $coverage_files = Get-ChildItem -Path . -Recurse -Filter coverage.cobertura.xml -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
         $coverage_files = $coverage_files -join ','
@@ -58,10 +58,10 @@ runs:
       shell: pwsh
       working-directory: ${{ inputs.working-directory }}
     - name: 📄 Upload Code Coverage to CodeCov
-      if: inputs.CODECOV_TOKEN != ''
+      if: inputs.codecov-token != ''
       uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
       with:
         files: ${{ steps.get_coverage_files.outputs.COVERAGE_FILES }}
         fail_ci_if_error: true
       env:
-        CODECOV_TOKEN: ${{ inputs.CODECOV_TOKEN }}
+        CODECOV_TOKEN: ${{ inputs.codecov-token }}

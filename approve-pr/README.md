@@ -7,7 +7,7 @@ Approve a pull request using a GitHub App identity. This is needed because `GITH
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
 | `app-id` | GitHub App ID | ✅ | - |
-| `APP_PRIVATE_KEY` | GitHub App Private Key | ✅ | - |
+| `app-private-key` | GitHub App Private Key | ✅ | - |
 | `pr-number` | Pull request number to approve | ✅ | - |
 | `dry-run` | Validate only; do not approve the pull request | - | `false` |
 
@@ -21,7 +21,7 @@ steps:
     uses: devantler-tech/actions/approve-pr@main
     with:
       app-id: ${{ vars.APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       pr-number: ${{ github.event.pull_request.number }}
 ```
 
@@ -33,7 +33,7 @@ steps:
     uses: devantler-tech/actions/approve-pr@main
     with:
       app-id: ${{ vars.APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       pr-number: ${{ github.event.pull_request.number }}
 
   - name: Enable auto-merge

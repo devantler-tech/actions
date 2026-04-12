@@ -62,7 +62,7 @@ jobs:
       - name: 🧪 Run setup-go-toolchain with token
         uses: ./setup-go-toolchain
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ✅ Verify GOPRIVATE is set
         shell: bash
