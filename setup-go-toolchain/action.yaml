@@ -25,6 +25,8 @@ runs:
     - name: 🔑 Configure private modules
       if: inputs.token != ''
       shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
       run: |
         go env -w GOPRIVATE=github.com/devantler-tech/*
-        git config --global url."https://x-access-token:${{ inputs.token }}@github.com/devantler-tech/".insteadOf "https://github.com/devantler-tech/"
+        git config --global url."https://x-access-token:${TOKEN}@github.com/devantler-tech/".insteadOf "https://github.com/devantler-tech/"

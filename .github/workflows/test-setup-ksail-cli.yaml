@@ -37,7 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status
+        env:
+          RESULT: ${{ needs.test-setup-ksail-cli.result }}
         run: |
-          if [[ "${{ needs.test-setup-ksail-cli.result }}" == "failure" ]]; then
+          if [[ "$RESULT" == "failure" ]]; then
             exit 1
           fi

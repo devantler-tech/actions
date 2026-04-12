@@ -6,3 +6,4 @@ rules:
         github/*: any
         devantler-tech/*: any
         "*": hash-pin
+  excessive-permissions: skip

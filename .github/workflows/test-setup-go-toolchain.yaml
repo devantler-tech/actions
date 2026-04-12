@@ -36,12 +36,14 @@ jobs:
 
       - name: ✅ Verify output
         shell: bash
+        env:
+          GO_VERSION: ${{ steps.setup-go.outputs.go-version }}
         run: |
-          if [[ -z "${{ steps.setup-go.outputs.go-version }}" ]]; then
+          if [[ -z "$GO_VERSION" ]]; then
             echo "::error::go-version output is empty"
             exit 1
           fi
-          echo "Go version: ${{ steps.setup-go.outputs.go-version }}"
+          echo "Go version: $GO_VERSION"
 
   test-private-modules:
     runs-on: ubuntu-latest
@@ -77,8 +79,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status
+        env:
+          RESULT_SETUP: ${{ needs.test-setup-go-toolchain.result }}
+          RESULT_PRIVATE: ${{ needs.test-private-modules.result }}
         run: |
-          results=("${{ needs.test-setup-go-toolchain.result }}" "${{ needs.test-private-modules.result }}")
+          results=("$RESULT_SETUP" "$RESULT_PRIVATE")
           for result in "${results[@]}"; do
             if [[ "$result" == "failure" ]]; then
               exit 1

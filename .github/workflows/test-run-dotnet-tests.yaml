@@ -37,7 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status
+        env:
+          RESULT: ${{ needs.test-run-dotnet-tests.result }}
         run: |
-          if [[ "${{ needs.test-run-dotnet-tests.result }}" == "failure" ]]; then
+          if [[ "$RESULT" == "failure" ]]; then
             exit 1
           fi
