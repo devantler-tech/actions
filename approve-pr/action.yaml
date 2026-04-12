@@ -6,7 +6,7 @@ inputs:
   app-id:
     description: GitHub App ID
     required: true
-  app-private-key:
+  APP_PRIVATE_KEY:
     description: GitHub App Private Key
     required: true
   pr-number:
@@ -26,7 +26,7 @@ runs:
       id: app-token
       with:
         app-id: ${{ inputs.app-id }}
-        private-key: ${{ inputs.app-private-key }}
+        private-key: ${{ inputs.APP_PRIVATE_KEY }}
 
     - name: ✅ Approve pull request
       if: inputs.dry-run != 'true'
