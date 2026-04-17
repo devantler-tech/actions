@@ -37,22 +37,39 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: 🔍 Verify gh supports `skill`
+    - name: 🔧 Ensure gh >= required version
       shell: bash
       env:
         REQUIRED: ${{ inputs.gh-version }}
       run: |
-        if ! command -v gh >/dev/null 2>&1; then
-          echo "::error::gh CLI is not installed on this runner."
-          exit 1
+        set -euo pipefail
+        if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
+          current=$(gh --version | awk '/gh version/{print $3; exit}')
+          if printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
+            echo "Installed gh ($current) already supports 'gh skill'."
+            exit 0
+          fi
         fi
-        current=$(gh --version | awk '/gh version/{print $3; exit}')
-        if ! printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
-          echo "::error::gh $current < $REQUIRED (needs 'gh skill' support)."
-          exit 1
-        fi
+
+        case "$(uname -s)" in
+          Linux)   os=linux ;;
+          Darwin)  os=macOS ;;
+          *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
+        esac
+        case "$(uname -m)" in
+          x86_64|amd64) arch=amd64 ;;
+          arm64|aarch64) arch=arm64 ;;
+          *) echo "::error::Unsupported arch: $(uname -m)"; exit 1 ;;
+        esac
+
+        tmp=$(mktemp -d)
+        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/gh_${REQUIRED}_${os}_${arch}.tar.gz"
+        echo "Downloading $url"
+        curl -fsSL "$url" | tar -xzC "$tmp"
+        sudo install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" /usr/local/bin/gh
+        gh --version
         if ! gh skill --help >/dev/null 2>&1; then
-          echo "::error::Installed gh ($current) does not expose the 'skill' command."
+          echo "::error::Installed gh still does not expose the 'skill' command."
           exit 1
         fi
 
