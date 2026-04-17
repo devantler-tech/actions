@@ -44,7 +44,11 @@ runs:
       run: |
         set -euo pipefail
         if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
-          current=$(gh --version | awk '/gh version/{print $3; exit}')
+          current=$(gh --version | awk '/^gh version /{print $3; exit}')
+          if [ -z "$current" ]; then
+            echo "::error::Could not determine the installed gh version from 'gh --version' output."
+            exit 1
+          fi
           if printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
             echo "Installed gh ($current) already supports 'gh skill'."
             exit 0
@@ -52,8 +56,8 @@ runs:
         fi
 
         case "$(uname -s)" in
-          Linux)   os=linux ;;
-          Darwin)  os=macOS ;;
+          Linux)   os=linux;  ext=tar.gz ;;
+          Darwin)  os=macOS;  ext=zip ;;
           *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
         esac
         case "$(uname -m)" in
@@ -63,10 +67,25 @@ runs:
         esac
 
         tmp=$(mktemp -d)
-        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/gh_${REQUIRED}_${os}_${arch}.tar.gz"
+        asset="gh_${REQUIRED}_${os}_${arch}.${ext}"
+        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
         echo "Downloading $url"
-        curl -fsSL "$url" | tar -xzC "$tmp"
-        sudo install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" /usr/local/bin/gh
+        if [ "$ext" = "zip" ]; then
+          if ! command -v unzip >/dev/null 2>&1; then
+            echo "::error::unzip is required to extract the macOS gh release archive but is not available on PATH."
+            exit 1
+          fi
+          curl -fsSL -o "$tmp/$asset" "$url"
+          unzip -q "$tmp/$asset" -d "$tmp"
+        else
+          curl -fsSL "$url" | tar -xzC "$tmp"
+        fi
+        install_dir="${RUNNER_TEMP:-/tmp}/setup-copilot-skills/bin"
+        mkdir -p "$install_dir"
+        install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
+        echo "$install_dir" >> "$GITHUB_PATH"
+        export PATH="$install_dir:$PATH"
+        hash -r
         gh --version
         if ! gh skill --help >/dev/null 2>&1; then
           echo "::error::Installed gh still does not expose the 'skill' command."
@@ -107,6 +126,10 @@ runs:
         else
           if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
             echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
+            exit 1
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is required when using the 'skills-lock' input, but it is not installed on this runner."
             exit 1
           fi
           entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key}' "$INPUT_SKILLS_LOCK") || {
