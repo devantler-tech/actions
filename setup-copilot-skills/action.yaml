@@ -44,7 +44,11 @@ runs:
       run: |
         set -euo pipefail
         if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
-          current=$(gh --version | awk '/gh version/{print $3; exit}')
+          current=$(gh --version | awk '/^gh version /{print $3; exit}')
+          if [ -z "$current" ]; then
+            echo "::error::Could not determine the installed gh version from 'gh --version' output."
+            exit 1
+          fi
           if printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
             echo "Installed gh ($current) already supports 'gh skill'."
             exit 0
@@ -107,6 +111,10 @@ runs:
         else
           if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
             echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
+            exit 1
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is required when using the 'skills-lock' input, but it is not installed on this runner."
             exit 1
           fi
           entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key}' "$INPUT_SKILLS_LOCK") || {

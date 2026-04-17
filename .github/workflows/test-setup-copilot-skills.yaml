@@ -1,0 +1,140 @@
+name: 🧪 setup-copilot-skills
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-from-lock:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Create skills-lock.json fixture
+        shell: bash
+        run: |
+          cat > skills-lock.json <<'JSON'
+          {
+            "version": 1,
+            "skills": {
+              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
+            }
+          }
+          JSON
+
+      - name: 🧪 Run setup-copilot-skills (manifest)
+        id: setup
+        uses: ./setup-copilot-skills
+
+      - name: ✅ Verify installed-skills output
+        shell: bash
+        env:
+          INSTALLED: ${{ steps.setup.outputs.installed-skills }}
+        run: |
+          if [[ "$INSTALLED" != *"devantler-tech/skills/git-commit"* ]]; then
+            echo "::error::Expected 'devantler-tech/skills/git-commit' in installed-skills output, got: $INSTALLED"
+            exit 1
+          fi
+
+  test-inline-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-copilot-skills (inline)
+        id: setup
+        uses: ./setup-copilot-skills
+        with:
+          source: devantler-tech/skills
+          skills: |
+            git-commit
+            gh-cli
+
+      - name: ✅ Verify both skills installed
+        shell: bash
+        env:
+          INSTALLED: ${{ steps.setup.outputs.installed-skills }}
+        run: |
+          for expected in "devantler-tech/skills/git-commit" "devantler-tech/skills/gh-cli"; do
+            if [[ "$INSTALLED" != *"$expected"* ]]; then
+              echo "::error::Expected '$expected' in installed-skills output, got: $INSTALLED"
+              exit 1
+            fi
+          done
+
+  test-missing-skills-input:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-copilot-skills with source but no skills (expected to fail)
+        id: setup
+        continue-on-error: true
+        uses: ./setup-copilot-skills
+        with:
+          source: devantler-tech/skills
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail when 'source' is set but 'skills' is empty, got: $OUTCOME"
+            exit 1
+          fi
+
+  status-check:
+    if: ${{ !cancelled() }}
+    needs: [test-from-lock, test-inline-source, test-missing-skills-input]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Check status
+        env:
+          RESULT_LOCK: ${{ needs.test-from-lock.result }}
+          RESULT_INLINE: ${{ needs.test-inline-source.result }}
+          RESULT_MISSING: ${{ needs.test-missing-skills-input.result }}
+        run: |
+          results=("$RESULT_LOCK" "$RESULT_INLINE" "$RESULT_MISSING")
+          for result in "${results[@]}"; do
+            if [[ "$result" == "failure" ]]; then
+              exit 1
+            fi
+          done
