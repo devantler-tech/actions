@@ -56,8 +56,8 @@ runs:
         fi
 
         case "$(uname -s)" in
-          Linux)   os=linux ;;
-          Darwin)  os=macOS ;;
+          Linux)   os=linux;  ext=tar.gz ;;
+          Darwin)  os=macOS;  ext=zip ;;
           *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
         esac
         case "$(uname -m)" in
@@ -67,9 +67,15 @@ runs:
         esac
 
         tmp=$(mktemp -d)
-        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/gh_${REQUIRED}_${os}_${arch}.tar.gz"
+        asset="gh_${REQUIRED}_${os}_${arch}.${ext}"
+        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
         echo "Downloading $url"
-        curl -fsSL "$url" | tar -xzC "$tmp"
+        if [ "$ext" = "zip" ]; then
+          curl -fsSL -o "$tmp/$asset" "$url"
+          unzip -q "$tmp/$asset" -d "$tmp"
+        else
+          curl -fsSL "$url" | tar -xzC "$tmp"
+        fi
         sudo install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" /usr/local/bin/gh
         gh --version
         if ! gh skill --help >/dev/null 2>&1; then

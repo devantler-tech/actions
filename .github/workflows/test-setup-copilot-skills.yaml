@@ -117,7 +117,7 @@ jobs:
           fi
 
   status-check:
-    if: ${{ !cancelled() }}
+    if: ${{ always() && !cancelled() }}
     needs: [test-from-lock, test-inline-source, test-missing-skills-input]
     runs-on: ubuntu-latest
     steps:
