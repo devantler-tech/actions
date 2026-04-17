@@ -71,12 +71,20 @@ runs:
         url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
         echo "Downloading $url"
         if [ "$ext" = "zip" ]; then
+          if ! command -v unzip >/dev/null 2>&1; then
+            echo "::error::unzip is required to extract the macOS gh release archive but is not available on PATH."
+            exit 1
+          fi
           curl -fsSL -o "$tmp/$asset" "$url"
           unzip -q "$tmp/$asset" -d "$tmp"
         else
           curl -fsSL "$url" | tar -xzC "$tmp"
         fi
-        sudo install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" /usr/local/bin/gh
+        install_dir="${RUNNER_TEMP:-/tmp}/setup-copilot-skills/bin"
+        mkdir -p "$install_dir"
+        install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
+        echo "$install_dir" >> "$GITHUB_PATH"
+        export PATH="$install_dir:$PATH"
         hash -r
         gh --version
         if ! gh skill --help >/dev/null 2>&1; then
