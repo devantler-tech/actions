@@ -1,0 +1,111 @@
+name: Setup Copilot Skills
+description: Install agent skills with the gh skill CLI, from a skills-lock.json manifest or an inline source/skills list
+author: devantler-tech
+inputs:
+  skills-lock:
+    description: Path to a skills-lock.json manifest (used when `source` is empty)
+    required: false
+    default: skills-lock.json
+  source:
+    description: Single skills repo (e.g. `devantler-tech/skills`). When set, `skills` is required and `skills-lock` is ignored.
+    required: false
+    default: ""
+  skills:
+    description: Newline- or comma-separated skill names to install from `source`. Ignored when `source` is empty.
+    required: false
+    default: ""
+  agent:
+    description: Value passed to `gh skill install --agent`
+    required: false
+    default: github-copilot
+  scope:
+    description: Value passed to `gh skill install --scope` (`user` or `repo`)
+    required: false
+    default: user
+  gh-version:
+    description: Minimum required `gh` version (must support `gh skill`)
+    required: false
+    default: 2.90.0
+  github-token:
+    description: GitHub token exposed to `gh` as `GH_TOKEN`
+    required: false
+    default: ${{ github.token }}
+outputs:
+  installed-skills:
+    description: Newline-separated list of `source/skill-name` pairs that were installed
+    value: ${{ steps.install.outputs.installed-skills }}
+runs:
+  using: composite
+  steps:
+    - name: 🔍 Verify gh supports `skill`
+      shell: bash
+      env:
+        REQUIRED: ${{ inputs.gh-version }}
+      run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          echo "::error::gh CLI is not installed on this runner."
+          exit 1
+        fi
+        current=$(gh --version | awk '/gh version/{print $3; exit}')
+        if ! printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
+          echo "::error::gh $current < $REQUIRED (needs 'gh skill' support)."
+          exit 1
+        fi
+        if ! gh skill --help >/dev/null 2>&1; then
+          echo "::error::Installed gh ($current) does not expose the 'skill' command."
+          exit 1
+        fi
+
+    - name: 📦 Install skills
+      id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_SOURCE: ${{ inputs.source }}
+        INPUT_SKILLS: ${{ inputs.skills }}
+        INPUT_SKILLS_LOCK: ${{ inputs.skills-lock }}
+        INPUT_AGENT: ${{ inputs.agent }}
+        INPUT_SCOPE: ${{ inputs.scope }}
+      run: |
+        set -euo pipefail
+        installed_file=$(mktemp)
+
+        install_one() {
+          local src="$1" name="$2"
+          echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+          gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
+          printf '%s/%s\n' "$src" "$name" >> "$installed_file"
+        }
+
+        if [ -n "$INPUT_SOURCE" ]; then
+          if [ -z "$INPUT_SKILLS" ]; then
+            echo "::error::'skills' input is required when 'source' is set."
+            exit 1
+          fi
+          printf '%s' "$INPUT_SKILLS" | tr ',' '\n' | while IFS= read -r name; do
+            name=$(printf '%s' "$name" | awk '{$1=$1;print}')
+            [ -z "$name" ] && continue
+            install_one "$INPUT_SOURCE" "$name"
+          done
+        else
+          if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
+            echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
+            exit 1
+          fi
+          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key}' "$INPUT_SKILLS_LOCK") || {
+            echo "::error::No skills found in $INPUT_SKILLS_LOCK"
+            exit 1
+          }
+          while IFS= read -r entry; do
+            src=$(jq -r '.source' <<<"$entry")
+            name=$(jq -r '.name' <<<"$entry")
+            install_one "$src" "$name"
+          done <<<"$entries"
+        fi
+
+        {
+          echo "installed-skills<<EOF"
+          cat "$installed_file"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        rm -f "$installed_file"
