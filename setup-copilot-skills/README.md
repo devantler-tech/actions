@@ -75,5 +75,5 @@ For a batteries-included scheduled updater that opens a PR with any skill change
 
 ## Requirements
 
-- `gh` **≥ 2.90.0** on the runner (with `gh skill` support). GitHub-hosted runners typically already meet this; older self-hosted runners may need to upgrade.
+- `gh` **≥ 2.90.0** on the runner (with `gh skill` support). If the runner image ships an older `gh`, this action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.
 - `jq` (pre-installed on GitHub-hosted runners) when using a `skills-lock.json`.
