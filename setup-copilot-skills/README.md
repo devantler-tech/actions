@@ -10,7 +10,7 @@ Install agent skills with the [`gh skill`](https://github.com/cli/cli) CLI — f
 | `source` | Single skills repo (e.g. `devantler-tech/skills`). When set, `skills` is required and `skills-lock` is ignored. | ❌ | - |
 | `skills` | Newline- or comma-separated skill names to install from `source` | ❌ | - |
 | `agent` | Value passed to `gh skill install --agent` | ❌ | `github-copilot` |
-| `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `user` |
+| `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `project` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
 
@@ -81,6 +81,9 @@ steps:
       source: devantler-tech/skills
       skills: git-commit
       agent: github-copilot
+      # Default is `project` (writes inside the checkout, suitable for CI and
+      # scheduled-update workflows). Use `user` for local dev installs that
+      # should land in the runner's home directory.
       scope: user
 ```
 
