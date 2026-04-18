@@ -58,7 +58,7 @@ runs:
         case "$(uname -s)" in
           Linux)   os=linux;  ext=tar.gz ;;
           Darwin)  os=macOS;  ext=zip ;;
-          *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
+          *) echo "::error::Automatic gh install is only supported on Linux and macOS. On $(uname -s) (e.g. Windows), preinstall gh >= ${REQUIRED} on the runner before this step."; exit 1 ;;
         esac
         case "$(uname -m)" in
           x86_64|amd64) arch=amd64 ;;
