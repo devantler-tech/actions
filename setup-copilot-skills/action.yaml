@@ -19,7 +19,7 @@ inputs:
     required: false
     default: github-copilot
   scope:
-    description: Value passed to `gh skill install --scope` (`user` or `repo`)
+    description: Value passed to `gh skill install --scope` (`project` or `user`)
     required: false
     default: user
   gh-version:
@@ -83,7 +83,7 @@ runs:
         install_dir="${RUNNER_TEMP:-/tmp}/setup-copilot-skills/bin"
         mkdir -p "$install_dir"
         install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
-        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "$install_dir" >> "$GITHUB_PATH"  # zizmor: ignore[github-env]
         export PATH="$install_dir:$PATH"
         hash -r
         gh --version

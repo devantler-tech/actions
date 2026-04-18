@@ -72,7 +72,7 @@ runs:
         install_dir="${RUNNER_TEMP:-/tmp}/update-copilot-skills/bin"
         mkdir -p "$install_dir"
         install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
-        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "$install_dir" >> "$GITHUB_PATH"  # zizmor: ignore[github-env]
         export PATH="$install_dir:$PATH"
         hash -r
         gh --version
@@ -121,14 +121,14 @@ runs:
           printf '%s %s\n' "$ref" "$sha"
         }
 
-        names=$(jq -r '.skills | keys[]' "$INPUT_SKILLS_LOCK")
-        if [ -z "$names" ]; then
+        names=$(jq -e -r '.skills | keys[]' "$INPUT_SKILLS_LOCK") || {
           echo "::error::No skills found in $INPUT_SKILLS_LOCK"
           exit 1
-        fi
+        }
 
         updated_file=$(mktemp)
-        tmp_lock=$(mktemp)
+        lock_dir=$(dirname -- "$INPUT_SKILLS_LOCK")
+        tmp_lock=$(mktemp "${lock_dir}/.skills-lock.XXXXXXXX")
         cp "$INPUT_SKILLS_LOCK" "$tmp_lock"
 
         while IFS= read -r name; do
@@ -140,7 +140,15 @@ runs:
           fi
           old_digest=$(jq -r --arg n "$name" '.skills[$n].digest // ""' "$tmp_lock")
           echo "Resolving latest ref for ${source} (skill: ${name})..."
-          read -r new_ref new_digest < <(resolve_ref "$source")
+          if ! resolved=$(resolve_ref "$source"); then
+            echo "::error::Failed to resolve latest ref for '${source}' (skill: '${name}')"
+            exit 1
+          fi
+          read -r new_ref new_digest <<<"$resolved"
+          if [ -z "$new_ref" ] || [ -z "$new_digest" ]; then
+            echo "::error::Resolved ref for '${source}' (skill: '${name}') was incomplete: '${resolved}'"
+            exit 1
+          fi
           echo "  -> ref=${new_ref} digest=${new_digest}"
           jq --arg n "$name" --arg ref "$new_ref" --arg digest "$new_digest" \
             '.skills[$n].ref = $ref | .skills[$n].digest = $digest' \
