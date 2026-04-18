@@ -21,7 +21,7 @@ inputs:
   scope:
     description: Value passed to `gh skill install --scope` (`project` or `user`)
     required: false
-    default: user
+    default: project
   gh-version:
     description: Minimum required `gh` version (must support `gh skill`)
     required: false
