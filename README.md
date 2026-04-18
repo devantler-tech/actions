@@ -36,6 +36,7 @@ flowchart TD
 | [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with optional private module support |
 | [setup-ksail-cli](setup-ksail-cli/README.md) | Install KSail CLI via Homebrew |
 | [sync-github-labels](sync-github-labels/README.md) | Sync GitHub labels from a configuration file |
+| [update-copilot-skills](update-copilot-skills/README.md) | Resolve and pin the latest skill refs back into `skills-lock.json` |
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
 
 ## Contributing

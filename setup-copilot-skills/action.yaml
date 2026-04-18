@@ -107,9 +107,14 @@ runs:
         installed_file=$(mktemp)
 
         install_one() {
-          local src="$1" name="$2"
-          echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
-          gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
+          local src="$1" name="$2" pin="${3:-}"
+          if [ -n "$pin" ]; then
+            echo "Installing ${src}/${name} pinned to ${pin} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE" --pin "$pin"
+          else
+            echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
+          fi
           printf '%s/%s\n' "$src" "$name" >> "$installed_file"
         }
 
@@ -132,14 +137,15 @@ runs:
             echo "::error::jq is required when using the 'skills-lock' input, but it is not installed on this runner."
             exit 1
           fi
-          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key}' "$INPUT_SKILLS_LOCK") || {
+          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key, pin: (.value.digest // .value.ref // "")}' "$INPUT_SKILLS_LOCK") || {
             echo "::error::No skills found in $INPUT_SKILLS_LOCK"
             exit 1
           }
           while IFS= read -r entry; do
             src=$(jq -r '.source' <<<"$entry")
             name=$(jq -r '.name' <<<"$entry")
-            install_one "$src" "$name"
+            pin=$(jq -r '.pin' <<<"$entry")
+            install_one "$src" "$name" "$pin"
           done <<<"$entries"
         fi
 

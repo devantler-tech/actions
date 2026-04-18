@@ -116,9 +116,69 @@ jobs:
             exit 1
           fi
 
+  test-from-lock-pinned:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Create skills-lock.json fixture (pinned to a historical commit)
+        shell: bash
+        run: |
+          cat > skills-lock.json <<'JSON'
+          {
+            "version": 1,
+            "skills": {
+              "git-commit": {
+                "source": "devantler-tech/skills",
+                "sourceType": "github",
+                "ref": "v0.1.1",
+                "digest": "6d50a7587e0ff372277dc4a33ccb8b8ea2ff7470"
+              }
+            }
+          }
+          JSON
+
+      - name: 🧪 Run setup-copilot-skills (manifest with pin)
+        id: setup
+        uses: ./setup-copilot-skills
+        with:
+          scope: project
+
+      - name: ✅ Verify pinned skill installed at the resolved commit
+        shell: bash
+        env:
+          INSTALLED: ${{ steps.setup.outputs.installed-skills }}
+        run: |
+          set -euo pipefail
+          if [[ "$INSTALLED" != *"devantler-tech/skills/git-commit"* ]]; then
+            echo "::error::Expected 'devantler-tech/skills/git-commit' in installed-skills output, got: $INSTALLED"
+            exit 1
+          fi
+          # gh skill writes source-tracking metadata into SKILL.md frontmatter.
+          # Confirm the pinned commit SHA is present so we know --pin was honored.
+          skill_md=$(find .agents/skills -name SKILL.md -path '*git-commit*' | head -1)
+          if [[ -z "$skill_md" ]]; then
+            echo "::error::Could not locate installed git-commit SKILL.md"
+            find .agents/skills -maxdepth 4 -type f
+            exit 1
+          fi
+          if ! grep -q '6d50a7587e0ff372277dc4a33ccb8b8ea2ff7470' "$skill_md"; then
+            echo "::error::Installed skill metadata does not reference the pinned commit:"
+            cat "$skill_md"
+            exit 1
+          fi
+
   status-check:
     if: ${{ always() && !cancelled() }}
-    needs: [test-from-lock, test-inline-source, test-missing-skills-input]
+    needs: [test-from-lock, test-from-lock-pinned, test-inline-source, test-missing-skills-input]
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -129,10 +189,11 @@ jobs:
       - name: Check status
         env:
           RESULT_LOCK: ${{ needs.test-from-lock.result }}
+          RESULT_LOCK_PINNED: ${{ needs.test-from-lock-pinned.result }}
           RESULT_INLINE: ${{ needs.test-inline-source.result }}
           RESULT_MISSING: ${{ needs.test-missing-skills-input.result }}
         run: |
-          results=("$RESULT_LOCK" "$RESULT_INLINE" "$RESULT_MISSING")
+          results=("$RESULT_LOCK" "$RESULT_LOCK_PINNED" "$RESULT_INLINE" "$RESULT_MISSING")
           for result in "${results[@]}"; do
             if [[ "$result" == "failure" ]]; then
               exit 1

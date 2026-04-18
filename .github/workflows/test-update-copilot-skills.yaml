@@ -1,0 +1,170 @@
+name: 🧪 update-copilot-skills
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-update-from-lock:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Create skills-lock.json fixture (no pin)
+        shell: bash
+        run: |
+          cat > skills-lock.json <<'JSON'
+          {
+            "version": 1,
+            "skills": {
+              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
+            }
+          }
+          JSON
+
+      - name: 🔄 Run update-copilot-skills
+        id: update
+        uses: ./update-copilot-skills
+
+      - name: ✅ Verify lockfile gained ref + digest
+        shell: bash
+        env:
+          CHANGED: ${{ steps.update.outputs.changed }}
+          UPDATED: ${{ steps.update.outputs.updated-skills }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANGED" != "true" ]]; then
+            echo "::error::Expected changed=true on first run, got: $CHANGED"
+            exit 1
+          fi
+          ref=$(jq -r '.skills["git-commit"].ref' skills-lock.json)
+          digest=$(jq -r '.skills["git-commit"].digest' skills-lock.json)
+          if [[ -z "$ref" || "$ref" == "null" ]]; then
+            echo "::error::ref was not written to lockfile"
+            exit 1
+          fi
+          if [[ ! "$digest" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::digest is not a 40-char SHA: $digest"
+            exit 1
+          fi
+          if [[ "$UPDATED" != *"git-commit"* ]]; then
+            echo "::error::updated-skills output did not mention git-commit: $UPDATED"
+            exit 1
+          fi
+
+  test-update-noop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧰 Create skills-lock.json fixture (no pin)
+        shell: bash
+        run: |
+          cat > skills-lock.json <<'JSON'
+          {
+            "version": 1,
+            "skills": {
+              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
+            }
+          }
+          JSON
+
+      - name: 🔄 First run (resolves and writes pins)
+        uses: ./update-copilot-skills
+
+      - name: 🔄 Second run (should be a no-op)
+        id: second
+        uses: ./update-copilot-skills
+
+      - name: ✅ Verify second run is a no-op
+        shell: bash
+        env:
+          CHANGED: ${{ steps.second.outputs.changed }}
+          UPDATED: ${{ steps.second.outputs.updated-skills }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANGED" != "false" ]]; then
+            echo "::error::Expected changed=false on second run, got: $CHANGED"
+            exit 1
+          fi
+          if [[ -n "${UPDATED//[[:space:]]/}" ]]; then
+            echo "::error::Expected empty updated-skills on no-op run, got: $UPDATED"
+            exit 1
+          fi
+
+  test-missing-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🔄 Run update-copilot-skills against missing file (expected to fail)
+        id: update
+        continue-on-error: true
+        uses: ./update-copilot-skills
+        with:
+          skills-lock: does-not-exist.json
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.update.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on missing lockfile, got: $OUTCOME"
+            exit 1
+          fi
+
+  status-check:
+    if: ${{ always() && !cancelled() }}
+    needs: [test-update-from-lock, test-update-noop, test-missing-lockfile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Check status
+        env:
+          RESULT_FROM_LOCK: ${{ needs.test-update-from-lock.result }}
+          RESULT_NOOP: ${{ needs.test-update-noop.result }}
+          RESULT_MISSING: ${{ needs.test-missing-lockfile.result }}
+        run: |
+          results=("$RESULT_FROM_LOCK" "$RESULT_NOOP" "$RESULT_MISSING")
+          for result in "${results[@]}"; do
+            if [[ "$result" == "failure" ]]; then
+              exit 1
+            fi
+          done
