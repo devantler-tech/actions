@@ -47,7 +47,7 @@ runs:
         case "$(uname -s)" in
           Linux)   os=linux;  ext=tar.gz ;;
           Darwin)  os=macOS;  ext=zip ;;
-          *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
+          *) echo "::error::Automatic gh install is only supported on Linux and macOS. On $(uname -s) (e.g. Windows), preinstall gh >= ${REQUIRED} on the runner before this step."; exit 1 ;;
         esac
         case "$(uname -m)" in
           x86_64|amd64) arch=amd64 ;;
@@ -103,12 +103,21 @@ runs:
         # Echoes "<ref> <sha>" on stdout.
         resolve_ref() {
           local source="$1"
-          local ref sha
-          if release_json=$(gh api "repos/${source}/releases/latest" 2>/dev/null); then
+          local ref sha release_json release_error_file release_error_message
+          release_error_file=$(mktemp)
+          if release_json=$(gh api "repos/${source}/releases/latest" 2>"$release_error_file"); then
             ref=$(jq -r '.tag_name' <<<"$release_json")
           else
-            ref=$(gh api "repos/${source}" --jq '.default_branch')
+            release_error_message=$(tr '\n' ' ' <"$release_error_file")
+            if grep -qiE '404|Not Found' "$release_error_file"; then
+              ref=$(gh api "repos/${source}" --jq '.default_branch')
+            else
+              rm -f "$release_error_file"
+              echo "::error::Failed to resolve latest release for ${source}: ${release_error_message}"
+              return 1
+            fi
           fi
+          rm -f "$release_error_file"
           if [ -z "$ref" ] || [ "$ref" = "null" ]; then
             echo "::error::Could not resolve a ref for ${source}"
             return 1

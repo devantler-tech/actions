@@ -81,7 +81,7 @@ steps:
       source: devantler-tech/skills
       skills: git-commit
       agent: github-copilot
-      scope: repo
+      scope: user
 ```
 
 ### Inside a scheduled update workflow
