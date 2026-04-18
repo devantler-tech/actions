@@ -10,7 +10,7 @@ Install agent skills with the [`gh skill`](https://github.com/cli/cli) CLI — f
 | `source` | Single skills repo (e.g. `devantler-tech/skills`). When set, `skills` is required and `skills-lock` is ignored. | ❌ | - |
 | `skills` | Newline- or comma-separated skill names to install from `source` | ❌ | - |
 | `agent` | Value passed to `gh skill install --agent` | ❌ | `github-copilot` |
-| `scope` | Value passed to `gh skill install --scope` (`user` or `repo`) | ❌ | `user` |
+| `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `user` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
 
@@ -43,6 +43,21 @@ A `skills-lock.json` has the following shape:
 }
 ```
 
+Entries may also carry an optional `ref` (release tag or branch name) and `digest` (full commit SHA). When either is present, this action installs at the pinned ref via `gh skill install --pin <digest|ref>` (`digest` wins when both are set), making installs reproducible:
+
+```json
+{
+  "git-commit": {
+    "source": "devantler-tech/skills",
+    "sourceType": "github",
+    "ref": "v0.1.1",
+    "digest": "6d50a758e1f2b0c4d9a3a8c0a0a0a0a0a0a0a0a0"
+  }
+}
+```
+
+Use the sibling [`update-copilot-skills`](../update-copilot-skills/README.md) action to populate and bump these pins from a scheduled workflow.
+
 ### From an inline list of skills
 
 ```yaml
@@ -71,7 +86,7 @@ steps:
 
 ### Inside a scheduled update workflow
 
-For a batteries-included scheduled updater that opens a PR with any skill changes, use the companion reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-copilot-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-copilot-skills.yaml).
+For a batteries-included scheduled updater that opens a PR with any skill changes, use the companion reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-copilot-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-copilot-skills.yaml). To resolve and pin the latest skill refs back into `skills-lock.json` (so consumers get reproducible installs), use [`update-copilot-skills`](../update-copilot-skills/README.md).
 
 ## Requirements
 

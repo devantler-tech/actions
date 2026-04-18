@@ -1,0 +1,176 @@
+name: Update Copilot Skills
+description: Resolve the latest ref + commit SHA for each skill in skills-lock.json and pin them back into the lockfile
+author: devantler-tech
+inputs:
+  skills-lock:
+    description: Path to the skills-lock.json manifest to update
+    required: false
+    default: skills-lock.json
+  gh-version:
+    description: Minimum required `gh` version (must support `gh skill`)
+    required: false
+    default: 2.90.0
+  github-token:
+    description: GitHub token exposed to `gh` as `GH_TOKEN`
+    required: false
+    default: ${{ github.token }}
+outputs:
+  changed:
+    description: "`true` when the lockfile was modified, `false` otherwise"
+    value: ${{ steps.resolve.outputs.changed }}
+  updated-skills:
+    description: Newline-separated list of `name old-digest -> new-digest` lines for skills whose pins changed
+    value: ${{ steps.resolve.outputs.updated-skills }}
+runs:
+  using: composite
+  steps:
+    # Mirror of the gh bootstrap in setup-copilot-skills/action.yaml.
+    # Keep these two blocks in sync — composite actions cannot share steps.
+    - name: 🔧 Ensure gh >= required version
+      shell: bash
+      env:
+        REQUIRED: ${{ inputs.gh-version }}
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
+          current=$(gh --version | awk '/^gh version /{print $3; exit}')
+          if [ -z "$current" ]; then
+            echo "::error::Could not determine the installed gh version from 'gh --version' output."
+            exit 1
+          fi
+          if printf '%s\n%s\n' "$REQUIRED" "$current" | sort -V -C; then
+            echo "Installed gh ($current) already supports 'gh skill'."
+            exit 0
+          fi
+        fi
+
+        case "$(uname -s)" in
+          Linux)   os=linux;  ext=tar.gz ;;
+          Darwin)  os=macOS;  ext=zip ;;
+          *) echo "::error::Unsupported OS: $(uname -s)"; exit 1 ;;
+        esac
+        case "$(uname -m)" in
+          x86_64|amd64) arch=amd64 ;;
+          arm64|aarch64) arch=arm64 ;;
+          *) echo "::error::Unsupported arch: $(uname -m)"; exit 1 ;;
+        esac
+
+        tmp=$(mktemp -d)
+        asset="gh_${REQUIRED}_${os}_${arch}.${ext}"
+        url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
+        echo "Downloading $url"
+        if [ "$ext" = "zip" ]; then
+          if ! command -v unzip >/dev/null 2>&1; then
+            echo "::error::unzip is required to extract the macOS gh release archive but is not available on PATH."
+            exit 1
+          fi
+          curl -fsSL -o "$tmp/$asset" "$url"
+          unzip -q "$tmp/$asset" -d "$tmp"
+        else
+          curl -fsSL "$url" | tar -xzC "$tmp"
+        fi
+        install_dir="${RUNNER_TEMP:-/tmp}/update-copilot-skills/bin"
+        mkdir -p "$install_dir"
+        install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
+        echo "$install_dir" >> "$GITHUB_PATH"  # zizmor: ignore[github-env]
+        export PATH="$install_dir:$PATH"
+        hash -r
+        gh --version
+        if ! gh skill --help >/dev/null 2>&1; then
+          echo "::error::Installed gh still does not expose the 'skill' command."
+          exit 1
+        fi
+
+    - name: 🔄 Resolve and pin latest skill refs
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_SKILLS_LOCK: ${{ inputs.skills-lock }}
+      run: |
+        set -euo pipefail
+
+        if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
+          echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
+          exit 1
+        fi
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "::error::jq is required by update-copilot-skills but is not installed on this runner."
+          exit 1
+        fi
+
+        # Resolve latest tag (release) or default branch HEAD for a source repo.
+        # Echoes "<ref> <sha>" on stdout.
+        resolve_ref() {
+          local source="$1"
+          local ref sha
+          if release_json=$(gh api "repos/${source}/releases/latest" 2>/dev/null); then
+            ref=$(jq -r '.tag_name' <<<"$release_json")
+          else
+            ref=$(gh api "repos/${source}" --jq '.default_branch')
+          fi
+          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+            echo "::error::Could not resolve a ref for ${source}"
+            return 1
+          fi
+          sha=$(gh api "repos/${source}/commits/${ref}" --jq '.sha')
+          if [ -z "$sha" ] || [ "$sha" = "null" ]; then
+            echo "::error::Could not resolve a commit SHA for ${source}@${ref}"
+            return 1
+          fi
+          printf '%s %s\n' "$ref" "$sha"
+        }
+
+        names=$(jq -e -r '.skills | keys[]' "$INPUT_SKILLS_LOCK") || {
+          echo "::error::No skills found in $INPUT_SKILLS_LOCK"
+          exit 1
+        }
+
+        updated_file=$(mktemp)
+        lock_dir=$(dirname -- "$INPUT_SKILLS_LOCK")
+        tmp_lock=$(mktemp "${lock_dir}/.skills-lock.XXXXXXXX")
+        cp "$INPUT_SKILLS_LOCK" "$tmp_lock"
+
+        while IFS= read -r name; do
+          [ -z "$name" ] && continue
+          source=$(jq -r --arg n "$name" '.skills[$n].source' "$tmp_lock")
+          if [ -z "$source" ] || [ "$source" = "null" ]; then
+            echo "::error::Skill '$name' is missing 'source' in $INPUT_SKILLS_LOCK"
+            exit 1
+          fi
+          old_digest=$(jq -r --arg n "$name" '.skills[$n].digest // ""' "$tmp_lock")
+          echo "Resolving latest ref for ${source} (skill: ${name})..."
+          if ! resolved=$(resolve_ref "$source"); then
+            echo "::error::Failed to resolve latest ref for '${source}' (skill: '${name}')"
+            exit 1
+          fi
+          read -r new_ref new_digest <<<"$resolved"
+          if [ -z "$new_ref" ] || [ -z "$new_digest" ]; then
+            echo "::error::Resolved ref for '${source}' (skill: '${name}') was incomplete: '${resolved}'"
+            exit 1
+          fi
+          echo "  -> ref=${new_ref} digest=${new_digest}"
+          jq --arg n "$name" --arg ref "$new_ref" --arg digest "$new_digest" \
+            '.skills[$n].ref = $ref | .skills[$n].digest = $digest' \
+            "$tmp_lock" > "${tmp_lock}.next"
+          mv "${tmp_lock}.next" "$tmp_lock"
+          if [ "$old_digest" != "$new_digest" ]; then
+            printf '%s %s -> %s\n' "$name" "${old_digest:-<unset>}" "$new_digest" >> "$updated_file"
+          fi
+        done <<<"$names"
+
+        if cmp -s "$INPUT_SKILLS_LOCK" "$tmp_lock"; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "No changes to $INPUT_SKILLS_LOCK"
+        else
+          mv "$tmp_lock" "$INPUT_SKILLS_LOCK"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "Updated $INPUT_SKILLS_LOCK"
+        fi
+
+        {
+          echo "updated-skills<<EOF"
+          [ -s "$updated_file" ] && cat "$updated_file"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        rm -f "$updated_file" "$tmp_lock" "${tmp_lock}.next" 2>/dev/null || true

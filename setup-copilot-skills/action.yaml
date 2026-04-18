@@ -19,7 +19,7 @@ inputs:
     required: false
     default: github-copilot
   scope:
-    description: Value passed to `gh skill install --scope` (`user` or `repo`)
+    description: Value passed to `gh skill install --scope` (`project` or `user`)
     required: false
     default: user
   gh-version:
@@ -41,7 +41,7 @@ runs:
       shell: bash
       env:
         REQUIRED: ${{ inputs.gh-version }}
-      run: |
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
           current=$(gh --version | awk '/^gh version /{print $3; exit}')
@@ -83,7 +83,7 @@ runs:
         install_dir="${RUNNER_TEMP:-/tmp}/setup-copilot-skills/bin"
         mkdir -p "$install_dir"
         install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
-        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "$install_dir" >> "$GITHUB_PATH"  # zizmor: ignore[github-env]
         export PATH="$install_dir:$PATH"
         hash -r
         gh --version
@@ -107,9 +107,14 @@ runs:
         installed_file=$(mktemp)
 
         install_one() {
-          local src="$1" name="$2"
-          echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
-          gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
+          local src="$1" name="$2" pin="${3:-}"
+          if [ -n "$pin" ]; then
+            echo "Installing ${src}/${name} pinned to ${pin} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE" --pin "$pin"
+          else
+            echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
+          fi
           printf '%s/%s\n' "$src" "$name" >> "$installed_file"
         }
 
@@ -132,14 +137,15 @@ runs:
             echo "::error::jq is required when using the 'skills-lock' input, but it is not installed on this runner."
             exit 1
           fi
-          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key}' "$INPUT_SKILLS_LOCK") || {
+          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key, pin: (.value.digest // .value.ref // "")}' "$INPUT_SKILLS_LOCK") || {
             echo "::error::No skills found in $INPUT_SKILLS_LOCK"
             exit 1
           }
           while IFS= read -r entry; do
             src=$(jq -r '.source' <<<"$entry")
             name=$(jq -r '.name' <<<"$entry")
-            install_one "$src" "$name"
+            pin=$(jq -r '.pin' <<<"$entry")
+            install_one "$src" "$name" "$pin"
           done <<<"$entries"
         fi
 
