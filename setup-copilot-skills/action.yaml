@@ -41,7 +41,7 @@ runs:
       shell: bash
       env:
         REQUIRED: ${{ inputs.gh-version }}
-      run: |
+      run: | # zizmor: ignore[github-env]
         set -euo pipefail
         if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
           current=$(gh --version | awk '/^gh version /{print $3; exit}')
