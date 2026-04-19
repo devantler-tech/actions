@@ -1,21 +1,16 @@
 # Update Copilot Skills
 
-Resolve the latest ref + commit SHA for each skill in `skills-lock.json` and pin them back into the lockfile so subsequent installs are reproducible. Pairs with [`setup-copilot-skills`](../setup-copilot-skills/README.md).
+Run [`gh skill update --all`](https://github.blog/changelog/2026-04-16-manage-agent-skills-with-github-cli/) against installed skills and report any changes. Pairs with [`setup-copilot-skills`](../setup-copilot-skills/README.md).
 
-For each skill the action:
-
-1. Calls `gh api repos/<source>/releases/latest` for the newest release tag.
-2. Falls back to the repository's default branch when no release exists.
-3. Resolves the commit SHA for that ref via `gh api repos/<source>/commits/<ref>`.
-4. Writes the resolved `ref` and `digest` (full commit SHA) back into the lockfile entry.
-
-Run it from a scheduled workflow — the diff on `skills-lock.json` is the renovate-style "version bump" PR.
+The `github-*` frontmatter that `gh skill install` injects into each `SKILL.md` (github-repo, github-path, github-ref, github-tree-sha) is the source of truth — this action asks the CLI to refresh those files against their upstreams, then reports whether any of them changed. No lockfile.
 
 ## Inputs
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `skills-lock` | Path to the `skills-lock.json` manifest to update | ❌ | `skills-lock.json` |
+| `dir` | Directory to scan for installed skills (passed to `gh skill update --dir`) | ❌ | `.` |
+| `dry-run` | When `true`, pass `--dry-run` (report without modifying files) | ❌ | `false` |
+| `unpin` | When `true`, pass `--unpin` (clear pinned versions and include pinned skills) | ❌ | `false` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
 
@@ -23,12 +18,12 @@ Run it from a scheduled workflow — the diff on `skills-lock.json` is the renov
 
 | Name | Description |
 |------|-------------|
-| `changed` | `true` when the lockfile was modified, `false` otherwise |
-| `updated-skills` | Newline-separated list of `name old-digest -> new-digest` lines for skills whose pins changed |
+| `changed` | `true` when at least one `SKILL.md` was modified, `false` otherwise |
+| `updated-skills` | Cleaned stdout from `gh skill update --all` (blank when nothing changed) |
 
 ## Usage
 
-### Scheduled lockfile bump
+### Scheduled update PR
 
 ```yaml
 name: 🔄 Update Copilot Skills
@@ -51,47 +46,42 @@ jobs:
         with:
           persist-credentials: true
 
-      - id: bump
-        uses: devantler-tech/actions/update-copilot-skills@main
+      - id: update
+        uses: devantler-tech/actions/update-copilot-skills@v2
+        with:
+          dir: .agents/skills
 
-      - if: steps.bump.outputs.changed == 'true'
+      - if: steps.update.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(deps): update copilot skills"
           title: "chore(deps): update copilot skills"
           body: |
-            Automated update of Copilot skills.
-
             ```
-            ${{ steps.bump.outputs.updated-skills }}
+            ${{ steps.update.outputs.updated-skills }}
             ```
           branch: deps/copilot-skills-update
           labels: dependencies,automation
 ```
 
-For a batteries-included version of the above, prefer the reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-copilot-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-copilot-skills.yaml).
+For a batteries-included version of the above, use the reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-copilot-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-copilot-skills.yaml).
 
-## Lockfile shape
+## Migrating from v1
 
-After the first run, entries gain `ref` and `digest`:
+v1 resolved refs against a `skills-lock.json` manifest and wrote pins back into it. v2 delegates to `gh skill update --all` directly, operating on the installed `SKILL.md` files themselves:
 
-```json
-{
-  "version": 1,
-  "skills": {
-    "git-commit": {
-      "source": "devantler-tech/skills",
-      "sourceType": "github",
-      "ref": "v0.1.1",
-      "digest": "6d50a758e1f2b0c4d9a3a8c0a0a0a0a0a0a0a0a0"
-    }
-  }
-}
+```diff
+ - id: update
+-  uses: devantler-tech/actions/update-copilot-skills@v1
+-  with:
+-    skills-lock: skills-lock.json
++  uses: devantler-tech/actions/update-copilot-skills@v2
++  with:
++    dir: .agents/skills
 ```
 
-`setup-copilot-skills` honors `digest` (preferred) or `ref` via `gh skill install --pin`, so once an entry is pinned, every subsequent CI install is reproducible.
+Delete any `skills-lock.json` in your repo — the upstream source/ref/tree SHA now lives in each skill's frontmatter.
 
 ## Requirements
 
-- `gh` **≥ 2.90.0** on the runner. Same bootstrap behavior as `setup-copilot-skills`: if the runner image ships an older `gh`, the action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.
-- `jq` (pre-installed on GitHub-hosted runners).
+- `gh` **≥ 2.90.0** on the runner. Same bootstrap behaviour as `setup-copilot-skills`: if the runner image ships an older `gh`, the action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.

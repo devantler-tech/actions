@@ -1,19 +1,13 @@
 name: Setup Copilot Skills
-description: Install agent skills with the gh skill CLI, from a skills-lock.json manifest or an inline source/skills list
+description: Install agent skills with the gh skill CLI from a newline list of "<owner/repo> <skill>[@pin]" entries
 author: devantler-tech
 inputs:
-  skills-lock:
-    description: Path to a skills-lock.json manifest (used when `source` is empty)
-    required: false
-    default: skills-lock.json
-  source:
-    description: Single skills repo (e.g. `devantler-tech/skills`). When set, `skills` is required and `skills-lock` is ignored.
-    required: false
-    default: ""
   skills:
-    description: Newline- or comma-separated skill names to install from `source`. Ignored when `source` is empty.
-    required: false
-    default: ""
+    description: |
+      Newline-separated list of skills to install. Each non-blank, non-comment line has the form
+      `<owner/repo> <skill>[@pin]`, where `@pin` is an optional tag, branch, or commit SHA. Blank
+      lines and lines starting with `#` are ignored.
+    required: true
   agent:
     description: Value passed to `gh skill install --agent`
     required: false
@@ -32,7 +26,7 @@ inputs:
     default: ${{ github.token }}
 outputs:
   installed-skills:
-    description: Newline-separated list of `source/skill-name` pairs that were installed
+    description: Newline-separated list of `source/skill-name[@pin]` entries that were installed
     value: ${{ steps.install.outputs.installed-skills }}
 runs:
   using: composite
@@ -97,57 +91,53 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        INPUT_SOURCE: ${{ inputs.source }}
         INPUT_SKILLS: ${{ inputs.skills }}
-        INPUT_SKILLS_LOCK: ${{ inputs.skills-lock }}
         INPUT_AGENT: ${{ inputs.agent }}
         INPUT_SCOPE: ${{ inputs.scope }}
       run: |
         set -euo pipefail
-        installed_file=$(mktemp)
 
-        install_one() {
-          local src="$1" name="$2" pin="${3:-}"
+        if [ -z "${INPUT_SKILLS//[[:space:]]/}" ]; then
+          echo "::error::'skills' input is empty. Provide a newline-separated list of '<owner/repo> <skill>[@pin]' entries."
+          exit 1
+        fi
+
+        installed_file=$(mktemp)
+        status=0
+
+        while IFS= read -r raw || [ -n "$raw" ]; do
+          line=${raw%%#*}
+          line=$(printf '%s' "$line" | awk '{$1=$1;print}')
+          [ -z "$line" ] && continue
+
+          # shellcheck disable=SC2086
+          set -- $line
+          if [ "$#" -lt 2 ]; then
+            echo "::error::Invalid skills entry: '$raw' — expected '<owner/repo> <skill>[@pin]'"
+            status=1
+            continue
+          fi
+          src="$1"
+          spec="$2"
+          pin=""
+          name="$spec"
+          case "$spec" in
+            *@*) name=${spec%@*}; pin=${spec#*@} ;;
+          esac
+
           if [ -n "$pin" ]; then
-            echo "Installing ${src}/${name} pinned to ${pin} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
+            echo "Installing ${src}/${name}@${pin} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
             gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE" --pin "$pin"
           else
             echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
             gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
           fi
-          printf '%s/%s\n' "$src" "$name" >> "$installed_file"
-        }
-
-        if [ -n "$INPUT_SOURCE" ]; then
-          if [ -z "$INPUT_SKILLS" ]; then
-            echo "::error::'skills' input is required when 'source' is set."
-            exit 1
+          if [ -n "$pin" ]; then
+            printf '%s/%s@%s\n' "$src" "$name" "$pin" >> "$installed_file"
+          else
+            printf '%s/%s\n' "$src" "$name" >> "$installed_file"
           fi
-          printf '%s' "$INPUT_SKILLS" | tr ',' '\n' | while IFS= read -r name; do
-            name=$(printf '%s' "$name" | awk '{$1=$1;print}')
-            [ -z "$name" ] && continue
-            install_one "$INPUT_SOURCE" "$name"
-          done
-        else
-          if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
-            echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
-            exit 1
-          fi
-          if ! command -v jq >/dev/null 2>&1; then
-            echo "::error::jq is required when using the 'skills-lock' input, but it is not installed on this runner."
-            exit 1
-          fi
-          entries=$(jq -e -c '.skills | to_entries[] | {source: .value.source, name: .key, pin: (.value.digest // .value.ref // "")}' "$INPUT_SKILLS_LOCK") || {
-            echo "::error::No skills found in $INPUT_SKILLS_LOCK"
-            exit 1
-          }
-          while IFS= read -r entry; do
-            src=$(jq -r '.source' <<<"$entry")
-            name=$(jq -r '.name' <<<"$entry")
-            pin=$(jq -r '.pin' <<<"$entry")
-            install_one "$src" "$name" "$pin"
-          done <<<"$entries"
-        fi
+        done <<<"$INPUT_SKILLS"
 
         {
           echo "installed-skills<<EOF"
@@ -155,3 +145,4 @@ runs:
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
         rm -f "$installed_file"
+        exit "$status"
