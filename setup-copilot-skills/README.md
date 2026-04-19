@@ -1,14 +1,14 @@
 # Setup Copilot Skills
 
-Install agent skills with the [`gh skill`](https://github.com/cli/cli) CLI — from a `skills-lock.json` manifest or an inline source/skills list. Works with any `gh skill`-compatible skills repository (e.g. [`devantler-tech/skills`](https://github.com/devantler-tech/skills)).
+Install agent skills with the [`gh skill`](https://github.blog/changelog/2026-04-16-manage-agent-skills-with-github-cli/) CLI from a newline-separated list of `<owner/repo> <skill>[@pin]` entries.
+
+`gh skill install` writes upstream provenance (`metadata.github-*`) into each installed `SKILL.md`, so no lockfile is required — checked-in skills are self-describing and [`update-copilot-skills`](../update-copilot-skills/README.md) or `gh skill update --all` picks up drift natively.
 
 ## Inputs
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `skills-lock` | Path to a `skills-lock.json` manifest (used when `source` is empty) | ❌ | `skills-lock.json` |
-| `source` | Single skills repo (e.g. `devantler-tech/skills`). When set, `skills` is required and `skills-lock` is ignored. | ❌ | - |
-| `skills` | Newline- or comma-separated skill names to install from `source` | ❌ | - |
+| `skills` | Newline list of `<owner/repo> <skill>[@pin]`. `@pin` is an optional tag/branch/SHA. `#` comments and blank lines are allowed. | ✅ | — |
 | `agent` | Value passed to `gh skill install --agent` | ❌ | `github-copilot` |
 | `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `project` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
@@ -18,80 +18,42 @@ Install agent skills with the [`gh skill`](https://github.com/cli/cli) CLI — f
 
 | Name | Description |
 |------|-------------|
-| `installed-skills` | Newline-separated list of `source/skill-name` pairs that were installed |
+| `installed-skills` | Newline-separated list of `source/skill-name[@pin]` entries that were installed |
 
 ## Usage
-
-### From a `skills-lock.json` manifest (recommended)
 
 ```yaml
 steps:
   - uses: actions/checkout@v5
-  - name: Install Copilot skills
-    uses: devantler-tech/actions/setup-copilot-skills@main
-```
-
-A `skills-lock.json` has the following shape:
-
-```json
-{
-  "version": 1,
-  "skills": {
-    "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" },
-    "gh-cli":     { "source": "devantler-tech/skills", "sourceType": "github" }
-  }
-}
-```
-
-Entries may also carry an optional `ref` (release tag or branch name) and `digest` (full commit SHA). When either is present, this action installs at the pinned ref via `gh skill install --pin <digest|ref>` (`digest` wins when both are set), making installs reproducible:
-
-```json
-{
-  "git-commit": {
-    "source": "devantler-tech/skills",
-    "sourceType": "github",
-    "ref": "v0.1.1",
-    "digest": "6d50a758e1f2b0c4d9a3a8c0a0a0a0a0a0a0a0a0"
-  }
-}
-```
-
-Use the sibling [`update-copilot-skills`](../update-copilot-skills/README.md) action to populate and bump these pins from a scheduled workflow.
-
-### From an inline list of skills
-
-```yaml
-steps:
-  - name: Install specific skills
-    uses: devantler-tech/actions/setup-copilot-skills@main
+  - uses: devantler-tech/actions/setup-copilot-skills@v2
     with:
-      source: devantler-tech/skills
       skills: |
-        git-commit
-        gh-cli
-        refactor
+        github/awesome-copilot git-commit
+        github/awesome-copilot gh-cli@v1.2.0
+        fluxcd/agent-skills gitops-knowledge
+        # Pin with @<tag|branch|sha> or omit to track the upstream default branch.
 ```
 
-### Customising agent and scope
+## Migrating from v1
 
-```yaml
-steps:
-  - uses: devantler-tech/actions/setup-copilot-skills@main
-    with:
-      source: devantler-tech/skills
-      skills: git-commit
-      agent: github-copilot
-      # Default is `project` (writes inside the checkout, suitable for CI and
-      # scheduled-update workflows). Use `user` for local dev installs that
-      # should land in the runner's home directory.
-      scope: user
+v1 took either a `skills-lock.json` or a single `source` + `skills` list. v2 drops both inputs in favour of one flat `skills` list so consumers can mix upstreams freely:
+
+```diff
+ - uses: devantler-tech/actions/setup-copilot-skills@v1
+   with:
+-    source: devantler-tech/skills
+-    skills: |
+-      git-commit
+-      gh-cli
++ uses: devantler-tech/actions/setup-copilot-skills@v2
++   with:
++     skills: |
++       github/awesome-copilot git-commit
++       github/awesome-copilot gh-cli
 ```
 
-### Inside a scheduled update workflow
-
-For a batteries-included scheduled updater that opens a PR with any skill changes, use the companion reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-copilot-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-copilot-skills.yaml). To resolve and pin the latest skill refs back into `skills-lock.json` (so consumers get reproducible installs), use [`update-copilot-skills`](../update-copilot-skills/README.md).
+Reproducible installs no longer need a lockfile — pin each line with `@<sha>` (or `@<tag>`) and `gh skill update --all` (via the sibling [`update-copilot-skills`](../update-copilot-skills/README.md) action) edits those pins in place when upstream advances.
 
 ## Requirements
 
 - `gh` **≥ 2.90.0** on the runner (with `gh skill` support). If the runner image ships an older `gh`, this action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.
-- `jq` (pre-installed on GitHub-hosted runners) when using a `skills-lock.json`.

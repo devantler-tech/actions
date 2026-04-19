@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  test-update-from-lock:
+  test-update-noop:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -26,49 +26,37 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧰 Create skills-lock.json fixture (no pin)
-        shell: bash
-        run: |
-          cat > skills-lock.json <<'JSON'
-          {
-            "version": 1,
-            "skills": {
-              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
-            }
-          }
-          JSON
+      - name: 📦 Install a skill pinned to a historical commit
+        uses: ./setup-copilot-skills
+        with:
+          skills: |
+            github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
 
-      - name: 🔄 Run update-copilot-skills
+      - name: 🔄 Run update-copilot-skills (should be a no-op against a pinned skill)
         id: update
         uses: ./update-copilot-skills
+        with:
+          dir: .agents/skills
 
-      - name: ✅ Verify lockfile gained ref + digest
+      - name: ✅ Verify no-op
         shell: bash
         env:
           CHANGED: ${{ steps.update.outputs.changed }}
           UPDATED: ${{ steps.update.outputs.updated-skills }}
         run: |
           set -euo pipefail
-          if [[ "$CHANGED" != "true" ]]; then
-            echo "::error::Expected changed=true on first run, got: $CHANGED"
+          if [[ "$CHANGED" != "false" ]]; then
+            echo "::error::Expected changed=false when all skills are pinned, got: $CHANGED"
+            echo "updated-skills output: $UPDATED"
             exit 1
           fi
-          ref=$(jq -r '.skills["git-commit"].ref' skills-lock.json)
-          digest=$(jq -r '.skills["git-commit"].digest' skills-lock.json)
-          if [[ -z "$ref" || "$ref" == "null" ]]; then
-            echo "::error::ref was not written to lockfile"
-            exit 1
-          fi
-          if [[ ! "$digest" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::digest is not a 40-char SHA: $digest"
-            exit 1
-          fi
-          if [[ "$UPDATED" != *"git-commit"* ]]; then
-            echo "::error::updated-skills output did not mention git-commit: $UPDATED"
+          if ! grep -q '8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c' .agents/skills/git-commit/SKILL.md; then
+            echo "::error::Pinned commit SHA was removed from SKILL.md metadata"
+            cat .agents/skills/git-commit/SKILL.md
             exit 1
           fi
 
-  test-update-noop:
+  test-update-dry-run:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -81,42 +69,38 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧰 Create skills-lock.json fixture (no pin)
+      - name: 📦 Install a skill pinned to a historical commit
+        uses: ./setup-copilot-skills
+        with:
+          skills: |
+            github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
+
+      - name: 🔢 Snapshot SKILL.md hash before
+        id: before
         shell: bash
-        run: |
-          cat > skills-lock.json <<'JSON'
-          {
-            "version": 1,
-            "skills": {
-              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
-            }
-          }
-          JSON
+        run: echo "sha=$(shasum -a 256 .agents/skills/git-commit/SKILL.md | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
-      - name: 🔄 First run (resolves and writes pins)
+      - name: 🔄 Run update-copilot-skills with --unpin --dry-run
+        id: update
         uses: ./update-copilot-skills
+        with:
+          dir: .agents/skills
+          unpin: "true"
+          dry-run: "true"
 
-      - name: 🔄 Second run (should be a no-op)
-        id: second
-        uses: ./update-copilot-skills
-
-      - name: ✅ Verify second run is a no-op
+      - name: ✅ Verify SKILL.md was not modified on disk
         shell: bash
         env:
-          CHANGED: ${{ steps.second.outputs.changed }}
-          UPDATED: ${{ steps.second.outputs.updated-skills }}
+          BEFORE: ${{ steps.before.outputs.sha }}
         run: |
           set -euo pipefail
-          if [[ "$CHANGED" != "false" ]]; then
-            echo "::error::Expected changed=false on second run, got: $CHANGED"
-            exit 1
-          fi
-          if [[ -n "${UPDATED//[[:space:]]/}" ]]; then
-            echo "::error::Expected empty updated-skills on no-op run, got: $UPDATED"
+          after=$(shasum -a 256 .agents/skills/git-commit/SKILL.md | awk '{print $1}')
+          if [[ "$BEFORE" != "$after" ]]; then
+            echo "::error::SKILL.md was modified despite --dry-run (before=$BEFORE after=$after)"
             exit 1
           fi
 
-  test-missing-lockfile:
+  test-missing-dir:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -129,12 +113,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🔄 Run update-copilot-skills against missing file (expected to fail)
+      - name: 🔄 Run update-copilot-skills against a missing dir (expected to fail)
         id: update
         continue-on-error: true
         uses: ./update-copilot-skills
         with:
-          skills-lock: does-not-exist.json
+          dir: does-not-exist
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -142,13 +126,13 @@ jobs:
           OUTCOME: ${{ steps.update.outcome }}
         run: |
           if [[ "$OUTCOME" != "failure" ]]; then
-            echo "::error::Expected the action to fail on missing lockfile, got: $OUTCOME"
+            echo "::error::Expected the action to fail on a missing directory, got: $OUTCOME"
             exit 1
           fi
 
   status-check:
     if: ${{ always() && !cancelled() }}
-    needs: [test-update-from-lock, test-update-noop, test-missing-lockfile]
+    needs: [test-update-noop, test-update-dry-run, test-missing-dir]
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -158,12 +142,11 @@ jobs:
 
       - name: Check status
         env:
-          RESULT_FROM_LOCK: ${{ needs.test-update-from-lock.result }}
           RESULT_NOOP: ${{ needs.test-update-noop.result }}
-          RESULT_MISSING: ${{ needs.test-missing-lockfile.result }}
+          RESULT_DRY: ${{ needs.test-update-dry-run.result }}
+          RESULT_MISSING: ${{ needs.test-missing-dir.result }}
         run: |
-          results=("$RESULT_FROM_LOCK" "$RESULT_NOOP" "$RESULT_MISSING")
-          for result in "${results[@]}"; do
+          for result in "$RESULT_NOOP" "$RESULT_DRY" "$RESULT_MISSING"; do
             if [[ "$result" == "failure" ]]; then
               exit 1
             fi

@@ -1,11 +1,19 @@
 name: Update Copilot Skills
-description: Resolve the latest ref + commit SHA for each skill in skills-lock.json and pin them back into the lockfile
+description: Run `gh skill update --all` against installed skills and report any changes
 author: devantler-tech
 inputs:
-  skills-lock:
-    description: Path to the skills-lock.json manifest to update
+  dir:
+    description: Directory to scan for installed skills (passed to `gh skill update --dir`)
     required: false
-    default: skills-lock.json
+    default: "."
+  dry-run:
+    description: When `true`, pass `--dry-run` to `gh skill update` (report without modifying files)
+    required: false
+    default: "false"
+  unpin:
+    description: When `true`, pass `--unpin` to `gh skill update` (clear pins and include pinned skills)
+    required: false
+    default: "false"
   gh-version:
     description: Minimum required `gh` version (must support `gh skill`)
     required: false
@@ -16,11 +24,11 @@ inputs:
     default: ${{ github.token }}
 outputs:
   changed:
-    description: "`true` when the lockfile was modified, `false` otherwise"
-    value: ${{ steps.resolve.outputs.changed }}
+    description: "`true` when at least one SKILL.md was modified, `false` otherwise"
+    value: ${{ steps.update.outputs.changed }}
   updated-skills:
-    description: Newline-separated list of `name old-digest -> new-digest` lines for skills whose pins changed
-    value: ${{ steps.resolve.outputs.updated-skills }}
+    description: Raw stdout from `gh skill update --all` (blank when nothing changed)
+    value: ${{ steps.update.outputs.updated-skills }}
 runs:
   using: composite
   steps:
@@ -81,105 +89,67 @@ runs:
           exit 1
         fi
 
-    - name: 🔄 Resolve and pin latest skill refs
-      id: resolve
+    - name: 🔄 Update skills
+      id: update
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        INPUT_SKILLS_LOCK: ${{ inputs.skills-lock }}
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        INPUT_UNPIN: ${{ inputs.unpin }}
       run: |
         set -euo pipefail
 
-        if [ ! -f "$INPUT_SKILLS_LOCK" ]; then
-          echo "::error::skills-lock file not found: $INPUT_SKILLS_LOCK"
-          exit 1
-        fi
-        if ! command -v jq >/dev/null 2>&1; then
-          echo "::error::jq is required by update-copilot-skills but is not installed on this runner."
+        if [ ! -d "$INPUT_DIR" ]; then
+          echo "::error::Directory not found: $INPUT_DIR"
           exit 1
         fi
 
-        # Resolve latest tag (release) or default branch HEAD for a source repo.
-        # Echoes "<ref> <sha>" on stdout.
-        resolve_ref() {
-          local source="$1"
-          local ref sha release_json release_error_file release_error_message
-          release_error_file=$(mktemp)
-          if release_json=$(gh api "repos/${source}/releases/latest" 2>"$release_error_file"); then
-            ref=$(jq -r '.tag_name' <<<"$release_json")
-          else
-            release_error_message=$(tr '\n' ' ' <"$release_error_file")
-            if grep -qiE '404|Not Found' "$release_error_file"; then
-              ref=$(gh api "repos/${source}" --jq '.default_branch')
-            else
-              rm -f "$release_error_file"
-              echo "::error::Failed to resolve latest release for ${source}: ${release_error_message}"
-              return 1
-            fi
-          fi
-          rm -f "$release_error_file"
-          if [ -z "$ref" ] || [ "$ref" = "null" ]; then
-            echo "::error::Could not resolve a ref for ${source}"
-            return 1
-          fi
-          sha=$(gh api "repos/${source}/commits/${ref}" --jq '.sha')
-          if [ -z "$sha" ] || [ "$sha" = "null" ]; then
-            echo "::error::Could not resolve a commit SHA for ${source}@${ref}"
-            return 1
-          fi
-          printf '%s %s\n' "$ref" "$sha"
-        }
+        flags=(--all --dir "$INPUT_DIR")
+        case "$INPUT_DRY_RUN" in
+          true|1|yes) flags+=(--dry-run) ;;
+        esac
+        case "$INPUT_UNPIN" in
+          true|1|yes) flags+=(--unpin) ;;
+        esac
 
-        names=$(jq -e -r '.skills | keys[]' "$INPUT_SKILLS_LOCK") || {
-          echo "::error::No skills found in $INPUT_SKILLS_LOCK"
+        # Snapshot SKILL.md contents before running so we can detect modifications
+        # without relying on git being present in the caller's environment.
+        if ! command -v shasum >/dev/null 2>&1; then
+          echo "::error::'shasum' is required on the runner to detect SKILL.md changes but was not found on PATH."
           exit 1
-        }
+        fi
+        before=$(mktemp)
+        find "$INPUT_DIR" -type f -name SKILL.md -print0 \
+          | sort -z \
+          | xargs -0 -r shasum -a 256 >"$before"
 
-        updated_file=$(mktemp)
-        lock_dir=$(dirname -- "$INPUT_SKILLS_LOCK")
-        tmp_lock=$(mktemp "${lock_dir}/.skills-lock.XXXXXXXX")
-        cp "$INPUT_SKILLS_LOCK" "$tmp_lock"
+        out=$(mktemp)
+        if ! gh skill update "${flags[@]}" 2>&1 | tee "$out"; then
+          echo "::error::'gh skill update ${flags[*]}' failed."
+          rm -f "$before" "$out"
+          exit 1
+        fi
 
-        while IFS= read -r name; do
-          [ -z "$name" ] && continue
-          source=$(jq -r --arg n "$name" '.skills[$n].source' "$tmp_lock")
-          if [ -z "$source" ] || [ "$source" = "null" ]; then
-            echo "::error::Skill '$name' is missing 'source' in $INPUT_SKILLS_LOCK"
-            exit 1
-          fi
-          old_digest=$(jq -r --arg n "$name" '.skills[$n].digest // ""' "$tmp_lock")
-          echo "Resolving latest ref for ${source} (skill: ${name})..."
-          if ! resolved=$(resolve_ref "$source"); then
-            echo "::error::Failed to resolve latest ref for '${source}' (skill: '${name}')"
-            exit 1
-          fi
-          read -r new_ref new_digest <<<"$resolved"
-          if [ -z "$new_ref" ] || [ -z "$new_digest" ]; then
-            echo "::error::Resolved ref for '${source}' (skill: '${name}') was incomplete: '${resolved}'"
-            exit 1
-          fi
-          echo "  -> ref=${new_ref} digest=${new_digest}"
-          jq --arg n "$name" --arg ref "$new_ref" --arg digest "$new_digest" \
-            '.skills[$n].ref = $ref | .skills[$n].digest = $digest' \
-            "$tmp_lock" > "${tmp_lock}.next"
-          mv "${tmp_lock}.next" "$tmp_lock"
-          if [ "$old_digest" != "$new_digest" ]; then
-            printf '%s %s -> %s\n' "$name" "${old_digest:-<unset>}" "$new_digest" >> "$updated_file"
-          fi
-        done <<<"$names"
+        after=$(mktemp)
+        find "$INPUT_DIR" -type f -name SKILL.md -print0 \
+          | sort -z \
+          | xargs -0 -r shasum -a 256 >"$after"
 
-        if cmp -s "$INPUT_SKILLS_LOCK" "$tmp_lock"; then
+        if cmp -s "$before" "$after"; then
           echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "No changes to $INPUT_SKILLS_LOCK"
         else
-          mv "$tmp_lock" "$INPUT_SKILLS_LOCK"
           echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "Updated $INPUT_SKILLS_LOCK"
         fi
 
+        # Strip spinner carriage-returns + ANSI escape sequences before exposing stdout as an output.
+        cleaned=$(sed -e 's/\r/\n/g' -e 's/\x1B\[[0-9;]*[a-zA-Z]//g' "$out" \
+          | grep -vE '^Checking .* installed skill' \
+          | sed '/^$/d')
         {
           echo "updated-skills<<EOF"
-          [ -s "$updated_file" ] && cat "$updated_file"
+          printf '%s\n' "$cleaned"
           echo "EOF"
         } >> "$GITHUB_OUTPUT"
-        rm -f "$updated_file" "$tmp_lock" "${tmp_lock}.next" 2>/dev/null || true
+
+        rm -f "$before" "$after" "$out"

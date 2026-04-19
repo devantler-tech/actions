@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  test-from-lock:
+  test-inline:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -26,33 +26,40 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧰 Create skills-lock.json fixture
-        shell: bash
-        run: |
-          cat > skills-lock.json <<'JSON'
-          {
-            "version": 1,
-            "skills": {
-              "git-commit": { "source": "devantler-tech/skills", "sourceType": "github" }
-            }
-          }
-          JSON
-
-      - name: 🧪 Run setup-copilot-skills (manifest)
+      - name: 🧪 Run setup-copilot-skills
         id: setup
         uses: ./setup-copilot-skills
+        with:
+          skills: |
+            github/awesome-copilot git-commit
+            github/awesome-copilot gh-cli
 
-      - name: ✅ Verify installed-skills output
+      - name: ✅ Verify both skills installed
         shell: bash
         env:
           INSTALLED: ${{ steps.setup.outputs.installed-skills }}
         run: |
-          if [[ "$INSTALLED" != *"devantler-tech/skills/git-commit"* ]]; then
-            echo "::error::Expected 'devantler-tech/skills/git-commit' in installed-skills output, got: $INSTALLED"
-            exit 1
-          fi
+          set -euo pipefail
+          for expected in "github/awesome-copilot/git-commit" "github/awesome-copilot/gh-cli"; do
+            if [[ "$INSTALLED" != *"$expected"* ]]; then
+              echo "::error::Expected '$expected' in installed-skills output, got: $INSTALLED"
+              exit 1
+            fi
+          done
+          for skill in git-commit gh-cli; do
+            if [[ ! -f ".agents/skills/${skill}/SKILL.md" ]]; then
+              echo "::error::Expected .agents/skills/${skill}/SKILL.md to exist"
+              find .agents/skills -maxdepth 3 -type f || true
+              exit 1
+            fi
+            if ! grep -q '^    github-repo: https://github.com/github/awesome-copilot$' ".agents/skills/${skill}/SKILL.md"; then
+              echo "::error::${skill} SKILL.md does not carry expected github-repo metadata"
+              cat ".agents/skills/${skill}/SKILL.md"
+              exit 1
+            fi
+          done
 
-  test-inline-source:
+  test-pinned:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -65,26 +72,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills (inline)
+      - name: 🧪 Run setup-copilot-skills with @pin
         id: setup
         uses: ./setup-copilot-skills
         with:
-          source: devantler-tech/skills
           skills: |
-            git-commit
-            gh-cli
+            github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
 
-      - name: ✅ Verify both skills installed
+      - name: ✅ Verify pinned commit ended up in SKILL.md metadata
         shell: bash
         env:
           INSTALLED: ${{ steps.setup.outputs.installed-skills }}
         run: |
-          for expected in "devantler-tech/skills/git-commit" "devantler-tech/skills/gh-cli"; do
-            if [[ "$INSTALLED" != *"$expected"* ]]; then
-              echo "::error::Expected '$expected' in installed-skills output, got: $INSTALLED"
-              exit 1
-            fi
-          done
+          set -euo pipefail
+          if [[ "$INSTALLED" != *"github/awesome-copilot/git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c"* ]]; then
+            echo "::error::Expected pinned entry in installed-skills output, got: $INSTALLED"
+            exit 1
+          fi
+          skill_md=".agents/skills/git-commit/SKILL.md"
+          if [[ ! -f "$skill_md" ]]; then
+            echo "::error::Could not locate installed git-commit SKILL.md at $skill_md"
+            find .agents/skills -maxdepth 3 -type f || true
+            exit 1
+          fi
+          if ! grep -q '8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c' "$skill_md"; then
+            echo "::error::Installed skill metadata does not reference the pinned commit:"
+            cat "$skill_md"
+            exit 1
+          fi
 
   test-missing-skills-input:
     runs-on: ubuntu-latest
@@ -99,12 +114,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills with source but no skills (expected to fail)
+      - name: 🧪 Run setup-copilot-skills with blank skills input (expected to fail)
         id: setup
         continue-on-error: true
         uses: ./setup-copilot-skills
         with:
-          source: devantler-tech/skills
+          skills: " \n# only a comment\n"
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -112,11 +127,11 @@ jobs:
           OUTCOME: ${{ steps.setup.outcome }}
         run: |
           if [[ "$OUTCOME" != "failure" ]]; then
-            echo "::error::Expected the action to fail when 'source' is set but 'skills' is empty, got: $OUTCOME"
+            echo "::error::Expected the action to fail when 'skills' has no actionable entries, got: $OUTCOME"
             exit 1
           fi
 
-  test-from-lock-pinned:
+  test-malformed-line:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -129,56 +144,27 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧰 Create skills-lock.json fixture (pinned to a historical commit)
-        shell: bash
-        run: |
-          cat > skills-lock.json <<'JSON'
-          {
-            "version": 1,
-            "skills": {
-              "git-commit": {
-                "source": "devantler-tech/skills",
-                "sourceType": "github",
-                "ref": "v0.1.1",
-                "digest": "6d50a7587e0ff372277dc4a33ccb8b8ea2ff7470"
-              }
-            }
-          }
-          JSON
-
-      - name: 🧪 Run setup-copilot-skills (manifest with pin)
+      - name: 🧪 Run setup-copilot-skills with an extra token (expected to fail)
         id: setup
+        continue-on-error: true
         uses: ./setup-copilot-skills
         with:
-          scope: project
+          skills: |
+            github/awesome-copilot git-commit extra-token
 
-      - name: ✅ Verify pinned skill installed at the resolved commit
+      - name: ✅ Verify step failed as expected
         shell: bash
         env:
-          INSTALLED: ${{ steps.setup.outputs.installed-skills }}
+          OUTCOME: ${{ steps.setup.outcome }}
         run: |
-          set -euo pipefail
-          if [[ "$INSTALLED" != *"devantler-tech/skills/git-commit"* ]]; then
-            echo "::error::Expected 'devantler-tech/skills/git-commit' in installed-skills output, got: $INSTALLED"
-            exit 1
-          fi
-          # gh skill writes source-tracking metadata into SKILL.md frontmatter.
-          # Confirm the pinned commit SHA is present so we know --pin was honored.
-          skill_md=$(find .agents/skills -name SKILL.md -path '*git-commit*' | head -1)
-          if [[ -z "$skill_md" ]]; then
-            echo "::error::Could not locate installed git-commit SKILL.md"
-            find .agents/skills -maxdepth 4 -type f
-            exit 1
-          fi
-          if ! grep -q '6d50a7587e0ff372277dc4a33ccb8b8ea2ff7470' "$skill_md"; then
-            echo "::error::Installed skill metadata does not reference the pinned commit:"
-            cat "$skill_md"
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail when a line has more than two tokens, got: $OUTCOME"
             exit 1
           fi
 
   status-check:
     if: ${{ always() && !cancelled() }}
-    needs: [test-from-lock, test-from-lock-pinned, test-inline-source, test-missing-skills-input]
+    needs: [test-inline, test-pinned, test-missing-skills-input, test-malformed-line]
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -188,13 +174,12 @@ jobs:
 
       - name: Check status
         env:
-          RESULT_LOCK: ${{ needs.test-from-lock.result }}
-          RESULT_LOCK_PINNED: ${{ needs.test-from-lock-pinned.result }}
-          RESULT_INLINE: ${{ needs.test-inline-source.result }}
+          RESULT_INLINE: ${{ needs.test-inline.result }}
+          RESULT_PINNED: ${{ needs.test-pinned.result }}
           RESULT_MISSING: ${{ needs.test-missing-skills-input.result }}
+          RESULT_MALFORMED: ${{ needs.test-malformed-line.result }}
         run: |
-          results=("$RESULT_LOCK" "$RESULT_LOCK_PINNED" "$RESULT_INLINE" "$RESULT_MISSING")
-          for result in "${results[@]}"; do
+          for result in "$RESULT_INLINE" "$RESULT_PINNED" "$RESULT_MISSING" "$RESULT_MALFORMED"; do
             if [[ "$result" == "failure" ]]; then
               exit 1
             fi
