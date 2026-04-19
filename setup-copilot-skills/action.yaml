@@ -104,6 +104,7 @@ runs:
 
         installed_file=$(mktemp)
         status=0
+        processed=0
 
         while IFS= read -r raw || [ -n "$raw" ]; do
           line=${raw%%#*}
@@ -137,7 +138,14 @@ runs:
           else
             printf '%s/%s\n' "$src" "$name" >> "$installed_file"
           fi
+          processed=$((processed + 1))
         done <<<"$INPUT_SKILLS"
+
+        if [ "$processed" -eq 0 ] && [ "$status" -eq 0 ]; then
+          echo "::error::'skills' input contained no actionable entries (only blank lines or '#' comments)."
+          rm -f "$installed_file"
+          exit 1
+        fi
 
         {
           echo "installed-skills<<EOF"
