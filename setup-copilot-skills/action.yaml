@@ -112,8 +112,8 @@ runs:
 
           # shellcheck disable=SC2086
           set -- $line
-          if [ "$#" -lt 2 ]; then
-            echo "::error::Invalid skills entry: '$raw' — expected '<owner/repo> <skill>[@pin]'"
+          if [ "$#" -ne 2 ]; then
+            echo "::error::Invalid skills entry: '$raw' — expected exactly '<owner/repo> <skill>[@pin]' (got $# whitespace-separated tokens)"
             status=1
             continue
           fi

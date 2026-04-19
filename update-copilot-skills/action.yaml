@@ -115,10 +115,14 @@ runs:
 
         # Snapshot SKILL.md contents before running so we can detect modifications
         # without relying on git being present in the caller's environment.
+        if ! command -v shasum >/dev/null 2>&1; then
+          echo "::error::'shasum' is required on the runner to detect SKILL.md changes but was not found on PATH."
+          exit 1
+        fi
         before=$(mktemp)
-        find "$INPUT_DIR" -type f -name SKILL.md -print0 2>/dev/null \
+        find "$INPUT_DIR" -type f -name SKILL.md -print0 \
           | sort -z \
-          | xargs -0 shasum -a 256 2>/dev/null >"$before" || true
+          | xargs -0 -r shasum -a 256 >"$before"
 
         out=$(mktemp)
         if ! gh skill update "${flags[@]}" 2>&1 | tee "$out"; then
@@ -128,9 +132,9 @@ runs:
         fi
 
         after=$(mktemp)
-        find "$INPUT_DIR" -type f -name SKILL.md -print0 2>/dev/null \
+        find "$INPUT_DIR" -type f -name SKILL.md -print0 \
           | sort -z \
-          | xargs -0 shasum -a 256 2>/dev/null >"$after" || true
+          | xargs -0 -r shasum -a 256 >"$after"
 
         if cmp -s "$before" "$after"; then
           echo "changed=false" >> "$GITHUB_OUTPUT"
