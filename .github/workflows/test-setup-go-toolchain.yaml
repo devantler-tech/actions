@@ -74,8 +74,9 @@ jobs:
           fi
           echo "GOPRIVATE: $goprivate"
 
-  status-check:
-    if: ${{ !cancelled() }}
+  ci-required-checks:
+    name: CI - Required Checks
+    if: ${{ always() }}
     needs: [test-setup-go-toolchain, test-private-modules]
     runs-on: ubuntu-latest
     steps:
@@ -84,14 +85,13 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Check status
-        env:
-          RESULT_SETUP: ${{ needs.test-setup-go-toolchain.result }}
-          RESULT_PRIVATE: ${{ needs.test-private-modules.result }}
-        run: |
-          results=("$RESULT_SETUP" "$RESULT_PRIVATE")
-          for result in "${results[@]}"; do
-            if [[ "$result" == "failure" ]]; then
-              exit 1
-            fi
-          done
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./require-checks-in-pr
+        with:
+          job-results: >-
+            ${{ needs.test-setup-go-toolchain.result }}
+            ${{ needs.test-private-modules.result }}

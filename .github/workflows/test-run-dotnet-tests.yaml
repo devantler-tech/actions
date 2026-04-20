@@ -32,8 +32,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
-  status-check:
-    if: ${{ !cancelled() }}
+  ci-required-checks:
+    name: CI - Required Checks
+    if: ${{ always() }}
     needs: [test-run-dotnet-tests]
     runs-on: ubuntu-latest
     steps:
@@ -42,10 +43,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Check status
-        env:
-          RESULT: ${{ needs.test-run-dotnet-tests.result }}
-        run: |
-          if [[ "$RESULT" == "failure" ]]; then
-            exit 1
-          fi
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./require-checks-in-pr
+        with:
+          job-results: >-
+            ${{ needs.test-run-dotnet-tests.result }}
