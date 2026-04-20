@@ -1,0 +1,49 @@
+name: Require Checks in PR
+description: |
+  Aggregates the results of multiple jobs into a single required check.
+  Fails if any job failed or was cancelled. Skipped jobs are treated as
+  acceptable (non-failure). Useful for branch protection rules that need
+  a single, stable check name.
+author: devantler-tech
+
+inputs:
+  job-results:
+    description: |
+      Space-separated list of job results to check.
+      Each result should be one of: success, failure, cancelled, skipped.
+      Example: "success success skipped failure"
+    required: true
+  check-name:
+    description: |
+      Display name used in success/failure messages.
+    required: false
+    default: "CI - Required Checks"
+
+runs:
+  using: composite
+  steps:
+    - name: "📊 Summarize workflow result"
+      shell: bash
+      env:
+        JOB_RESULTS: ${{ inputs.job-results }}
+        CHECK_NAME: ${{ inputs.check-name }}
+      run: |
+        set -Eeuo pipefail
+        failed=false
+
+        for result in $JOB_RESULTS; do
+          case "$result" in
+            success|skipped)
+              ;;
+            *)
+              failed=true
+              ;;
+          esac
+        done
+
+        if [ "$failed" = true ]; then
+          echo "❌ $CHECK_NAME — at least one job failed or was cancelled."
+          exit 1
+        fi
+
+        echo "✅ $CHECK_NAME — all jobs succeeded or were skipped."
