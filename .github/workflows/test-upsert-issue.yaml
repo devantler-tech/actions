@@ -67,8 +67,9 @@ jobs:
           close-comment: "🧪 Closed by test workflow."
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-  status-check:
-    if: ${{ !cancelled() }}
+  ci-required-checks:
+    name: CI - Required Checks
+    if: ${{ always() }}
     needs: [test-upsert-issue-create, test-upsert-issue-close]
     runs-on: ubuntu-latest
     steps:
@@ -77,11 +78,13 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Check status
-        env:
-          CREATE_RESULT: ${{ needs.test-upsert-issue-create.result }}
-          CLOSE_RESULT: ${{ needs.test-upsert-issue-close.result }}
-        run: |
-          if [[ "$CREATE_RESULT" == "failure" || "$CLOSE_RESULT" == "failure" ]]; then
-            exit 1
-          fi
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./require-checks-in-pr
+        with:
+          job-results: >-
+            ${{ needs.test-upsert-issue-create.result }}
+            ${{ needs.test-upsert-issue-close.result }}

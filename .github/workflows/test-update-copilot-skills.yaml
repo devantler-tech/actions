@@ -130,8 +130,9 @@ jobs:
             exit 1
           fi
 
-  status-check:
-    if: ${{ always() && !cancelled() }}
+  ci-required-checks:
+    name: CI - Required Checks
+    if: ${{ always() }}
     needs: [test-update-noop, test-update-dry-run, test-missing-dir]
     runs-on: ubuntu-latest
     steps:
@@ -140,14 +141,14 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Check status
-        env:
-          RESULT_NOOP: ${{ needs.test-update-noop.result }}
-          RESULT_DRY: ${{ needs.test-update-dry-run.result }}
-          RESULT_MISSING: ${{ needs.test-missing-dir.result }}
-        run: |
-          for result in "$RESULT_NOOP" "$RESULT_DRY" "$RESULT_MISSING"; do
-            if [[ "$result" == "failure" ]]; then
-              exit 1
-            fi
-          done
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./require-checks-in-pr
+        with:
+          job-results: >-
+            ${{ needs.test-update-noop.result }}
+            ${{ needs.test-update-dry-run.result }}
+            ${{ needs.test-missing-dir.result }}
