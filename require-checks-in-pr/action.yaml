@@ -29,21 +29,37 @@ runs:
         CHECK_NAME: ${{ inputs.check-name }}
       run: |
         set -Eeuo pipefail
-        failed=false
 
-        for result in $JOB_RESULTS; do
+        trimmed=$(printf '%s' "$JOB_RESULTS" | tr -d '[:space:]')
+        if [ -z "$trimmed" ]; then
+          printf '%s\n' "❌ $CHECK_NAME — no job results provided. The 'job-results' input must contain at least one result."
+          exit 1
+        fi
+
+        # Disable globbing so wildcards in input are not expanded.
+        set -f
+        read -r -a results <<< "$JOB_RESULTS"
+
+        failed=false
+        allowed_values="success, failure, cancelled, skipped"
+
+        for result in "${results[@]}"; do
           case "$result" in
             success|skipped)
               ;;
-            *)
+            failure|cancelled)
               failed=true
+              ;;
+            *)
+              printf '%s\n' "❌ $CHECK_NAME — unknown job result: '$result'. Allowed values: $allowed_values."
+              exit 1
               ;;
           esac
         done
 
         if [ "$failed" = true ]; then
-          echo "❌ $CHECK_NAME — at least one job failed or was cancelled."
+          printf '%s\n' "❌ $CHECK_NAME — at least one job failed or was cancelled."
           exit 1
         fi
 
-        echo "✅ $CHECK_NAME — all jobs succeeded or were skipped."
+        printf '%s\n' "✅ $CHECK_NAME — all jobs succeeded or were skipped."

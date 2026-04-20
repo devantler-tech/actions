@@ -30,7 +30,7 @@ jobs:
     needs: [build, test]
     if: ${{ always() }}
     steps:
-      - uses: devantler-tech/actions/require-checks-in-pr@main
+      - uses: devantler-tech/actions/require-checks-in-pr@1f66c91d45d374ceac9fe830a783444ebc9be958 # v3.2.0
         with:
           job-results: "${{ needs.build.result }} ${{ needs.test.result }}"
 ```
@@ -60,7 +60,7 @@ jobs:
     needs: [build, lint, test]
     if: ${{ always() }}
     steps:
-      - uses: devantler-tech/actions/require-checks-in-pr@main
+      - uses: devantler-tech/actions/require-checks-in-pr@1f66c91d45d374ceac9fe830a783444ebc9be958 # v3.2.0
         with:
           job-results: >-
             ${{ needs.build.result }}
