@@ -8,7 +8,7 @@ The `github-*` frontmatter that `gh skill install` injects into each `SKILL.md` 
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `dir` | Directory to scan for installed skills. The action discovers all skill root directories under this path and runs `gh skill update --all --dir <root>` for each one. A skill root is any directory containing a `skills/*/SKILL.md` pattern. This supports both the standard layout (`.agents/skills/`) and nested layouts like `plugins/<plugin>/skills/<skill>/`. | ❌ | `.` |
+| `dir` | Directory to scan for installed skills. The action finds every `SKILL.md` under this path, uses its immediate parent (the directory containing individual skill subdirectories, e.g. `skills/`) as the `--dir` argument, and runs `gh skill update --all --dir <skills-dir>` for each unique `<skills-dir>`. This supports both the standard layout (`.agents/skills/`) and nested layouts like `plugins/<plugin>/skills/<skill>/`. | ❌ | `.` |
 | `dry-run` | When `true`, pass `--dry-run` (report without modifying files) | ❌ | `false` |
 | `unpin` | When `true`, pass `--unpin` (clear pinned versions and include pinned skills) | ❌ | `false` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
@@ -79,7 +79,7 @@ For repositories that organise skills into subdirectories (e.g. copilot-plugins)
 - id: update
   uses: devantler-tech/actions/update-copilot-skills@v2
   with:
-    dir: plugins   # discovers plugins/go, plugins/github, … and updates each
+    dir: plugins   # discovers plugins/go/skills, plugins/github/skills, … and updates each
 ```
 
 ## Migrating from v1

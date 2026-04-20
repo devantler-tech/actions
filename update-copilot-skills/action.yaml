@@ -116,10 +116,10 @@ runs:
           | sort -z \
           | xargs -0 -r shasum -a 256 >"$before"
 
-        # Discover all skill root directories under INPUT_DIR.
-        # gh skill update --dir X expects X/skills/*/SKILL.md (one level).
-        # To support nested layouts like plugins/<plugin>/skills/<skill>/SKILL.md,
-        # we find every SKILL.md and derive the root each one belongs to.
+        # Discover all parent directories of skill subdirectories under INPUT_DIR.
+        # gh skill update --dir X discovers X/*/SKILL.md and writes back to X/<skill>/SKILL.md.
+        # Passing the immediate parent of each skill dir (e.g. .agents/skills or plugins/<p>/skills)
+        # ensures discovery and writes land in the same place.
         # Use a while-read loop instead of mapfile for bash 3.2 compatibility (macOS).
         roots=()
         while IFS= read -r root; do
@@ -129,11 +129,7 @@ runs:
             | while IFS= read -r -d '' md; do
                 skill_dir=$(dirname "$md")
                 parent_dir=$(dirname "$skill_dir")
-                if [[ "$(basename "$parent_dir")" == "skills" ]]; then
-                  dirname "$parent_dir"
-                else
-                  echo "$parent_dir"
-                fi
+                echo "$parent_dir"
               done \
             | sort -u
         )
