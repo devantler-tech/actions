@@ -105,14 +105,6 @@ runs:
           exit 1
         fi
 
-        flags=(--all --dir "$INPUT_DIR")
-        case "$INPUT_DRY_RUN" in
-          true|1|yes) flags+=(--dry-run) ;;
-        esac
-        case "$INPUT_UNPIN" in
-          true|1|yes) flags+=(--unpin) ;;
-        esac
-
         # Snapshot SKILL.md contents before running so we can detect modifications
         # without relying on git being present in the caller's environment.
         if ! command -v shasum >/dev/null 2>&1; then
@@ -124,12 +116,57 @@ runs:
           | sort -z \
           | xargs -0 -r shasum -a 256 >"$before"
 
-        out=$(mktemp)
-        if ! gh skill update "${flags[@]}" 2>&1 | tee "$out"; then
-          echo "::error::'gh skill update ${flags[*]}' failed."
-          rm -f "$before" "$out"
-          exit 1
+        # Discover all skill root directories under INPUT_DIR.
+        # gh skill update --dir X expects X/skills/*/SKILL.md (one level).
+        # To support nested layouts like plugins/<plugin>/skills/<skill>/SKILL.md,
+        # we find every SKILL.md and derive the root each one belongs to.
+        # Use a while-read loop instead of mapfile for bash 3.2 compatibility (macOS).
+        roots=()
+        while IFS= read -r root; do
+          roots+=("$root")
+        done < <(
+          find "$INPUT_DIR" -type f -name SKILL.md -print0 \
+            | while IFS= read -r -d '' md; do
+                skill_dir=$(dirname "$md")
+                parent_dir=$(dirname "$skill_dir")
+                if [[ "$(basename "$parent_dir")" == "skills" ]]; then
+                  dirname "$parent_dir"
+                else
+                  echo "$parent_dir"
+                fi
+              done \
+            | sort -u
+        )
+
+        if [ ${#roots[@]} -eq 0 ]; then
+          echo "No installed skills found."
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "updated-skills<<EOF"
+            echo "No installed skills found."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          rm -f "$before"
+          exit 0
         fi
+
+        out=$(mktemp)
+        status=0
+        for root in "${roots[@]}"; do
+          root_flags=(--all --dir "$root")
+          case "$INPUT_DRY_RUN" in
+            true|1|yes) root_flags+=(--dry-run) ;;
+          esac
+          case "$INPUT_UNPIN" in
+            true|1|yes) root_flags+=(--unpin) ;;
+          esac
+          echo "::group::Updating skills in $root"
+          if ! gh skill update "${root_flags[@]}" 2>&1 | tee -a "$out"; then
+            echo "::error::'gh skill update ${root_flags[*]}' failed."
+            status=1
+          fi
+          echo "::endgroup::"
+        done
 
         after=$(mktemp)
         find "$INPUT_DIR" -type f -name SKILL.md -print0 \
@@ -153,3 +190,7 @@ runs:
         } >> "$GITHUB_OUTPUT"
 
         rm -f "$before" "$after" "$out"
+
+        if [ "$status" -ne 0 ]; then
+          exit 1
+        fi
