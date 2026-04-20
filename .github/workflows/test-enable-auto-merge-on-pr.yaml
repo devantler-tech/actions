@@ -26,8 +26,9 @@ jobs:
         with:
           pr-number: ${{ github.event.pull_request.number }}
 
-  status-check:
-    if: ${{ !cancelled() }}
+  ci-required-checks:
+    name: CI - Required Checks
+    if: ${{ always() }}
     needs: [test-enable-auto-merge-on-pr]
     runs-on: ubuntu-latest
     steps:
@@ -36,10 +37,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Check status
-        env:
-          RESULT: ${{ needs.test-enable-auto-merge-on-pr.result }}
-        run: |
-          if [[ "$RESULT" == "failure" ]]; then
-            exit 1
-          fi
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: ./require-checks-in-pr
+        with:
+          job-results: >-
+            ${{ needs.test-enable-auto-merge-on-pr.result }}
