@@ -120,7 +120,11 @@ runs:
         # gh skill update --dir X expects X/skills/*/SKILL.md (one level).
         # To support nested layouts like plugins/<plugin>/skills/<skill>/SKILL.md,
         # we find every SKILL.md and derive the root each one belongs to.
-        mapfile -t roots < <(
+        # Use a while-read loop instead of mapfile for bash 3.2 compatibility (macOS).
+        roots=()
+        while IFS= read -r root; do
+          roots+=("$root")
+        done < <(
           find "$INPUT_DIR" -type f -name SKILL.md -print0 \
             | while IFS= read -r -d '' md; do
                 skill_dir=$(dirname "$md")
