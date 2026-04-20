@@ -30,13 +30,14 @@ runs:
       run: |
         set -Eeuo pipefail
 
-        trimmed=$(echo "$JOB_RESULTS" | xargs)
+        trimmed=$(printf '%s' "$JOB_RESULTS" | tr -d '[:space:]')
         if [ -z "$trimmed" ]; then
           echo "❌ $CHECK_NAME — no job results provided. The 'job-results' input must contain at least one result."
           exit 1
         fi
 
         failed=false
+        allowed_values="success, failure, cancelled, skipped"
 
         for result in $JOB_RESULTS; do
           case "$result" in
@@ -46,7 +47,7 @@ runs:
               failed=true
               ;;
             *)
-              echo "❌ $CHECK_NAME — unknown job result: '$result'. Allowed values: success, failure, cancelled, skipped."
+              echo "❌ $CHECK_NAME — unknown job result: '$result'. Allowed values: $allowed_values."
               exit 1
               ;;
           esac
