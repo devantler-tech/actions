@@ -9,7 +9,7 @@ runs:
   using: composite
   steps:
     - name: 🔑 Login to GHCR
-      uses: step-security/docker-login-action@6aa05fe688caf2c58e784663f01b3415ced503e8 # v3.7.0
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
