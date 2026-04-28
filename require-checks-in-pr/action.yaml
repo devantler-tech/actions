@@ -9,9 +9,13 @@ author: devantler-tech
 inputs:
   job-results:
     description: |
-      Space-separated list of job results to check.
+      Newline-separated list of job results to check.
       Each result should be one of: success, failure, cancelled, skipped.
-      Example: "success success skipped failure"
+      Example:
+        job-results: |
+          success
+          skipped
+          failure
     required: true
   check-name:
     description: |
@@ -32,12 +36,15 @@ runs:
 
         # Disable globbing so wildcards in input are not expanded.
         set -f
-        read -r -a results <<< "$JOB_RESULTS"
 
         failed=false
         allowed_values="success, failure, cancelled, skipped"
 
-        for result in "${results[@]}"; do
+        while IFS= read -r result || [[ -n "$result" ]]; do
+          # Skip empty lines
+          result="$(printf '%s' "$result" | xargs)"
+          [[ -z "$result" ]] && continue
+
           case "$result" in
             success|skipped)
               ;;
@@ -49,7 +56,7 @@ runs:
               exit 1
               ;;
           esac
-        done
+        done <<< "$JOB_RESULTS"
 
         if [ "$failed" = true ]; then
           printf '%s\n' "❌ $CHECK_NAME — at least one job failed or was cancelled."
