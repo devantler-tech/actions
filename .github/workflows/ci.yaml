@@ -129,9 +129,9 @@ jobs:
         uses: ./require-checks-in-pr
         with:
           job-results: |
-            success
-            skipped
-            success
+            - success
+            - skipped
+            - success
 
   test-require-checks-in-pr-failure:
     runs-on: ubuntu-latest
@@ -149,9 +149,9 @@ jobs:
         uses: ./require-checks-in-pr
         with:
           job-results: |
-            success
-            failure
-            skipped
+            - success
+            - failure
+            - skipped
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -179,8 +179,8 @@ jobs:
         uses: ./require-checks-in-pr
         with:
           job-results: |
-            success
-            unknown-status
+            - success
+            - unknown-status
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -679,26 +679,26 @@ jobs:
       - uses: ./require-checks-in-pr
         with:
           job-results: |
-            ${{ needs.test-approve-pr.result }}
-            ${{ needs.test-create-issues-from-todos.result }}
-            ${{ needs.test-enable-auto-merge-on-pr.result }}
-            ${{ needs.test-login-to-ghcr.result }}
-            ${{ needs.test-require-checks-in-pr-empty.result }}
-            ${{ needs.test-require-checks-in-pr-success.result }}
-            ${{ needs.test-require-checks-in-pr-failure.result }}
-            ${{ needs.test-require-checks-in-pr-unknown.result }}
-            ${{ needs.test-run-dotnet-tests.result }}
-            ${{ needs.test-setup-copilot-skills-inline.result }}
-            ${{ needs.test-setup-copilot-skills-pinned.result }}
-            ${{ needs.test-setup-copilot-skills-missing-input.result }}
-            ${{ needs.test-setup-copilot-skills-malformed-line.result }}
-            ${{ needs.test-setup-go-toolchain.result }}
-            ${{ needs.test-setup-go-toolchain-private-modules.result }}
-            ${{ needs.test-setup-ksail-cli.result }}
-            ${{ needs.test-sync-github-labels.result }}
-            ${{ needs.test-update-copilot-skills-noop.result }}
-            ${{ needs.test-update-copilot-skills-dry-run.result }}
-            ${{ needs.test-update-copilot-skills-missing-dir.result }}
-            ${{ needs.test-upsert-issue-create.result }}
-            ${{ needs.test-upsert-issue-close.result }}
-            ${{ needs.zizmor.result }}
+            - ${{ needs.test-approve-pr.result }}
+            - ${{ needs.test-create-issues-from-todos.result }}
+            - ${{ needs.test-enable-auto-merge-on-pr.result }}
+            - ${{ needs.test-login-to-ghcr.result }}
+            - ${{ needs.test-require-checks-in-pr-empty.result }}
+            - ${{ needs.test-require-checks-in-pr-success.result }}
+            - ${{ needs.test-require-checks-in-pr-failure.result }}
+            - ${{ needs.test-require-checks-in-pr-unknown.result }}
+            - ${{ needs.test-run-dotnet-tests.result }}
+            - ${{ needs.test-setup-copilot-skills-inline.result }}
+            - ${{ needs.test-setup-copilot-skills-pinned.result }}
+            - ${{ needs.test-setup-copilot-skills-missing-input.result }}
+            - ${{ needs.test-setup-copilot-skills-malformed-line.result }}
+            - ${{ needs.test-setup-go-toolchain.result }}
+            - ${{ needs.test-setup-go-toolchain-private-modules.result }}
+            - ${{ needs.test-setup-ksail-cli.result }}
+            - ${{ needs.test-sync-github-labels.result }}
+            - ${{ needs.test-update-copilot-skills-noop.result }}
+            - ${{ needs.test-update-copilot-skills-dry-run.result }}
+            - ${{ needs.test-update-copilot-skills-missing-dir.result }}
+            - ${{ needs.test-upsert-issue-create.result }}
+            - ${{ needs.test-upsert-issue-close.result }}
+            - ${{ needs.zizmor.result }}

@@ -9,13 +9,13 @@ author: devantler-tech
 inputs:
   job-results:
     description: |
-      Newline-separated list of job results to check.
+      YAML-style list of job results to check.
       Each result should be one of: success, failure, cancelled, skipped.
       Example:
         job-results: |
-          success
-          skipped
-          failure
+          - success
+          - skipped
+          - failure
     required: true
   check-name:
     description: |
@@ -40,11 +40,12 @@ runs:
         failed=false
         allowed_values="success, failure, cancelled, skipped"
 
-        while IFS= read -r result || [[ -n "$result" ]]; do
-          # Trim whitespace and skip blank lines (trailing newline from `|` block scalar).
-          result="${result#"${result%%[![:space:]]*}"}"
-          result="${result%"${result##*[![:space:]]}"}"
-          [[ -z "$result" ]] && continue
+        while IFS= read -r line || [[ -n "$line" ]]; do
+          # Trim whitespace, strip leading "- " list marker, and skip blank lines.
+          line="${line#"${line%%[![:space:]]*}"}"
+          line="${line%"${line##*[![:space:]]}"}"
+          [[ -z "$line" ]] && continue
+          result="${line#- }"
 
           case "$result" in
             success|skipped)
