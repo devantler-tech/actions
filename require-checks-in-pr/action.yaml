@@ -46,6 +46,9 @@ runs:
           line="${line%"${line##*[![:space:]]}"}"
           [[ -z "$line" ]] && continue
           result="${line#- }"
+          # Trim any remaining whitespace after stripping the list marker.
+          result="${result#"${result%%[![:space:]]*}"}"
+          result="${result%"${result##*[![:space:]]}"}"
 
           case "$result" in
             success|skipped)
