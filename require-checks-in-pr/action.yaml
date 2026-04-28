@@ -41,11 +41,12 @@ runs:
         allowed_values="success, failure, cancelled, skipped"
 
         while IFS= read -r line || [[ -n "$line" ]]; do
-          # Trim whitespace, strip leading "- " list marker, and skip blank lines.
+          # Trim whitespace, strip a leading "-" list marker, and skip blank lines.
           line="${line#"${line%%[![:space:]]*}"}"
           line="${line%"${line##*[![:space:]]}"}"
           [[ -z "$line" ]] && continue
-          result="${line#- }"
+          result="$line"
+          [[ "$result" == -* ]] && result="${result#-}"
           # Trim any remaining whitespace after stripping the list marker.
           result="${result#"${result%%[![:space:]]*}"}"
           result="${result%"${result##*[![:space:]]}"}"
