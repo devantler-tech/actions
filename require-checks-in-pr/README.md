@@ -30,9 +30,9 @@ jobs:
     needs: [build, test]
     if: ${{ always() }}
     steps:
-      - uses: devantler-tech/actions/require-checks-in-pr@1f66c91d45d374ceac9fe830a783444ebc9be958 # v3.2.0
+      - uses: devantler-tech/actions/require-checks-in-pr@main
         with:
-          job-results: |
+          job-results:
             - ${{ needs.build.result }}
             - ${{ needs.test.result }}
 ```
@@ -41,7 +41,7 @@ jobs:
 
 | Input        | Description                                                | Required | Default                |
 | ------------ | ---------------------------------------------------------- | -------- | ---------------------- |
-| `job-results` | YAML-style list of job results to check                   | Yes      | —                      |
+| `job-results` | List of job results to check (passed as a YAML array)     | Yes      | —                      |
 | `check-name`  | Display name used in success/failure messages             | No       | `CI - Required Checks` |
 
 ## Job Result Values
@@ -62,9 +62,9 @@ jobs:
     needs: [build, lint, test]
     if: ${{ always() }}
     steps:
-      - uses: devantler-tech/actions/require-checks-in-pr@1f66c91d45d374ceac9fe830a783444ebc9be958 # v3.2.0
+      - uses: devantler-tech/actions/require-checks-in-pr@main
         with:
-          job-results: |
+          job-results:
             - ${{ needs.build.result }}
             - ${{ needs.lint.result }}
             - ${{ needs.test.result }}

@@ -9,13 +9,12 @@ author: devantler-tech
 inputs:
   job-results:
     description: |
-      YAML-style list of job results to check.
+      List of job results to check (passed as a YAML array).
       Each result should be one of: success, failure, cancelled, skipped.
       Example:
-        job-results: |
-          - success
-          - skipped
-          - failure
+        job-results:
+          - ${{ needs.build.result }}
+          - ${{ needs.test.result }}
     required: true
   check-name:
     description: |
@@ -34,23 +33,19 @@ runs:
       run: |
         set -Eeuo pipefail
 
-        # Disable globbing so wildcards in input are not expanded.
-        set -f
-
         failed=false
         allowed_values="success, failure, cancelled, skipped"
 
-        while IFS= read -r line || [[ -n "$line" ]]; do
-          # Trim whitespace, strip a leading "-" list marker, and skip blank lines.
-          line="${line#"${line%%[![:space:]]*}"}"
-          line="${line%"${line##*[![:space:]]}"}"
-          [[ -z "$line" ]] && continue
-          result="$line"
-          [[ "$result" == -* ]] && result="${result#-}"
-          # Trim any remaining whitespace after stripping the list marker.
-          result="${result#"${result%%[![:space:]]*}"}"
-          result="${result%"${result##*[![:space:]]}"}"
+        # GitHub Actions serializes YAML arrays as JSON strings.
+        # An empty string means no results were provided (treat as success).
+        if [[ -z "$JOB_RESULTS" || "$JOB_RESULTS" == "[]" ]]; then
+          printf '%s\n' "✅ $CHECK_NAME — no job results to check."
+          exit 0
+        fi
 
+        mapfile -t results < <(printf '%s' "$JOB_RESULTS" | jq -r '.[]')
+
+        for result in "${results[@]}"; do
           case "$result" in
             success|skipped)
               ;;
@@ -62,7 +57,7 @@ runs:
               exit 1
               ;;
           esac
-        done <<< "$JOB_RESULTS"
+        done
 
         if [ "$failed" = true ]; then
           printf '%s\n' "❌ $CHECK_NAME — at least one job failed or was cancelled."

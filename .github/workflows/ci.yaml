@@ -113,7 +113,7 @@ jobs:
       - name: 🧪 Run require-checks-in-pr with empty job-results (should succeed)
         uses: ./require-checks-in-pr
         with:
-          job-results: ""
+          job-results: "[]"
 
   test-require-checks-in-pr-success:
     runs-on: ubuntu-latest
@@ -128,7 +128,7 @@ jobs:
       - name: 🧪 Run require-checks-in-pr with all-success results
         uses: ./require-checks-in-pr
         with:
-          job-results: |
+          job-results:
             - success
             - skipped
             - success
@@ -148,7 +148,7 @@ jobs:
         continue-on-error: true
         uses: ./require-checks-in-pr
         with:
-          job-results: |
+          job-results:
             - success
             - failure
             - skipped
@@ -178,7 +178,7 @@ jobs:
         continue-on-error: true
         uses: ./require-checks-in-pr
         with:
-          job-results: |
+          job-results:
             - success
             - unknown-status
 
@@ -678,7 +678,7 @@ jobs:
 
       - uses: ./require-checks-in-pr
         with:
-          job-results: |
+          job-results:
             - ${{ needs.test-approve-pr.result }}
             - ${{ needs.test-create-issues-from-todos.result }}
             - ${{ needs.test-enable-auto-merge-on-pr.result }}
