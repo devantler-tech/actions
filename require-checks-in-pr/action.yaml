@@ -41,8 +41,9 @@ runs:
         allowed_values="success, failure, cancelled, skipped"
 
         while IFS= read -r result || [[ -n "$result" ]]; do
-          # Skip empty lines
-          result="$(printf '%s' "$result" | xargs)"
+          # Trim whitespace and skip blank lines (trailing newline from `|` block scalar).
+          result="${result#"${result%%[![:space:]]*}"}"
+          result="${result%"${result##*[![:space:]]}"}"
           [[ -z "$result" ]] && continue
 
           case "$result" in
