@@ -1,4 +1,4 @@
-name: Require Checks in PR
+name: Aggregate Job Checks
 description: |
   Aggregates the results of multiple jobs into a single required check.
   Fails if any job failed or was cancelled. Skipped jobs are treated as

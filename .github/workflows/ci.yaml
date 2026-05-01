@@ -99,8 +99,8 @@ jobs:
       - name: ✅ Verify GHCR login
         run: cat ~/.docker/config.json | grep -q "ghcr.io"
 
-  # ── require-checks-in-pr ────────────────────────────────────
-  test-require-checks-in-pr-empty:
+  # ── aggregate-job-checks ────────────────────────────────────
+  test-aggregate-job-checks-empty:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,12 +110,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run require-checks-in-pr with empty job-results (should succeed)
-        uses: ./require-checks-in-pr
+      - name: 🧪 Run aggregate-job-checks with empty job-results (should succeed)
+        uses: ./aggregate-job-checks
         with:
           job-results: ""
 
-  test-require-checks-in-pr-success:
+  test-aggregate-job-checks-success:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -125,12 +125,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run require-checks-in-pr with all-success results
-        uses: ./require-checks-in-pr
+      - name: 🧪 Run aggregate-job-checks with all-success results
+        uses: ./aggregate-job-checks
         with:
           job-results: "success skipped success"
 
-  test-require-checks-in-pr-failure:
+  test-aggregate-job-checks-failure:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -140,10 +140,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run require-checks-in-pr with a failed job (expected to fail)
+      - name: 🧪 Run aggregate-job-checks with a failed job (expected to fail)
         id: check
         continue-on-error: true
-        uses: ./require-checks-in-pr
+        uses: ./aggregate-job-checks
         with:
           job-results: "success failure skipped"
 
@@ -157,7 +157,7 @@ jobs:
             exit 1
           fi
 
-  test-require-checks-in-pr-unknown:
+  test-aggregate-job-checks-unknown:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -167,10 +167,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run require-checks-in-pr with an unknown result (expected to fail)
+      - name: 🧪 Run aggregate-job-checks with an unknown result (expected to fail)
         id: check
         continue-on-error: true
-        uses: ./require-checks-in-pr
+        uses: ./aggregate-job-checks
         with:
           job-results: "success unknown-status"
 
@@ -640,10 +640,10 @@ jobs:
       - test-create-issues-from-todos
       - test-enable-auto-merge-on-pr
       - test-login-to-ghcr
-      - test-require-checks-in-pr-empty
-      - test-require-checks-in-pr-success
-      - test-require-checks-in-pr-failure
-      - test-require-checks-in-pr-unknown
+      - test-aggregate-job-checks-empty
+      - test-aggregate-job-checks-success
+      - test-aggregate-job-checks-failure
+      - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
       - test-setup-copilot-skills-inline
       - test-setup-copilot-skills-pinned
@@ -668,17 +668,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./require-checks-in-pr
+      - uses: ./aggregate-job-checks
         with:
           job-results: >-
             ${{ needs.test-approve-pr.result }}
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
             ${{ needs.test-login-to-ghcr.result }}
-            ${{ needs.test-require-checks-in-pr-empty.result }}
-            ${{ needs.test-require-checks-in-pr-success.result }}
-            ${{ needs.test-require-checks-in-pr-failure.result }}
-            ${{ needs.test-require-checks-in-pr-unknown.result }}
+            ${{ needs.test-aggregate-job-checks-empty.result }}
+            ${{ needs.test-aggregate-job-checks-success.result }}
+            ${{ needs.test-aggregate-job-checks-failure.result }}
+            ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
             ${{ needs.test-setup-copilot-skills-inline.result }}
             ${{ needs.test-setup-copilot-skills-pinned.result }}

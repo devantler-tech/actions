@@ -26,6 +26,7 @@ flowchart TD
 
 | Action | Description |
 |--------|-------------|
+| [aggregate-job-checks](aggregate-job-checks/README.md) | Aggregate multiple job results into a single required check |
 | [approve-pr](approve-pr/README.md) | Approve a PR using a GitHub App identity |
 | [cleanup-ghcr-packages](cleanup-ghcr-packages/README.md) | Clean up old GHCR packages |
 | [create-issues-from-todos](create-issues-from-todos/README.md) | Create GitHub issues from TODO comments |
