@@ -12,8 +12,8 @@ This file is the single canonical instructions file for the repository. It is re
 └── README.md                     # Per-action docs (template in CONTRIBUTING.md)
 
 .github/
-├── workflows/test-<action>.yaml  # One test workflow per action
-├── fixtures/                     # Test fixtures consumed by test workflows
+├── workflows/ci.yaml             # CI: one `test-<action>` job per action
+├── fixtures/                     # Test fixtures consumed by the CI test jobs
 └── labels.yaml                   # GitHub issue label definitions
 
 zizmor.yml                        # Action SHA-pinning policy
@@ -29,14 +29,14 @@ All conventions are documented in [CONTRIBUTING.md](CONTRIBUTING.md). Key rules 
 - **Inputs/outputs:** kebab-case only (e.g., `app-id`, `github-token`)
 - **Action type:** Prefer **composite** over JavaScript/Docker
 - **External action pinning:** Pin third-party actions (non-`actions/*`, non-`github/*`, non-`devantler-tech/*`) to commit SHAs with a `# v<version>` comment — enforced by `zizmor.yml`
-- **Test workflow required:** Every new action needs `.github/workflows/test-<action-name>.yaml` that uses `step-security/harden-runner` first and `persist-credentials: false` on checkout
+- **Test job required:** Every new action needs a `test-<action-name>` job in `.github/workflows/ci.yaml`, with `persist-credentials: false` on the `actions/checkout` step
 - **`action.yaml`:** Always set `author: devantler-tech`
 
 ## Adding a New Action
 
 1. Create `<action-name>/action.yaml` and `<action-name>/README.md` (use the README template in CONTRIBUTING.md)
 2. Add a row to the Actions table in [README.md](README.md)
-3. Create `.github/workflows/test-<action-name>.yaml` exercising the action
+3. Add a `test-<action-name>` job to `.github/workflows/ci.yaml` exercising the action
 4. Run `zizmor` locally before pushing
 
 ## Security & Validation
