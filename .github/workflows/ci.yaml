@@ -79,6 +79,7 @@ jobs:
         uses: ./enable-auto-merge-on-pr
         with:
           pr-number: ${{ github.event.pull_request.number }}
+          dry-run: "true"
 
   # ── login-to-ghcr ──────────────────────────────────────────
   test-login-to-ghcr:
@@ -228,7 +229,7 @@ jobs:
         with:
           skills: |
             github/awesome-copilot git-commit
-            github/awesome-copilot gh-cli
+            github/awesome-copilot conventional-commit
 
       - name: ✅ Verify both skills installed
         shell: bash
@@ -236,13 +237,13 @@ jobs:
           INSTALLED: ${{ steps.setup.outputs.installed-skills }}
         run: |
           set -euo pipefail
-          for expected in "github/awesome-copilot/git-commit" "github/awesome-copilot/gh-cli"; do
+          for expected in "github/awesome-copilot/git-commit" "github/awesome-copilot/conventional-commit"; do
             if [[ "$INSTALLED" != *"$expected"* ]]; then
               echo "::error::Expected '$expected' in installed-skills output, got: $INSTALLED"
               exit 1
             fi
           done
-          for skill in git-commit gh-cli; do
+          for skill in git-commit conventional-commit; do
             if [[ ! -f ".agents/skills/${skill}/SKILL.md" ]]; then
               echo "::error::Expected .agents/skills/${skill}/SKILL.md to exist"
               find .agents/skills -maxdepth 3 -type f || true
