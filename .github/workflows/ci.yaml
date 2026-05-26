@@ -561,6 +561,29 @@ jobs:
             exit 1
           fi
 
+  # ── upload-coverage ─────────────────────────────────────────
+  test-upload-coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      code-quality: write
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Smoke test: the action must wire up and run without crashing. The upload is best-effort
+      # (fail-on-error: false) because GitHub Code Quality coverage must be enabled in repo settings
+      # before reports are accepted — upload errors surface as annotations, not CI failures.
+      - name: 🧪 Run upload-coverage
+        uses: ./upload-coverage
+        with:
+          file: .github/fixtures/upload-coverage/coverage.cobertura.xml
+          language: Go
+          label: code-coverage/test
+          fail-on-error: "false"
+
   # ── upsert-issue ────────────────────────────────────────────
   test-upsert-issue-create:
     runs-on: ubuntu-latest
@@ -657,6 +680,7 @@ jobs:
       - test-update-copilot-skills-noop
       - test-update-copilot-skills-dry-run
       - test-update-copilot-skills-missing-dir
+      - test-upload-coverage
       - test-upsert-issue-create
       - test-upsert-issue-close
       - zizmor
@@ -692,6 +716,7 @@ jobs:
             ${{ needs.test-update-copilot-skills-noop.result }}
             ${{ needs.test-update-copilot-skills-dry-run.result }}
             ${{ needs.test-update-copilot-skills-missing-dir.result }}
+            ${{ needs.test-upload-coverage.result }}
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}
             ${{ needs.zizmor.result }}

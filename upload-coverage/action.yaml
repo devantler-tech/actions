@@ -1,0 +1,53 @@
+name: Upload Coverage
+description: Upload a Cobertura XML coverage report to GitHub Code Quality (and optionally Codecov).
+author: devantler-tech
+inputs:
+  file:
+    description: Path to the Cobertura XML coverage report to upload.
+    required: true
+  language:
+    description: Linguist language name for the report (e.g. "Go", "C#", "TypeScript").
+    required: true
+  label:
+    description: Label for the coverage report (e.g. "code-coverage/go").
+    required: false
+    default: code-coverage
+  fail-on-error:
+    description: >-
+      Fail the step if the GitHub Code Quality upload fails. Defaults to "false" so a transient
+      preview-period hiccup never blocks CI; upload errors are still surfaced as ::error::
+      annotations. Set to "true" once the feature is generally available.
+    required: false
+    default: "false"
+  token:
+    description: >-
+      GitHub token with the `code-quality: write` permission. Defaults to the workflow token. The
+      CALLING job must grant `code-quality: write` — a composite action cannot declare it itself.
+    required: false
+    default: ${{ github.token }}
+  codecov-token:
+    description: >-
+      Optional Codecov token. When provided, the report is ALSO uploaded to Codecov. This is a
+      transitional coexistence path while GitHub Code Quality coverage is in public preview; it is
+      intended to be removed once native coverage is validated.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: 📊 Upload coverage to GitHub Code Quality
+      uses: actions/upload-code-coverage@b51da2c3c1b23e04d2d6477cfc34350b1f5cd3e9 # v1.2.0
+      with:
+        file: ${{ inputs.file }}
+        language: ${{ inputs.language }}
+        label: ${{ inputs.label }}
+        fail-on-error: ${{ inputs.fail-on-error }}
+        token: ${{ inputs.token }}
+
+    - name: 📄 Upload coverage to Codecov (transitional)
+      if: inputs.codecov-token != ''
+      uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
+      with:
+        files: ${{ inputs.file }}
+        token: ${{ inputs.codecov-token }}
+        fail_ci_if_error: true
