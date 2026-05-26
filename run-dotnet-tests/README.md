@@ -1,6 +1,8 @@
 # Run Dotnet Tests
 
-Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 SDK, configures NuGet sources (including GHCR for private packages), runs tests with coverage collection, and uploads reports to Codecov.
+Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 SDK, configures NuGet sources (including GHCR for private packages), runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) — and, when `codecov-token` is set, also to Codecov during the transition off the external service.
+
+> **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build) and requires the repo's _Settings → Code quality_ to have coverage enabled.
 
 ## Inputs
 

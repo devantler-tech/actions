@@ -191,6 +191,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      code-quality: write # for the GitHub Code Quality coverage upload
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
