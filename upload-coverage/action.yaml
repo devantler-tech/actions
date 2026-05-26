@@ -21,7 +21,7 @@ inputs:
     default: "false"
   token:
     description: >-
-      GitHub token with the code-quality:write permission. Defaults to the workflow token. The
+      GitHub token with the `code-quality: write` permission. Defaults to the workflow token. The
       CALLING job must grant `code-quality: write` — a composite action cannot declare it itself.
     required: false
     default: ${{ github.token }}

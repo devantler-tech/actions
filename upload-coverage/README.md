@@ -12,7 +12,7 @@ GitHub Code Quality coverage requires the org/repo to be on a **Team** or **Ente
 | `language` | Linguist language name for the report (e.g. `Go`, `C#`) | ✅ | - |
 | `label` | Label for the coverage report (e.g. `code-coverage/go`) | ❌ | `code-coverage` |
 | `fail-on-error` | Fail the step if the GitHub upload fails (errors are always surfaced as annotations) | ❌ | `false` |
-| `token` | GitHub token with `code-quality:write` (the calling job must grant the permission) | ❌ | `${{ github.token }}` |
+| `token` | GitHub token with `code-quality: write` (the calling job must grant the permission) | ❌ | `${{ github.token }}` |
 | `codecov-token` | Optional Codecov token; when set, the report is also uploaded to Codecov (transitional) | ❌ | - |
 
 ## Outputs
