@@ -1,8 +1,8 @@
 # Upload Coverage
 
-Upload a Cobertura XML coverage report to [GitHub Code Quality](https://docs.github.com/code-security/code-quality) so the aggregate coverage percentage appears on pull requests. Optionally also uploads the same report to Codecov during the transition off the external service.
+Upload a Cobertura XML coverage report to [GitHub Code Quality](https://docs.github.com/code-security/code-quality) so the aggregate coverage percentage appears on pull requests.
 
-GitHub Code Quality coverage requires the org/repo to be on a **Team** or **Enterprise Cloud** plan, and coverage must be **enabled in the repository's _Settings → Code quality_**. Fork PRs and merge-queue runs are skipped automatically by the underlying [`actions/upload-code-coverage`](https://github.com/actions/upload-code-coverage) action.
+GitHub Code Quality requires the org/repo to be on a **Team** or **Enterprise Cloud** plan, and **Code Quality must be enabled** in the repository's _Settings → Code quality_. Fork PRs and merge-queue runs are skipped automatically by the underlying [`actions/upload-code-coverage`](https://github.com/actions/upload-code-coverage) action.
 
 ## Inputs
 
@@ -13,7 +13,6 @@ GitHub Code Quality coverage requires the org/repo to be on a **Team** or **Ente
 | `label` | Label for the coverage report (e.g. `code-coverage/go`) | ❌ | `code-coverage` |
 | `fail-on-error` | Fail the step if the GitHub upload fails (errors are always surfaced as annotations) | ❌ | `false` |
 | `token` | GitHub token with `code-quality: write` (the calling job must grant the permission) | ❌ | `${{ github.token }}` |
-| `codecov-token` | Optional Codecov token; when set, the report is also uploaded to Codecov (transitional) | ❌ | - |
 
 ## Outputs
 
@@ -64,19 +63,4 @@ steps:
       file: ./TestResults/coverage.cobertura.xml
       language: C#
       label: code-coverage/dotnet
-```
-
-### Transitional Codecov upload
-
-Pass `codecov-token` to additionally upload to Codecov while validating the native feature:
-
-```yaml
-steps:
-  - name: 📊 Upload coverage
-    uses: devantler-tech/actions/upload-coverage@main
-    with:
-      file: coverage.cobertura.xml
-      language: Go
-      label: code-coverage/go
-      codecov-token: ${{ secrets.CODECOV_TOKEN }}
 ```
