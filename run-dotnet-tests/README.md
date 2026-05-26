@@ -1,8 +1,8 @@
 # Run Dotnet Tests
 
-Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 SDK, configures NuGet sources (including GHCR for private packages), runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) — and, when `codecov-token` is set, also to Codecov during the transition off the external service.
+Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 SDK, configures NuGet sources (including GHCR for private packages), runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage).
 
-> **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build) and requires the repo's _Settings → Code quality_ to have coverage enabled.
+> **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build) and requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
 
 ## Inputs
 
@@ -11,12 +11,11 @@ Test .NET solutions or projects across multiple platforms with code coverage rep
 | `app-id` | GitHub App ID to generate a token | ✅ | - |
 | `app-private-key` | Private key of the GitHub App | ✅ | - |
 | `github-token` | GitHub token to access the repository | ✅ | - |
-| `codecov-token` | Token to upload code coverage to CodeCov | ❌ | - |
 | `working-directory` | Directory to run the tests in | ❌ | `.` |
 
 ## Usage
 
-### With code coverage
+### Basic
 
 ```yaml
 steps:
@@ -26,7 +25,6 @@ steps:
       app-id: ${{ vars.APP_ID }}
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
-      codecov-token: ${{ secrets.CODECOV_TOKEN }}
 ```
 
 ### Custom working directory
@@ -40,16 +38,4 @@ steps:
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
       working-directory: src/MyProject
-```
-
-### Without code coverage
-
-```yaml
-steps:
-  - name: Test .NET project
-    uses: devantler-tech/actions/run-dotnet-tests@main
-    with:
-      app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      github-token: ${{ secrets.GITHUB_TOKEN }}
 ```

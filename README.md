@@ -38,7 +38,7 @@ flowchart TD
 | [setup-ksail-cli](setup-ksail-cli/README.md) | Install KSail CLI via Homebrew |
 | [sync-github-labels](sync-github-labels/README.md) | Sync GitHub labels from a configuration file |
 | [update-copilot-skills](update-copilot-skills/README.md) | Run `gh skill update --all` against installed skills and report changes |
-| [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality (and optionally Codecov) |
+| [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
 
 ## Contributing
