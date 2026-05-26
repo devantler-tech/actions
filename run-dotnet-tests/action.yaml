@@ -65,3 +65,23 @@ runs:
         fail_ci_if_error: true
       env:
         CODECOV_TOKEN: ${{ inputs.codecov-token }}
+    # GitHub Code Quality accepts a single Cobertura report, so merge the per-project files.
+    # Linux only — one upload per repo avoids the matrix triple-reporting the same coverage.
+    # best-effort: this is a preview feature, so it must never break .NET CI.
+    - name: 🔀 Merge coverage into a single Cobertura report
+      if: matrix.os == 'ubuntu-latest'
+      continue-on-error: true
+      run: |
+        dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.10
+        export PATH="$PATH:$HOME/.dotnet/tools"
+        reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage-merged -reporttypes:Cobertura
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: 📊 Upload Code Coverage to GitHub Code Quality
+      if: matrix.os == 'ubuntu-latest'
+      continue-on-error: true
+      uses: devantler-tech/actions/upload-coverage@60d895a7aabe6e3c0247c86a83560656a760ee08 # v3.5.0
+      with:
+        file: ${{ inputs.working-directory }}/coverage-merged/Cobertura.xml
+        language: C#
+        label: code-coverage/dotnet
