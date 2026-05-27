@@ -209,8 +209,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
-  # ── setup-copilot-skills ────────────────────────────────────
-  test-setup-copilot-skills-inline:
+  # ── setup-agent-skills ────────────────────────────────────
+  test-setup-agent-skills-inline:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -224,9 +224,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills
+      - name: 🧪 Run setup-agent-skills
         id: setup
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: |
             github/awesome-copilot git-commit
@@ -257,7 +257,7 @@ jobs:
             fi
           done
 
-  test-setup-copilot-skills-pinned:
+  test-setup-agent-skills-pinned:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -267,9 +267,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills with @pin
+      - name: 🧪 Run setup-agent-skills with @pin
         id: setup
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: |
             github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
@@ -296,7 +296,7 @@ jobs:
             exit 1
           fi
 
-  test-setup-copilot-skills-missing-input:
+  test-setup-agent-skills-missing-input:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -306,10 +306,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills with blank skills input (expected to fail)
+      - name: 🧪 Run setup-agent-skills with blank skills input (expected to fail)
         id: setup
         continue-on-error: true
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: " \n# only a comment\n"
 
@@ -323,7 +323,7 @@ jobs:
             exit 1
           fi
 
-  test-setup-copilot-skills-malformed-line:
+  test-setup-agent-skills-malformed-line:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -333,10 +333,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-copilot-skills with an extra token (expected to fail)
+      - name: 🧪 Run setup-agent-skills with an extra token (expected to fail)
         id: setup
         continue-on-error: true
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: |
             github/awesome-copilot git-commit extra-token
@@ -350,6 +350,46 @@ jobs:
             echo "::error::Expected the action to fail when a line has more than two tokens, got: $OUTCOME"
             exit 1
           fi
+
+  test-setup-agent-skills-multi-agent:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-agent-skills for two agents
+        id: setup
+        uses: ./setup-agent-skills
+        with:
+          agents: |
+            github-copilot
+            claude-code
+          skills: |
+            github/awesome-copilot git-commit
+
+      - name: ✅ Verify the skill installed for both agents
+        shell: bash
+        env:
+          INSTALLED: ${{ steps.setup.outputs.installed-skills }}
+        run: |
+          set -euo pipefail
+          # The skill is reported once regardless of how many agents it installed for.
+          if [[ "$INSTALLED" != *"github/awesome-copilot/git-commit"* ]]; then
+            echo "::error::Expected 'github/awesome-copilot/git-commit' in installed-skills output, got: $INSTALLED"
+            exit 1
+          fi
+          # github-copilot installs to .agents/skills at project scope; claude-code installs to .claude/skills.
+          for md in ".agents/skills/git-commit/SKILL.md" ".claude/skills/git-commit/SKILL.md"; do
+            if [[ ! -f "$md" ]]; then
+              echo "::error::Expected $md to exist (per-agent install)"
+              find .agents/skills .claude/skills -maxdepth 3 -type f 2>/dev/null || true
+              exit 1
+            fi
+          done
 
   # ── setup-go-toolchain ─────────────────────────────────────
   test-setup-go-toolchain:
@@ -449,8 +489,8 @@ jobs:
           config-file: .github/labels.yaml
           delete-other-labels: "false"
 
-  # ── update-copilot-skills ───────────────────────────────────
-  test-update-copilot-skills-noop:
+  # ── update-agent-skills ───────────────────────────────────
+  test-update-agent-skills-noop:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -465,14 +505,14 @@ jobs:
           persist-credentials: false
 
       - name: 📦 Install a skill pinned to a historical commit
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: |
             github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
 
-      - name: 🔄 Run update-copilot-skills (should be a no-op against a pinned skill)
+      - name: 🔄 Run update-agent-skills (should be a no-op against a pinned skill)
         id: update
-        uses: ./update-copilot-skills
+        uses: ./update-agent-skills
         with:
           dir: .agents/skills
 
@@ -494,7 +534,7 @@ jobs:
             exit 1
           fi
 
-  test-update-copilot-skills-dry-run:
+  test-update-agent-skills-dry-run:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -505,7 +545,7 @@ jobs:
           persist-credentials: false
 
       - name: 📦 Install a skill pinned to a historical commit
-        uses: ./setup-copilot-skills
+        uses: ./setup-agent-skills
         with:
           skills: |
             github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
@@ -515,9 +555,9 @@ jobs:
         shell: bash
         run: echo "sha=$(shasum -a 256 .agents/skills/git-commit/SKILL.md | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
-      - name: 🔄 Run update-copilot-skills with --unpin --dry-run
+      - name: 🔄 Run update-agent-skills with --unpin --dry-run
         id: update
-        uses: ./update-copilot-skills
+        uses: ./update-agent-skills
         with:
           dir: .agents/skills
           unpin: "true"
@@ -535,7 +575,7 @@ jobs:
             exit 1
           fi
 
-  test-update-copilot-skills-missing-dir:
+  test-update-agent-skills-missing-dir:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -545,10 +585,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🔄 Run update-copilot-skills against a missing dir (expected to fail)
+      - name: 🔄 Run update-agent-skills against a missing dir (expected to fail)
         id: update
         continue-on-error: true
-        uses: ./update-copilot-skills
+        uses: ./update-agent-skills
         with:
           dir: does-not-exist
 
@@ -670,17 +710,18 @@ jobs:
       - test-aggregate-job-checks-failure
       - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
-      - test-setup-copilot-skills-inline
-      - test-setup-copilot-skills-pinned
-      - test-setup-copilot-skills-missing-input
-      - test-setup-copilot-skills-malformed-line
+      - test-setup-agent-skills-inline
+      - test-setup-agent-skills-pinned
+      - test-setup-agent-skills-missing-input
+      - test-setup-agent-skills-malformed-line
+      - test-setup-agent-skills-multi-agent
       - test-setup-go-toolchain
       - test-setup-go-toolchain-private-modules
       - test-setup-ksail-cli
       - test-sync-github-labels
-      - test-update-copilot-skills-noop
-      - test-update-copilot-skills-dry-run
-      - test-update-copilot-skills-missing-dir
+      - test-update-agent-skills-noop
+      - test-update-agent-skills-dry-run
+      - test-update-agent-skills-missing-dir
       - test-upload-coverage
       - test-upsert-issue-create
       - test-upsert-issue-close
@@ -706,17 +747,18 @@ jobs:
             ${{ needs.test-aggregate-job-checks-failure.result }}
             ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
-            ${{ needs.test-setup-copilot-skills-inline.result }}
-            ${{ needs.test-setup-copilot-skills-pinned.result }}
-            ${{ needs.test-setup-copilot-skills-missing-input.result }}
-            ${{ needs.test-setup-copilot-skills-malformed-line.result }}
+            ${{ needs.test-setup-agent-skills-inline.result }}
+            ${{ needs.test-setup-agent-skills-pinned.result }}
+            ${{ needs.test-setup-agent-skills-missing-input.result }}
+            ${{ needs.test-setup-agent-skills-malformed-line.result }}
+            ${{ needs.test-setup-agent-skills-multi-agent.result }}
             ${{ needs.test-setup-go-toolchain.result }}
             ${{ needs.test-setup-go-toolchain-private-modules.result }}
             ${{ needs.test-setup-ksail-cli.result }}
             ${{ needs.test-sync-github-labels.result }}
-            ${{ needs.test-update-copilot-skills-noop.result }}
-            ${{ needs.test-update-copilot-skills-dry-run.result }}
-            ${{ needs.test-update-copilot-skills-missing-dir.result }}
+            ${{ needs.test-update-agent-skills-noop.result }}
+            ${{ needs.test-update-agent-skills-dry-run.result }}
+            ${{ needs.test-update-agent-skills-missing-dir.result }}
             ${{ needs.test-upload-coverage.result }}
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}

@@ -1,5 +1,5 @@
-name: Setup Copilot Skills
-description: Install agent skills with the gh skill CLI from a newline list of "<owner/repo> <skill>[@pin]" entries
+name: Setup Agent Skills
+description: Install agent skills with the gh skill CLI from a newline list of "<owner/repo> <skill>[@pin]" entries, for one or more agents (e.g. github-copilot, claude-code)
 author: devantler-tech
 inputs:
   skills:
@@ -8,8 +8,12 @@ inputs:
       `<owner/repo> <skill>[@pin]`, where `@pin` is an optional tag, branch, or commit SHA. Blank
       lines and lines starting with `#` are ignored.
     required: true
-  agent:
-    description: Value passed to `gh skill install --agent`
+  agents:
+    description: |
+      One or more target agents passed to `gh skill install --agent`, separated by whitespace,
+      commas, or newlines (e.g. `github-copilot`, or `github-copilot claude-code`). Each skill is
+      installed once per agent, so the same list works in any agent — Copilot, Claude Code, and the
+      others `gh skill` supports.
     required: false
     default: github-copilot
   scope:
@@ -74,7 +78,7 @@ runs:
         else
           curl -fsSL "$url" | tar -xzC "$tmp"
         fi
-        install_dir="${RUNNER_TEMP:-/tmp}/setup-copilot-skills/bin"
+        install_dir="${RUNNER_TEMP:-/tmp}/setup-agent-skills/bin"
         mkdir -p "$install_dir"
         install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
         echo "$install_dir" >> "$GITHUB_PATH"  # zizmor: ignore[github-env]
@@ -92,13 +96,24 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         INPUT_SKILLS: ${{ inputs.skills }}
-        INPUT_AGENT: ${{ inputs.agent }}
+        INPUT_AGENTS: ${{ inputs.agents }}
         INPUT_SCOPE: ${{ inputs.scope }}
       run: |
         set -euo pipefail
 
         if [ -z "${INPUT_SKILLS//[[:space:]]/}" ]; then
           echo "::error::'skills' input is empty. Provide a newline-separated list of '<owner/repo> <skill>[@pin]' entries."
+          exit 1
+        fi
+
+        # Split the agents list on whitespace, commas, and newlines.
+        # `|| [ -n "$agent" ]` keeps the final entry when there is no trailing newline.
+        agents=()
+        while IFS= read -r agent || [ -n "$agent" ]; do
+          [ -n "$agent" ] && agents+=("$agent")
+        done < <(printf '%s' "$INPUT_AGENTS" | tr ',' '\n' | tr -s '[:space:]' '\n')
+        if [ ${#agents[@]} -eq 0 ]; then
+          echo "::error::'agents' input is empty. Provide one or more agents (e.g. 'github-copilot claude-code')."
           exit 1
         fi
 
@@ -126,13 +141,16 @@ runs:
             *@*) name=${spec%@*}; pin=${spec#*@} ;;
           esac
 
-          if [ -n "$pin" ]; then
-            echo "Installing ${src}/${name}@${pin} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
-            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE" --pin "$pin"
-          else
-            echo "Installing ${src}/${name} (agent=${INPUT_AGENT}, scope=${INPUT_SCOPE})..."
-            gh skill install "$src" "$name" --agent "$INPUT_AGENT" --scope "$INPUT_SCOPE"
-          fi
+          for agent in "${agents[@]}"; do
+            if [ -n "$pin" ]; then
+              echo "Installing ${src}/${name}@${pin} (agent=${agent}, scope=${INPUT_SCOPE})..."
+              gh skill install "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE" --pin "$pin"
+            else
+              echo "Installing ${src}/${name} (agent=${agent}, scope=${INPUT_SCOPE})..."
+              gh skill install "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE"
+            fi
+          done
+          # Record each skill once, regardless of how many agents it was installed for.
           if [ -n "$pin" ]; then
             printf '%s/%s@%s\n' "$src" "$name" "$pin" >> "$installed_file"
           else
