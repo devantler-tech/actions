@@ -6,9 +6,34 @@ rules:
         github/*: any
         devantler-tech/*: any
         "*": hash-pin
+  # excessive-permissions: kept disabled. The workflows already follow least
+  # privilege: ci.yaml and active-release.yaml set a top-level `permissions: {}`
+  # (deny-all) plus minimal per-job grants, and the single-job
+  # active-sync-github-labels.yaml scopes itself to just `issues: write`. The
+  # ci.yaml test harness must still exercise actions that need elevated scopes:
+  # approve-pr → `pull-requests: write` + `contents: write`;
+  # create-issues-from-todos → `issues: write`; run-dotnet-tests coverage upload
+  # → `code-quality: write`; the login-to-ghcr tests → `packages: read`. zizmor
+  # flags those as "excessive" even though each is the minimum the action under
+  # test needs, so a single global disable is clearer than a per-job `ignore`
+  # annotation on every elevated-scope test job. Revisit if those jobs are ever
+  # split into a dedicated workflow.
   excessive-permissions:
     disable: true
-  secrets-inherit:
-    disable: true
+  # secrets-inherit: RE-ENABLED 2026-05-29 — no workflow uses `secrets: inherit`.
+  # active-release.yaml forwards secrets to the reusable create-release workflow
+  # explicitly by name (`secrets: { APP_PRIVATE_KEY: ... }`), which is the
+  # pattern this rule encourages. Enabling it costs nothing today and guards
+  # against a future `secrets: inherit` regression.
+  # secrets-outside-env: kept disabled. The rule prefers a `${{ secrets.* }}`
+  # value to be lifted into `env:` and referenced indirectly rather than written
+  # inline. Here every reference is already a scoped composite-action input
+  # passed via `with:` (`github-token:` to login-to-ghcr and setup-go-toolchain;
+  # `app-private-key:` to approve-pr, create-issues-from-todos, run-dotnet-tests)
+  # or a named secret forwarded to a reusable workflow (active-release.yaml).
+  # Routing each through `env:` first is possible but only adds boilerplate — the
+  # secret still ends up as the same action input, so exposure is unchanged — and
+  # the rule fires on every call site. A global disable is clearer than an
+  # `ignore` on each.
   secrets-outside-env:
     disable: true
