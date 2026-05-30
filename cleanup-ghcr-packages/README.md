@@ -8,6 +8,8 @@ Clean up old GitHub Container Registry (GHCR) packages. Removes container images
 |------|-------------|----------|---------|
 | `older-than` | Delete images older than this duration | ❌ | `1 year` |
 | `keep-n-tagged` | Number of tagged images to keep | ❌ | `10` |
+| `package` | Package to clean up. Defaults to the calling repository's package | ❌ | |
+| `dry-run` | Simulate the cleanup without deleting anything (`true`/`false`) | ❌ | `false` |
 
 ## Usage
 
@@ -28,4 +30,17 @@ steps:
     with:
       older-than: "3 months"
       keep-n-tagged: "15"
+```
+
+### Dry run
+
+Preview what would be deleted without removing anything. Recommended before a first real run.
+
+```yaml
+steps:
+  - name: Preview GHCR cleanup
+    uses: devantler-tech/actions/cleanup-ghcr-packages@main
+    with:
+      package: "my-app"
+      dry-run: "true"
 ```

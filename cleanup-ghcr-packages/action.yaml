@@ -10,6 +10,13 @@ inputs:
     description: "Number of tagged images to keep"
     required: false
     default: "10"
+  package:
+    description: "Package to clean up. Defaults to the calling repository's package."
+    required: false
+  dry-run:
+    description: "Simulate the cleanup without deleting anything (true/false)."
+    required: false
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -17,3 +24,5 @@ runs:
       with:
         older-than: ${{ inputs.older-than }}
         keep-n-tagged: ${{ inputs.keep-n-tagged }}
+        package: ${{ inputs.package }}
+        dry-run: ${{ inputs.dry-run }}

@@ -36,6 +36,25 @@ jobs:
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           pr-number: ${{ github.event.pull_request.number }}
 
+  # ── cleanup-ghcr-packages ───────────────────────────────────
+  test-cleanup-ghcr-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Dry run against a stable, long-lived package so the test exercises the
+      # action's wiring without ever deleting anything.
+      - name: 🧪 Run cleanup-ghcr-packages (dry run)
+        uses: ./cleanup-ghcr-packages
+        with:
+          package: pandoc-plus
+          dry-run: "true"
+
   # ── create-issues-from-todos ────────────────────────────────
   test-create-issues-from-todos:
     runs-on: ubuntu-latest
@@ -702,6 +721,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - test-approve-pr
+      - test-cleanup-ghcr-packages
       - test-create-issues-from-todos
       - test-enable-auto-merge-on-pr
       - test-login-to-ghcr
@@ -739,6 +759,7 @@ jobs:
         with:
           job-results: >-
             ${{ needs.test-approve-pr.result }}
+            ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
             ${{ needs.test-login-to-ghcr.result }}
