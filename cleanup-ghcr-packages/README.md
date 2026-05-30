@@ -8,7 +8,7 @@ Clean up old GitHub Container Registry (GHCR) packages. Removes container images
 |------|-------------|----------|---------|
 | `older-than` | Delete images older than this duration | ❌ | `1 year` |
 | `keep-n-tagged` | Number of tagged images to keep | ❌ | `10` |
-| `package` | Package to clean up. Defaults to the calling repository's package | ❌ | |
+| `package` | Package to clean up. Defaults to the calling repository's package (resolved by the underlying cleanup action) | ❌ | `repository name` |
 | `dry-run` | Simulate the cleanup without deleting anything (`true`/`false`) | ❌ | `false` |
 
 ## Usage
