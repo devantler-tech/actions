@@ -11,7 +11,7 @@ inputs:
     required: false
     default: "10"
   package:
-    description: "Package to clean up. Defaults to the calling repository's package."
+    description: "Package to clean up. Defaults to the calling repository's package (resolved by the underlying cleanup action)."
     required: false
   dry-run:
     description: "Simulate the cleanup without deleting anything (true/false)."
