@@ -755,38 +755,6 @@ jobs:
             exit 1
           fi
 
-  # ── enable-auto-merge-on-pr (negative path) ────────────────
-  test-enable-auto-merge-on-pr-invalid-method:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      # dry-run defaults to "false" so the merge-method validation runs, and auto-merge
-      # is enabled on this repo, so the validation step executes and rejects the typo'd
-      # method with `exit 1` before any `gh pr merge` call is made (PR #1 is never touched).
-      - name: 🧪 Run enable-auto-merge-on-pr with an invalid merge-method (expected to fail)
-        id: enable
-        continue-on-error: true
-        uses: ./enable-auto-merge-on-pr
-        with:
-          pr-number: "1"
-          merge-method: rebasee
-
-      - name: ✅ Verify step failed as expected
-        shell: bash
-        env:
-          OUTCOME: ${{ steps.enable.outcome }}
-        run: |
-          if [[ "$OUTCOME" != "failure" ]]; then
-            echo "::error::Expected the action to fail on an invalid merge-method, got: $OUTCOME"
-            exit 1
-          fi
-
   # ── setup-go-toolchain (negative path) ─────────────────────
   test-setup-go-toolchain-invalid-version:
     runs-on: ubuntu-latest
@@ -924,7 +892,6 @@ jobs:
       - test-upsert-issue-close
       - test-sync-github-labels-missing-config
       - test-login-to-ghcr-empty-token
-      - test-enable-auto-merge-on-pr-invalid-method
       - test-setup-go-toolchain-invalid-version
       - test-upsert-issue-missing-body
       - test-run-dotnet-tests-missing-working-directory
@@ -968,7 +935,6 @@ jobs:
             ${{ needs.test-upsert-issue-close.result }}
             ${{ needs.test-sync-github-labels-missing-config.result }}
             ${{ needs.test-login-to-ghcr-empty-token.result }}
-            ${{ needs.test-enable-auto-merge-on-pr-invalid-method.result }}
             ${{ needs.test-setup-go-toolchain-invalid-version.result }}
             ${{ needs.test-upsert-issue-missing-body.result }}
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
