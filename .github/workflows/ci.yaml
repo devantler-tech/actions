@@ -698,6 +698,183 @@ jobs:
           close-comment: "🧪 Closed by test workflow."
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── sync-github-labels (negative path) ─────────────────────
+  test-sync-github-labels-missing-config:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run sync-github-labels with a missing config file (expected to fail)
+        id: sync
+        continue-on-error: true
+        uses: ./sync-github-labels
+        with:
+          config-file: .github/this-config-does-not-exist.yaml
+          delete-other-labels: "false"
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.sync.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on a missing config file, got: $OUTCOME"
+            exit 1
+          fi
+
+  # ── login-to-ghcr (negative path) ──────────────────────────
+  test-login-to-ghcr-empty-token:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run login-to-ghcr with an empty token (expected to fail)
+        id: login
+        continue-on-error: true
+        uses: ./login-to-ghcr
+        with:
+          github-token: ""
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.login.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail with an empty github-token, got: $OUTCOME"
+            exit 1
+          fi
+
+  # ── enable-auto-merge-on-pr (negative path) ────────────────
+  test-enable-auto-merge-on-pr-invalid-method:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # dry-run defaults to "false" so the merge-method validation runs, and auto-merge
+      # is enabled on this repo, so the validation step executes and rejects the typo'd
+      # method with `exit 1` before any `gh pr merge` call is made (PR #1 is never touched).
+      - name: 🧪 Run enable-auto-merge-on-pr with an invalid merge-method (expected to fail)
+        id: enable
+        continue-on-error: true
+        uses: ./enable-auto-merge-on-pr
+        with:
+          pr-number: "1"
+          merge-method: rebasee
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.enable.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on an invalid merge-method, got: $OUTCOME"
+            exit 1
+          fi
+
+  # ── setup-go-toolchain (negative path) ─────────────────────
+  test-setup-go-toolchain-invalid-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run setup-go-toolchain with a non-existent version (expected to fail)
+        id: setup-go
+        continue-on-error: true
+        uses: ./setup-go-toolchain
+        with:
+          go-version: "99.99.99"
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.setup-go.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on a non-existent Go version, got: $OUTCOME"
+            exit 1
+          fi
+
+  # ── upsert-issue (negative path) ───────────────────────────
+  test-upsert-issue-missing-body:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run upsert-issue with neither body nor body-file (expected to fail)
+        id: upsert
+        continue-on-error: true
+        uses: ./upsert-issue
+        with:
+          title: "[test] upsert-issue missing-body negative test"
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.upsert.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail when neither body nor body-file is provided, got: $OUTCOME"
+            exit 1
+          fi
+
+  # ── run-dotnet-tests (negative path) ───────────────────────
+  test-run-dotnet-tests-missing-working-directory:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run run-dotnet-tests against a non-existent working-directory (expected to fail)
+        id: dotnet
+        continue-on-error: true
+        uses: ./run-dotnet-tests
+        with:
+          app-id: ${{ vars.APP_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: does-not-exist
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.dotnet.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on a non-existent working-directory, got: $OUTCOME"
+            exit 1
+          fi
+
   # ── zizmor ──────────────────────────────────────────────────
   zizmor:
     runs-on: ubuntu-latest
@@ -745,6 +922,12 @@ jobs:
       - test-upload-coverage
       - test-upsert-issue-create
       - test-upsert-issue-close
+      - test-sync-github-labels-missing-config
+      - test-login-to-ghcr-empty-token
+      - test-enable-auto-merge-on-pr-invalid-method
+      - test-setup-go-toolchain-invalid-version
+      - test-upsert-issue-missing-body
+      - test-run-dotnet-tests-missing-working-directory
       - zizmor
     runs-on: ubuntu-latest
     permissions:
@@ -783,4 +966,10 @@ jobs:
             ${{ needs.test-upload-coverage.result }}
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}
+            ${{ needs.test-sync-github-labels-missing-config.result }}
+            ${{ needs.test-login-to-ghcr-empty-token.result }}
+            ${{ needs.test-enable-auto-merge-on-pr-invalid-method.result }}
+            ${{ needs.test-setup-go-toolchain-invalid-version.result }}
+            ${{ needs.test-upsert-issue-missing-body.result }}
+            ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.zizmor.result }}
