@@ -715,6 +715,55 @@ jobs:
       - name: 🔒 Run zizmor
         uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
 
+  # ── lint-readme-parity ──────────────────────────────────────
+  lint-readme-parity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 📋 Check README ↔ action.yaml input/output parity
+        shell: bash
+        run: |
+          # Fail if any input/output declared in an action.yaml is missing from
+          # its README's ## Inputs / ## Outputs table. yq is preinstalled on the
+          # GitHub-hosted ubuntu-latest runner image.
+          status=0
+          for action_yaml in */action.yaml; do
+            dir="$(dirname "$action_yaml")"
+            readme="$dir/README.md"
+            if [[ ! -f "$readme" ]]; then
+              echo "::error file=$dir::missing README.md"
+              status=1
+              continue
+            fi
+            # README section between '## Inputs'/'## Outputs' and the next '## ' heading.
+            inputs_doc="$(awk '/^## Inputs/{f=1;next} /^## /{f=0} f' "$readme")"
+            outputs_doc="$(awk '/^## Outputs/{f=1;next} /^## /{f=0} f' "$readme")"
+            while IFS= read -r name; do
+              [[ -z "$name" ]] && continue
+              if ! grep -qF "\`$name\`" <<<"$inputs_doc"; then
+                echo "::error file=$action_yaml::input '$name' is declared in action.yaml but not documented in $readme (## Inputs)"
+                status=1
+              fi
+            done < <(yq -r '.inputs // {} | keys | .[]' "$action_yaml")
+            while IFS= read -r name; do
+              [[ -z "$name" ]] && continue
+              if ! grep -qF "\`$name\`" <<<"$outputs_doc"; then
+                echo "::error file=$action_yaml::output '$name' is declared in action.yaml but not documented in $readme (## Outputs)"
+                status=1
+              fi
+            done < <(yq -r '.outputs // {} | keys | .[]' "$action_yaml")
+          done
+          if [[ "$status" -eq 0 ]]; then
+            echo "README parity OK: every action.yaml input/output is documented."
+          fi
+          exit "$status"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -746,6 +795,7 @@ jobs:
       - test-upsert-issue-create
       - test-upsert-issue-close
       - zizmor
+      - lint-readme-parity
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -784,3 +834,4 @@ jobs:
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}
             ${{ needs.zizmor.result }}
+            ${{ needs.lint-readme-parity.result }}
