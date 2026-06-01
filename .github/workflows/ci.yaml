@@ -874,10 +874,30 @@ jobs:
       - name: 📋 Check README ↔ action.yaml input/output parity
         shell: bash
         run: |
-          # Fail if any input/output declared in an action.yaml is missing from
-          # its README's ## Inputs / ## Outputs table. yq is preinstalled on the
-          # GitHub-hosted ubuntu-latest runner image.
+          # Bidirectional README <-> action.yaml input/output parity check:
+          #   forward — every input/output declared in an action.yaml must appear
+          #             in its README's ## Inputs / ## Outputs table; and
+          #   reverse — every name in those README tables must be a declared
+          #             input/output (catches rows left stale by a rename/removal).
+          # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
           status=0
+
+          # Section body between '## <heading>' and the next '## ' heading.
+          section() { awk -v h="$1" '/^## /{f=0} f; $0 ~ "^## " h "$" {f=1}' "$2"; }
+          # First-column names from the markdown table under '## <heading>'
+          # (skips the header row and the |---|---| separator row).
+          table_names() {
+            awk -v h="$1" '
+              /^## / {f=0}
+              $0 ~ "^## " h "$" {f=1; next}
+              f && /^[ \t]*\|/ {
+                if ($0 ~ /^[ \t]*\|[ :|-]+\|?[ \t]*$/) next
+                line=$0; sub(/^[ \t]*\|/,"",line); split(line,a,"|"); cell=a[1]
+                gsub(/[`* \t]/,"",cell)
+                if (cell!="" && cell!="Input" && cell!="Output" && cell!="Name") print cell
+              }' "$2"
+          }
+
           for action_yaml in */action.yaml; do
             dir="$(dirname "$action_yaml")"
             readme="$dir/README.md"
@@ -886,26 +906,46 @@ jobs:
               status=1
               continue
             fi
-            # README section between '## Inputs'/'## Outputs' and the next '## ' heading.
-            inputs_doc="$(awk '/^## Inputs/{f=1;next} /^## /{f=0} f' "$readme")"
-            outputs_doc="$(awk '/^## Outputs/{f=1;next} /^## /{f=0} f' "$readme")"
+            inputs_doc="$(section Inputs "$readme")"
+            outputs_doc="$(section Outputs "$readme")"
+            declared_in="$(yq -r '.inputs // {} | keys | .[]' "$action_yaml")"
+            declared_out="$(yq -r '.outputs // {} | keys | .[]' "$action_yaml")"
+
+            # forward: declared -> documented
             while IFS= read -r name; do
               [[ -z "$name" ]] && continue
               if ! grep -qF "\`$name\`" <<<"$inputs_doc"; then
                 echo "::error file=$action_yaml::input '$name' is declared in action.yaml but not documented in $readme (## Inputs)"
                 status=1
               fi
-            done < <(yq -r '.inputs // {} | keys | .[]' "$action_yaml")
+            done <<<"$declared_in"
             while IFS= read -r name; do
               [[ -z "$name" ]] && continue
               if ! grep -qF "\`$name\`" <<<"$outputs_doc"; then
                 echo "::error file=$action_yaml::output '$name' is declared in action.yaml but not documented in $readme (## Outputs)"
                 status=1
               fi
-            done < <(yq -r '.outputs // {} | keys | .[]' "$action_yaml")
+            done <<<"$declared_out"
+
+            # reverse: documented -> declared
+            while IFS= read -r name; do
+              [[ -z "$name" ]] && continue
+              if ! grep -qxF "$name" <<<"$declared_in"; then
+                echo "::error file=$readme::'$name' is documented in ## Inputs but not declared in $action_yaml"
+                status=1
+              fi
+            done < <(table_names Inputs "$readme")
+            while IFS= read -r name; do
+              [[ -z "$name" ]] && continue
+              if ! grep -qxF "$name" <<<"$declared_out"; then
+                echo "::error file=$readme::'$name' is documented in ## Outputs but not declared in $action_yaml"
+                status=1
+              fi
+            done < <(table_names Outputs "$readme")
           done
+
           if [[ "$status" -eq 0 ]]; then
-            echo "README parity OK: every action.yaml input/output is documented."
+            echo "README parity OK: every declared input/output is documented and every documented row is declared."
           fi
           exit "$status"
 
