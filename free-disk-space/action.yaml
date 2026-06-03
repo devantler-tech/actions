@@ -1,0 +1,105 @@
+name: Free Disk Space
+description: Reclaim runner disk by removing large preinstalled toolchains a job never uses (Android SDK, .NET, GHC, …).
+author: devantler-tech
+inputs:
+  android:
+    description: Remove the Android SDK (/usr/local/lib/android, ~9 GB)
+    required: false
+    default: "true"
+  dotnet:
+    description: Remove the .NET SDK (/usr/share/dotnet)
+    required: false
+    default: "true"
+  haskell:
+    description: Remove GHC / Haskell (/opt/ghc)
+    required: false
+    default: "true"
+  boost:
+    description: Remove the Boost C++ libraries (/usr/local/share/boost)
+    required: false
+    default: "true"
+  swift:
+    description: Remove the Swift toolchain (/usr/share/swift)
+    required: false
+    default: "true"
+  codeql:
+    description: Remove the CodeQL tool cache (/opt/hostedtoolcache/CodeQL)
+    required: false
+    default: "true"
+  pypy:
+    description: Remove the PyPy tool cache (/opt/hostedtoolcache/PyPy)
+    required: false
+    default: "true"
+  powershell:
+    description: Remove PowerShell (/usr/local/share/powershell)
+    required: false
+    default: "true"
+  miniconda:
+    description: Remove Miniconda (/usr/share/miniconda)
+    required: false
+    default: "true"
+outputs:
+  freed:
+    description: Approximate gigabytes of disk space reclaimed on /
+    value: ${{ steps.reclaim.outputs.freed }}
+  available:
+    description: Gigabytes available on / after reclaiming
+    value: ${{ steps.reclaim.outputs.available }}
+runs:
+  using: composite
+  steps:
+    - name: 🧹 Free disk space
+      id: reclaim
+      shell: bash
+      # Targeted `rm -rf` only (avoids the slow apt-remove path); best-effort.
+      # A large module's `go build`/`go test ./...` cache (and `-race` binaries)
+      # can otherwise exhaust the runner disk — a hard "No space left on device".
+      env:
+        ANDROID: ${{ inputs.android }}
+        DOTNET: ${{ inputs.dotnet }}
+        HASKELL: ${{ inputs.haskell }}
+        BOOST: ${{ inputs.boost }}
+        SWIFT: ${{ inputs.swift }}
+        CODEQL: ${{ inputs.codeql }}
+        PYPY: ${{ inputs.pypy }}
+        POWERSHELL: ${{ inputs.powershell }}
+        MINICONDA: ${{ inputs.miniconda }}
+      run: |
+        set -euo pipefail
+        declare -A targets=(
+          [ANDROID]=/usr/local/lib/android
+          [DOTNET]=/usr/share/dotnet
+          [HASKELL]=/opt/ghc
+          [BOOST]=/usr/local/share/boost
+          [SWIFT]=/usr/share/swift
+          [CODEQL]=/opt/hostedtoolcache/CodeQL
+          [PYPY]=/opt/hostedtoolcache/PyPy
+          [POWERSHELL]=/usr/local/share/powershell
+          [MINICONDA]=/usr/share/miniconda
+        )
+        before=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+        paths=()
+        for key in "${!targets[@]}"; do
+          if [ "${!key}" = "true" ]; then
+            paths+=("${targets[$key]}")
+          fi
+        done
+        if [ "${#paths[@]}" -gt 0 ]; then
+          sudo rm -rf "${paths[@]}" || true
+          after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          gained=$((after - before))
+          # `df` deltas include unrelated disk churn between the two reads, so a
+          # real reclaim can read back slightly negative; floor at 0 since `freed`
+          # is "space reclaimed" and can never be negative.
+          [ "$gained" -lt 0 ] && gained=0
+        else
+          # No categories selected: a true no-op. Report 0 directly instead of a
+          # df delta so the output isn't polluted by background disk activity.
+          after="$before"
+          gained=0
+        fi
+        echo "Free disk on /: ${before}G -> ${after}G (gained ${gained}G)"
+        {
+          echo "freed=${gained}"
+          echo "available=${after}"
+        } >> "$GITHUB_OUTPUT"

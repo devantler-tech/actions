@@ -134,6 +134,85 @@ jobs:
           pr-number: ${{ github.event.pull_request.number }}
           dry-run: "true"
 
+  # ── free-disk-space ─────────────────────────────────────────
+  test-free-disk-space:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run free-disk-space
+        id: disk
+        uses: ./free-disk-space
+
+      - name: ✅ Verify space was reclaimed
+        shell: bash
+        env:
+          FREED: ${{ steps.disk.outputs.freed }}
+          AVAILABLE: ${{ steps.disk.outputs.available }}
+        run: |
+          if [[ -z "$FREED" || -z "$AVAILABLE" ]]; then
+            echo "::error::freed/available outputs are empty"
+            exit 1
+          fi
+          # The default set removes ~11+ GB of toolchains; require a real gain so
+          # a silently no-op'd reclaim (e.g. paths moved on a new runner image)
+          # is caught rather than passing vacuously.
+          if (( FREED < 1 )); then
+            echo "::error::expected to reclaim >=1G, got ${FREED}G"
+            exit 1
+          fi
+          echo "Reclaimed ${FREED}G; ${AVAILABLE}G free."
+
+  # ── free-disk-space (all categories disabled → clean no-op) ──
+  test-free-disk-space-keep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Disabling every category must be a clean no-op (0 G reclaimed), not an
+      # error — exercises the "empty path list" branch and the false toggles.
+      - name: 🧪 Run free-disk-space with all categories disabled
+        id: disk
+        uses: ./free-disk-space
+        with:
+          android: "false"
+          dotnet: "false"
+          haskell: "false"
+          boost: "false"
+          swift: "false"
+          codeql: "false"
+          pypy: "false"
+          powershell: "false"
+          miniconda: "false"
+
+      - name: ✅ Verify no-op succeeded with outputs
+        shell: bash
+        env:
+          FREED: ${{ steps.disk.outputs.freed }}
+          AVAILABLE: ${{ steps.disk.outputs.available }}
+        run: |
+          if [[ -z "$FREED" || -z "$AVAILABLE" ]]; then
+            echo "::error::freed/available outputs are empty"
+            exit 1
+          fi
+          # Disabling every category removes nothing, so the reclaim MUST be 0 —
+          # any non-zero value means the action deleted something it shouldn't.
+          if (( FREED != 0 )); then
+            echo "::error::expected freed=0 on the all-disabled no-op, got ${FREED}G"
+            exit 1
+          fi
+          echo "No-op reclaim: freed=${FREED}G, available=${AVAILABLE}G"
+
   # ── login-to-ghcr ──────────────────────────────────────────
   test-login-to-ghcr:
     runs-on: ubuntu-latest
@@ -993,6 +1072,8 @@ jobs:
       - test-create-issues-from-todos
       - test-dependency-review
       - test-enable-auto-merge-on-pr
+      - test-free-disk-space
+      - test-free-disk-space-keep
       - test-login-to-ghcr
       - test-aggregate-job-checks-empty
       - test-aggregate-job-checks-success
