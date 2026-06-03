@@ -30,6 +30,7 @@ flowchart TD
 | [approve-pr](approve-pr/README.md) | Approve a PR using a GitHub App identity |
 | [cleanup-ghcr-packages](cleanup-ghcr-packages/README.md) | Clean up old GHCR packages |
 | [create-issues-from-todos](create-issues-from-todos/README.md) | Create GitHub issues from TODO comments |
+| [dependency-review](dependency-review/README.md) | Scan a PR's dependency changes for vulnerabilities and disallowed licenses |
 | [enable-auto-merge-on-pr](enable-auto-merge-on-pr/README.md) | Enable auto-merge on a pull request |
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
 | [run-dotnet-tests](run-dotnet-tests/README.md) | Test .NET solution or project with coverage |

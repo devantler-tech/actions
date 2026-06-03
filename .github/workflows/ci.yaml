@@ -74,6 +74,40 @@ jobs:
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
 
+  # ── dependency-review ───────────────────────────────────────
+  test-dependency-review:
+    runs-on: ubuntu-latest
+    # The underlying action only produces a diff on pull_request events; on push /
+    # merge_group there is no PR to review, so the test is PR-gated (skipped
+    # otherwise, which aggregate-job-checks tolerates — like test-approve-pr).
+    if: startsWith(github.event_name, 'pull_request')
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # warn-only defaults to true, so this exercises the action's wiring on the
+      # real PR diff without ever failing CI on a finding in this repo's own deps.
+      - name: 🧪 Run dependency-review
+        id: review
+        uses: ./dependency-review
+
+      - name: ✅ Verify the review ran and produced outputs
+        shell: bash
+        env:
+          CHANGES: ${{ steps.review.outputs.dependency-changes }}
+        run: |
+          # dependency-changes is always emitted (JSON, "[]" when nothing changed);
+          # an empty value means the action never ran / its wiring is broken.
+          if [[ -z "$CHANGES" ]]; then
+            echo "::error::dependency-changes output is empty — the action did not run"
+            exit 1
+          fi
+          echo "Dependency review ran; dependency-changes=${CHANGES}"
+
   # ── enable-auto-merge-on-pr ─────────────────────────────────
   test-enable-auto-merge-on-pr:
     runs-on: ubuntu-latest
@@ -957,6 +991,7 @@ jobs:
       - test-approve-pr
       - test-cleanup-ghcr-packages
       - test-create-issues-from-todos
+      - test-dependency-review
       - test-enable-auto-merge-on-pr
       - test-login-to-ghcr
       - test-aggregate-job-checks-empty
@@ -1001,6 +1036,7 @@ jobs:
             ${{ needs.test-approve-pr.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
+            ${{ needs.test-dependency-review.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
             ${{ needs.test-login-to-ghcr.result }}
             ${{ needs.test-aggregate-job-checks-empty.result }}
