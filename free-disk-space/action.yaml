@@ -86,9 +86,18 @@ runs:
         done
         if [ "${#paths[@]}" -gt 0 ]; then
           sudo rm -rf "${paths[@]}" || true
+          after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          gained=$((after - before))
+          # `df` deltas include unrelated disk churn between the two reads, so a
+          # real reclaim can read back slightly negative; floor at 0 since `freed`
+          # is "space reclaimed" and can never be negative.
+          [ "$gained" -lt 0 ] && gained=0
+        else
+          # No categories selected: a true no-op. Report 0 directly instead of a
+          # df delta so the output isn't polluted by background disk activity.
+          after="$before"
+          gained=0
         fi
-        after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
-        gained=$((after - before))
         echo "Free disk on /: ${before}G -> ${after}G (gained ${gained}G)"
         {
           echo "freed=${gained}"

@@ -167,8 +167,14 @@ jobs:
           FREED: ${{ steps.disk.outputs.freed }}
           AVAILABLE: ${{ steps.disk.outputs.available }}
         run: |
-          if [[ -z "$AVAILABLE" ]]; then
-            echo "::error::available output is empty"
+          if [[ -z "$FREED" || -z "$AVAILABLE" ]]; then
+            echo "::error::freed/available outputs are empty"
+            exit 1
+          fi
+          # Disabling every category removes nothing, so the reclaim MUST be 0 —
+          # any non-zero value means the action deleted something it shouldn't.
+          if (( FREED != 0 )); then
+            echo "::error::expected freed=0 on the all-disabled no-op, got ${FREED}G"
             exit 1
           fi
           echo "No-op reclaim: freed=${FREED}G, available=${AVAILABLE}G"
