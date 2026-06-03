@@ -134,7 +134,7 @@ jobs:
           fi
           echo "Reclaimed ${FREED}G; ${AVAILABLE}G free."
 
-  # ── free-disk-space (keep a toolchain) ──────────────────────
+  # ── free-disk-space (all categories disabled → clean no-op) ──
   test-free-disk-space-keep:
     runs-on: ubuntu-latest
     permissions:
