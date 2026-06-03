@@ -1,0 +1,73 @@
+name: Dependency Review
+description: Scan a pull request's dependency changes for known-vulnerable packages and disallowed licenses (GitHub Dependency Review).
+author: devantler-tech
+inputs:
+  fail-on-severity:
+    description: Block the PR on vulnerabilities of this severity or higher (low, moderate, high, critical). Only applies when warn-only is false.
+    required: false
+    default: critical
+  fail-on-scopes:
+    description: Comma-separated dependency scopes to block on (runtime, development, unknown). Defaults to runtime so dev-only vulnerabilities don't block.
+    required: false
+    default: runtime
+  allow-licenses:
+    description: Comma-separated allow-list of SPDX licenses; a dependency under any other license fails the check. Mutually exclusive with deny-licenses.
+    required: false
+  deny-licenses:
+    description: Comma-separated deny-list of SPDX licenses; a dependency under any of these fails the check. Mutually exclusive with allow-licenses.
+    required: false
+  comment-summary-in-pr:
+    description: Post the review summary as a PR comment (always, on-failure, never). Anything but never requires the calling job to grant pull-requests write.
+    required: false
+    default: never
+  base-ref:
+    description: Base git ref to diff from. Defaulted automatically on pull_request / pull_request_target; required for other events.
+    required: false
+  head-ref:
+    description: Head git ref to diff to. Defaulted automatically on pull_request / pull_request_target; required for other events.
+    required: false
+  retry-on-snapshot-warnings:
+    description: Retry when the dependency snapshot is not yet available, instead of failing immediately.
+    required: false
+    default: "false"
+  warn-only:
+    description: Report every finding as a warning and always succeed, overriding fail-on-severity. Defaults to true so the check can roll out org-wide without blocking PRs; set to false to enforce.
+    required: false
+    default: "true"
+  repo-token:
+    description: Token used to read dependency changes and (optionally) post the PR comment.
+    required: false
+    default: ${{ github.token }}
+outputs:
+  comment-content:
+    description: The prepared dependency-review report comment (markdown).
+    value: ${{ steps.review.outputs.comment-content }}
+  dependency-changes:
+    description: All dependency changes in the PR (JSON).
+    value: ${{ steps.review.outputs.dependency-changes }}
+  vulnerable-changes:
+    description: Vulnerable dependency changes (JSON).
+    value: ${{ steps.review.outputs.vulnerable-changes }}
+  invalid-license-changes:
+    description: Dependency changes with disallowed licenses (JSON).
+    value: ${{ steps.review.outputs.invalid-license-changes }}
+  denied-changes:
+    description: Denied dependency changes (JSON).
+    value: ${{ steps.review.outputs.denied-changes }}
+runs:
+  using: composite
+  steps:
+    - name: 🛡️ Review dependencies
+      id: review
+      uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+      with:
+        fail-on-severity: ${{ inputs.fail-on-severity }}
+        fail-on-scopes: ${{ inputs.fail-on-scopes }}
+        allow-licenses: ${{ inputs.allow-licenses }}
+        deny-licenses: ${{ inputs.deny-licenses }}
+        comment-summary-in-pr: ${{ inputs.comment-summary-in-pr }}
+        base-ref: ${{ inputs.base-ref }}
+        head-ref: ${{ inputs.head-ref }}
+        retry-on-snapshot-warnings: ${{ inputs.retry-on-snapshot-warnings }}
+        warn-only: ${{ inputs.warn-only }}
+        repo-token: ${{ inputs.repo-token }}
