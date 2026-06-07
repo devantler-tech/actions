@@ -28,7 +28,7 @@ All conventions are documented in [CONTRIBUTING.md](CONTRIBUTING.md). Key rules 
 - **Action directory naming:** `<active-verb>-<purpose>` (e.g., `setup-go-toolchain`, not `go-setup`)
 - **Inputs/outputs:** kebab-case only (e.g., `app-id`, `github-token`)
 - **Action type:** Prefer **composite** over JavaScript/Docker
-- **External action pinning:** Pin third-party actions (non-`actions/*`, non-`github/*`, non-`devantler-tech/*`) to commit SHAs with a `# v<version>` comment — enforced by `zizmor.yml`
+- **External action pinning:** Pin third-party actions (non-`actions/*`, non-`github/*`, non-`devantler-tech/*`) to commit SHAs with a `# v<version>` comment — enforced by `zizmor.yml`. For a dep that publishes **no tags/releases** (main-tracked only), use `# <branch> (no upstream releases)` instead so a branch-commit pin reads differently from a tag pin (see CONTRIBUTING.md)
 - **Test job required:** Every new action needs a `test-<action-name>` job in `.github/workflows/ci.yaml`, with `persist-credentials: false` on the `actions/checkout` step
 - **`action.yaml`:** Always set `author: devantler-tech`
 
