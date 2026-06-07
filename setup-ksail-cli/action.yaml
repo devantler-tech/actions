@@ -10,6 +10,10 @@ runs:
 
     - name: ⤵️ Install KSail
       shell: bash
+      # The tap fetch and bottle pull are network operations that occasionally
+      # fail on transient registry/network flakes; a bounded retry + backoff
+      # keeps an infra hiccup from reding a required check (see the shared
+      # .scripts/retry.sh helper and devantler-tech/actions#247 item 3).
       run: |
-        brew tap devantler-tech/formulas
-        brew install ksail
+        bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" 3 5 -- brew tap devantler-tech/formulas
+        bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" 3 5 -- brew install ksail

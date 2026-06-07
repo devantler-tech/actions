@@ -604,6 +604,62 @@ jobs:
         shell: bash
         run: ksail --version
 
+  # ── .scripts/retry.sh ──────────────────────────────────────
+  test-retry-script:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: ✅ Succeeds on the first attempt
+        shell: bash
+        run: bash .scripts/retry.sh 3 0 -- true
+
+      - name: ✅ Retries a flaky command until it succeeds
+        shell: bash
+        run: |
+          export COUNTER
+          COUNTER="$(mktemp)"
+          echo 0 >"$COUNTER"
+          flaky="$(mktemp)"
+          # Quoted heredoc: the body is written verbatim and only evaluated when
+          # the flaky script runs, so it fails on attempts 1-2 and succeeds on 3.
+          cat >"$flaky" <<'EOF'
+          n=$(( $(cat "$COUNTER") + 1 ))
+          echo "$n" >"$COUNTER"
+          [ "$n" -ge 3 ]
+          EOF
+          bash .scripts/retry.sh 3 0 -- bash "$flaky"
+          got="$(cat "$COUNTER")"
+          if [ "$got" -ne 3 ]; then
+            echo "::error::expected 3 attempts before success, got $got"
+            exit 1
+          fi
+
+      - name: ✅ Propagates the failure code after exhausting attempts
+        shell: bash
+        run: |
+          status=0
+          bash .scripts/retry.sh 2 0 -- bash -c 'exit 7' || status=$?
+          if [ "$status" -ne 7 ]; then
+            echo "::error::expected exhausted retry to exit 7, got $status"
+            exit 1
+          fi
+
+      - name: ✅ Rejects malformed arguments
+        shell: bash
+        run: |
+          status=0
+          bash .scripts/retry.sh 3 -- true || status=$?
+          if [ "$status" -ne 2 ]; then
+            echo "::error::expected usage error (exit 2) for missing delimiter, got $status"
+            exit 1
+          fi
+
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
     runs-on: ubuntu-latest
@@ -1088,6 +1144,7 @@ jobs:
       - test-setup-go-toolchain
       - test-setup-go-toolchain-private-modules
       - test-setup-ksail-cli
+      - test-retry-script
       - test-sync-github-labels
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
@@ -1133,6 +1190,7 @@ jobs:
             ${{ needs.test-setup-go-toolchain.result }}
             ${{ needs.test-setup-go-toolchain-private-modules.result }}
             ${{ needs.test-setup-ksail-cli.result }}
+            ${{ needs.test-retry-script.result }}
             ${{ needs.test-sync-github-labels.result }}
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
