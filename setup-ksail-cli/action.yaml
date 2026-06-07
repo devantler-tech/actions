@@ -6,7 +6,10 @@ runs:
   using: "composite"
   steps:
     - name: 📦 Setup Homebrew
-      uses: Homebrew/actions/setup-homebrew@ac399ee818eb2bb93b838aeccd2cbaa6272e2403 # main
+      # Pinned to a branch commit, not a tag: Homebrew/actions publishes no tags
+      # or releases (main-tracked only), so the comment names the branch + why
+      # rather than a `# v<version>` — see CONTRIBUTING.md "External action pinning".
+      uses: Homebrew/actions/setup-homebrew@ac399ee818eb2bb93b838aeccd2cbaa6272e2403 # main (no upstream releases)
 
     - name: ⤵️ Install KSail
       shell: bash

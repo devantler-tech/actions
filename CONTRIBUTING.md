@@ -70,6 +70,16 @@ Every action must have a corresponding test workflow at `.github/workflows/test-
 - Run [zizmor](https://github.com/zizmorcore/zizmor) to scan for GitHub Actions vulnerabilities
 - Pin third-party actions to commit SHAs (enforced by `zizmor.yml`)
 - Actions under `actions/*`, `github/*`, and `devantler-tech/*` may use tag-based refs
+- **External action pin comment convention.** Annotate each third-party SHA pin so a
+  reader can tell at a glance whether it tracks a tag or a branch:
+  - Pinned to a release tag → `# v<version>` (e.g. `# v6.0.2`). This is the default;
+    12/13 third-party pins use it.
+  - Pinned to a branch commit because the upstream publishes **no tags or releases**
+    (main-tracked only) → `# <branch> (no upstream releases)` (e.g.
+    `# main (no upstream releases)`). This keeps the comment honest — it names the
+    branch and *why* there is no version — so a future re-pin to a newer branch
+    commit isn't mistaken for a floating `@main` ref. The lone such dep today is
+    `Homebrew/actions/setup-homebrew` in `setup-ksail-cli`.
 
 ## Commits
 
