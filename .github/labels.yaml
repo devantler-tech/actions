@@ -4,6 +4,8 @@
   color: 'ededed'
 - name: next
   color: '5d3fd3'
+- name: roadmap
+  color: '0e8a16'
 - name: bug
   color: 'd73a4a'
 - name: enhancement
