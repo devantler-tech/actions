@@ -15,4 +15,9 @@ runs:
       shell: bash
       run: |
         brew tap devantler-tech/formulas
+        # KSail ships as a Cask. Homebrew refuses to load Casks from a non-official
+        # tap when HOMEBREW_REQUIRE_TAP_TRUST is set (now enforced on the CI runners),
+        # failing with "Refusing to load cask … from untrusted tap". Explicitly trust
+        # our own first-party tap so `brew install` can load it non-interactively.
+        brew trust --tap devantler-tech/formulas
         brew install ksail
