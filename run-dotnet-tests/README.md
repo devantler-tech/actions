@@ -8,8 +8,6 @@ Test .NET solutions or projects across multiple platforms with code coverage rep
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `app-id` | GitHub App ID to generate a token | ✅ | - |
-| `app-private-key` | Private key of the GitHub App | ✅ | - |
 | `github-token` | GitHub token to access the repository | ✅ | - |
 | `working-directory` | Directory to run the tests in | ❌ | `.` |
 
@@ -22,8 +20,6 @@ steps:
   - name: Test .NET project
     uses: devantler-tech/actions/run-dotnet-tests@main
     with:
-      app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -34,8 +30,6 @@ steps:
   - name: Test .NET project
     uses: devantler-tech/actions/run-dotnet-tests@main
     with:
-      app-id: ${{ vars.APP_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
       working-directory: src/MyProject
 ```
