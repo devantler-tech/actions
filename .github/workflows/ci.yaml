@@ -336,8 +336,6 @@ jobs:
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          app-id: ${{ vars.APP_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
@@ -941,8 +939,6 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          app-id: ${{ vars.APP_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: does-not-exist
 
