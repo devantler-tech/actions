@@ -70,7 +70,7 @@ jobs:
       - name: 🧪 Run create-issues-from-todos
         uses: ./create-issues-from-todos
         with:
-          app-id: ${{ vars.APP_ID }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
 
