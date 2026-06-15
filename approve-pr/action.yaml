@@ -27,6 +27,10 @@ runs:
       with:
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
+        # Least-privilege: the token only submits a PR review (gh pr review
+        # --approve), so scope it to pull-requests instead of inheriting the
+        # App installation's blanket permissions (zizmor github-app).
+        permission-pull-requests: write
 
     - name: ✅ Approve pull request
       if: inputs.dry-run != 'true'

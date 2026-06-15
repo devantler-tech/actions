@@ -955,7 +955,13 @@ jobs:
   # ── zizmor ──────────────────────────────────────────────────
   zizmor:
     runs-on: ubuntu-latest
-    if: github.event_name != 'push'
+    # Run on pull_request (catch new findings) and on push to main (refresh the
+    # code-scanning baseline so resolved findings auto-close); skip merge_group,
+    # where the PR scan already ran and the queue ref makes a SARIF upload moot.
+    # Scanning on push to main is essential: without it the default-branch
+    # code-scanning baseline never refreshes, leaving stale alerts that the
+    # `code_scanning` branch rule treats as a merge blocker on every PR.
+    if: github.event_name != 'merge_group'
     permissions:
       security-events: write
       contents: read
