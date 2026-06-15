@@ -2,9 +2,12 @@ name: Create Issues from TODOs
 description: Create GitHub issues from TODO comments in code
 author: devantler-tech
 inputs:
+  client-id:
+    description: GitHub App Client ID (preferred over the deprecated app-id)
+    required: false
   app-id:
-    description: GitHub App ID
-    required: true
+    description: 'GitHub App ID. Deprecated: use client-id instead.'
+    required: false
   app-private-key:
     description: GitHub App Private Key
     required: true
@@ -15,9 +18,10 @@ runs:
   using: composite
   steps:
     - name: 🔑 Generate GitHub App Token
-      uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       id: app-token
       with:
+        client-id: ${{ inputs.client-id }}
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         # Least-privilege: this token is consumed only as the todo-to-issue
