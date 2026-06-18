@@ -34,7 +34,7 @@ steps:
       skills: |
         github/awesome-copilot git-commit
         fluxcd/agent-skills gitops-knowledge
-        devantler-tech/skills ways-of-working@v1.2.0
+        devantler-tech/agent-skills ways-of-working@v1.2.0
         # Pin with @<tag|branch|sha> or omit to track the upstream default branch.
 ```
 
