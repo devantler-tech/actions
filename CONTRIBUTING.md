@@ -81,6 +81,27 @@ Every action must have a corresponding test workflow at `.github/workflows/test-
     commit isn't mistaken for a floating `@main` ref. The lone such dep today is
     `Homebrew/actions/setup-homebrew` in `setup-ksail-cli`.
 
+## Reliability
+
+A composite step that performs a **network pull** — a Homebrew tap/install, a
+registry login, a tool/toolchain download — can fail a *required* CI check on a
+transient registry/network flake (a GHCR 5xx, a DNS/TLS blip) rather than on a
+real defect, blocking unrelated PRs across every consumer repo. Wrap such pulls
+in the shared bounded-retry helper so infra noise can't masquerade as a failure:
+
+```bash
+retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+retry brew install <formula>
+```
+
+`.scripts/retry.sh` retries with exponential backoff (tunable via
+`RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY`) and exits non-zero
+with the command's last status once attempts are exhausted, so a genuine failure
+still reds the check. Only wrap the **network** commands — leave local operations
+unwrapped. `setup-ksail-cli` uses it for `brew tap` / `brew install`; extend it
+to the other network-pull composites as part of the reliability pillar
+([#247](https://github.com/devantler-tech/actions/issues/247)).
+
 ## Commits
 
 Use [semantic commits](https://www.conventionalcommits.org/):

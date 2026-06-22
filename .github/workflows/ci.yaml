@@ -602,6 +602,70 @@ jobs:
         shell: bash
         run: ksail --version
 
+  # ── .scripts/retry.sh (shared reliability helper) ──────────
+  test-retry-script:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Exercise retry.sh (success, retry-then-succeed, exhaust, no-arg)
+        shell: bash
+        env:
+          RETRY_BASE_DELAY: "0" # keep the test fast — no real backoff sleeps
+        run: |
+          set -uo pipefail
+          retry="$GITHUB_WORKSPACE/.scripts/retry.sh"
+
+          # 1. Succeeds on the first try → exit 0, no retries.
+          RETRY_MAX_ATTEMPTS=3 bash "$retry" true
+          echo "✅ success-first-try: exit 0 as expected"
+
+          # 2. Flaky command (fails twice, succeeds on the 3rd attempt) → exit 0.
+          counter="$(mktemp)"
+          printf '0' > "$counter"
+          flaky="$(mktemp)"
+          cat > "$flaky" <<EOF
+          #!/usr/bin/env bash
+          n=\$(cat "$counter")
+          n=\$((n + 1))
+          printf '%s' "\$n" > "$counter"
+          [ "\$n" -ge 3 ]
+          EOF
+          chmod +x "$flaky"
+          RETRY_MAX_ATTEMPTS=3 bash "$retry" "$flaky"
+          attempts="$(cat "$counter")"
+          if [ "$attempts" -ne 3 ]; then
+            echo "::error::expected 3 attempts before success, got $attempts"; exit 1
+          fi
+          echo "✅ retry-then-succeed: succeeded on attempt 3 as expected"
+
+          # 3. Always fails → exits non-zero with the command's status after N attempts.
+          set +e
+          RETRY_MAX_ATTEMPTS=2 bash "$retry" false
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "::error::expected non-zero exit after exhausting attempts, got 0"; exit 1
+          fi
+          echo "✅ exhaust-and-fail: non-zero exit ($status) as expected"
+
+          # 4. No command given → usage error (exit 2).
+          set +e
+          bash "$retry"
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "::error::expected exit 2 for missing command, got $status"; exit 1
+          fi
+          echo "✅ no-arg: exit 2 as expected"
+
+          rm -f "$counter" "$flaky"
+
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
     runs-on: ubuntu-latest
@@ -1090,6 +1154,7 @@ jobs:
       - test-setup-go-toolchain
       - test-setup-go-toolchain-private-modules
       - test-setup-ksail-cli
+      - test-retry-script
       - test-sync-github-labels
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
@@ -1135,6 +1200,7 @@ jobs:
             ${{ needs.test-setup-go-toolchain.result }}
             ${{ needs.test-setup-go-toolchain-private-modules.result }}
             ${{ needs.test-setup-ksail-cli.result }}
+            ${{ needs.test-retry-script.result }}
             ${{ needs.test-sync-github-labels.result }}
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
