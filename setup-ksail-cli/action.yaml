@@ -14,10 +14,19 @@ runs:
     - name: ⤵️ Install KSail
       shell: bash
       run: |
-        brew tap devantler-tech/formulas
+        set -euo pipefail
+        # A required CI check must never red on transient registry/network noise
+        # (GHCR 5xx, DNS/TLS blips) when fetching the tap or downloading the cask +
+        # bottle. Bound each network pull with retry + backoff via the shared
+        # .scripts/retry.sh helper — see the reliability pillar of the actions
+        # roadmap (devantler-tech/actions#247).
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
+        retry brew tap devantler-tech/formulas
         # KSail ships as a Cask. Homebrew refuses to load Casks from a non-official
         # tap when HOMEBREW_REQUIRE_TAP_TRUST is set (now enforced on the CI runners),
         # failing with "Refusing to load cask … from untrusted tap". Explicitly trust
         # our own first-party tap so `brew install` can load it non-interactively.
+        # (Local operation — no network — so it is not wrapped in retry.)
         brew trust --tap devantler-tech/formulas
-        brew install ksail
+        retry brew install ksail
