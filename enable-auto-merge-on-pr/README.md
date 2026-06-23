@@ -12,6 +12,7 @@ Enable auto-merge on a pull request using GitHub CLI. The PR will only merge aut
 | `pr-number` | Pull request number to enable auto-merge on | ✅ | - |
 | `merge-method` | Merge method to use: `merge`, `squash`, or `rebase` | - | `squash` |
 | `dry-run` | Validate only; do not enable auto-merge | - | `false` |
+| `token` | GitHub token used to arm auto-merge. Defaults to the workflow token; pass a GitHub App token when the resulting merge must trigger downstream workflows (a `GITHUB_TOKEN`-armed merge does not re-trigger workflows). | - | `github.token` |
 
 ## Usage
 
