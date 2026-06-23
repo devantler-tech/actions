@@ -54,6 +54,12 @@ runs:
       run: |
         set -euo pipefail
 
+        # Bounded retry for the registry pulls below — `gh skill update` checks each
+        # skill's source over the network, so a transient flake must not red a
+        # required check (reliability pillar, #247). Same shared helper + path
+        # resolution as the gh bootstrap above.
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
         if [ ! -d "$INPUT_DIR" ]; then
           echo "::error::Directory not found: $INPUT_DIR"
           exit 1
@@ -111,7 +117,7 @@ runs:
             true|1|yes) root_flags+=(--unpin) ;;
           esac
           echo "::group::Updating skills in $root"
-          if ! gh skill update "${root_flags[@]}" 2>&1 | tee -a "$out"; then
+          if ! retry gh skill update "${root_flags[@]}" 2>&1 | tee -a "$out"; then
             echo "::error::'gh skill update ${root_flags[*]}' failed."
             status=1
           fi
