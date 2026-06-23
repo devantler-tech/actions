@@ -1,0 +1,124 @@
+name: 🔄 Update Agent Skills
+
+on:
+  workflow_call:
+    inputs:
+      dir:
+        description: Directory to scan for installed skills (passed to `gh skill update --dir`)
+        required: false
+        type: string
+        default: "."
+      unpin:
+        description: When `true`, pass `--unpin` to `gh skill update` (clear pins and include pinned skills)
+        required: false
+        type: boolean
+        default: false
+      gh-version:
+        description: Minimum required `gh` version (must support `gh skill`)
+        required: false
+        type: string
+        default: 2.90.0
+      pr-branch:
+        description: Branch the update PR is opened from
+        required: false
+        type: string
+        default: deps/agent-skills-update
+      pr-title:
+        description: Title of the update PR
+        required: false
+        type: string
+        default: "chore(deps): update agent skills"
+      pr-labels:
+        description: Comma-separated labels applied to the update PR
+        required: false
+        type: string
+        default: dependencies,automation
+      commit-message:
+        description: Commit message for the update PR
+        required: false
+        type: string
+        default: "chore(deps): update agent skills"
+      dry-run:
+        description: "Skip update and PR creation (validate workflow interface only)"
+        required: false
+        default: false
+        type: boolean
+      use-app-token:
+        description: >-
+          When `true`, create the update PR with a GitHub App token (minted from the `APP_CLIENT_ID`
+          variable and the `APP_PRIVATE_KEY` secret) instead of the default `GITHUB_TOKEN`. A PR
+          opened with `GITHUB_TOKEN` does NOT trigger the caller's `on: pull_request`/`push` CI runs,
+          so its required checks never report and it stays blocked; an App token avoids this.
+          Defaults to `false` (previous behaviour using `GITHUB_TOKEN`).
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      APP_PRIVATE_KEY:
+        description: >-
+          GitHub App private key, required only when `use-app-token` is `true`. Paired with the
+          `APP_CLIENT_ID` repository/organization variable to mint an App token for PR creation.
+        required: false
+
+permissions: {}
+
+jobs:
+  update-agent-skills:
+    name: Update agent skills
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App token
+        id: app-token
+        if: ${{ inputs.use-app-token }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Scope the token to least privilege — exactly what this job needs
+          # (checkout read + create-pull-request push/open) — instead of
+          # inheriting the App installation's blanket permissions.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 🔄 Update installed skills
+        id: update
+        uses: devantler-tech/actions/update-agent-skills@v6.1.0 # x-release-please-version
+        with:
+          dir: ${{ inputs.dir }}
+          unpin: ${{ inputs.unpin }}
+          gh-version: ${{ inputs.gh-version }}
+
+      - name: 📦 Create pull request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          commit-message: ${{ inputs.commit-message }}
+          title: ${{ inputs.pr-title }}
+          body: |
+            Automated update of agent skills to their latest versions.
+
+            Updated files under `${{ inputs.dir }}`:
+
+            ```
+            ${{ steps.update.outputs.updated-skills }}
+            ```
+          branch: ${{ inputs.pr-branch }}
+          labels: ${{ inputs.pr-labels }}
+          delete-branch: true
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          branch-token: ${{ steps.app-token.outputs.token || github.token }}

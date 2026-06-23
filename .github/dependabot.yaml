@@ -9,3 +9,34 @@ updates:
       # devantler-tech actions/workflows are our own code — bump now, no cooldown.
       exclude:
         - "devantler-tech/*"
+    ignore:
+      # The repo's own action/workflow self-references (devantler-tech/actions/*)
+      # are rewritten to each release tag by release-please (extra-files config),
+      # so Dependabot must NOT also bump them — that would double-manage the pins
+      # and fight the release PR. release-please owns these; everything else
+      # (third-party actions) is still bumped here.
+      - dependency-name: "devantler-tech/actions*"
+  # The govulncheck allowlist self-test fixture (tests/govulncheck-allowlist)
+  # DELIBERATELY pins a vulnerable golang.org/x/text v0.3.0 so the CI self-test
+  # (ci.yaml: test-govulncheck-allowlist-honored / test-govulncheck-strict-blocks)
+  # can prove the allow-file contract against a real reachable advisory
+  # (GO-2021-0113). Dependabot must never bump or security-"fix" it — a patched
+  # version removes the advisory and breaks the strict-path assertion. This block
+  # exists solely to carry the `ignore` condition below that freezes the fixture.
+  #
+  # Why a bare `dependency-name: "*"` (no `versions`, no `update-types`): in the
+  # config file an `ignore` entry restricted only by name — with no version range
+  # and no `update-types` — matches ALL versions of the dependency, so Dependabot
+  # raises neither version-update nor security-update PRs for it. `update-types`
+  # would NOT work here: it accepts only `version-update:semver-{major,minor,patch}`
+  # (there is no `security` value) and never gates security updates. The wildcard
+  # name match with no version constraint is the only thing that also freezes the
+  # security path. See "Controlling which dependencies are updated by Dependabot".
+  - package-ecosystem: gomod
+    directory: /tests/govulncheck-allowlist
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"

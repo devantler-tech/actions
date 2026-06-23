@@ -1,0 +1,106 @@
+name: 📦 Publish Manifests
+on:
+  workflow_call:
+    inputs:
+      oci-name:
+        description: >-
+          OCI repository name (`<owner>/<name>`) the manifests artifact is
+          published under, WITHOUT the registry prefix or the trailing
+          `/manifests` suffix. Defaults to the caller's `github.repository`.
+          Override when the repo name is an invalid OCI path component — e.g. the
+          org `.github` repo (leading dot) publishes under
+          `devantler-tech/github-config`.
+        required: false
+        default: ""
+        type: string
+      deploy-path:
+        description: "Path to the Kubernetes manifests directory packaged as the OCI artifact."
+        required: false
+        default: ./deploy
+        type: string
+      dry-run:
+        description: "Skip publish (validate workflow interface only)."
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+jobs:
+  publish-manifests:
+    name: Publish manifests
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      packages: write # push manifests OCI artifact
+      id-token: write # keyless cosign signing (Fulcio/Rekor via GitHub OIDC)
+    env:
+      REGISTRY: ghcr.io # auth uses GITHUB_TOKEN, which is GHCR-scoped
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔒 Require a v* tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" != "tag" ] || ! printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::publish-manifests must be invoked from a semver tag vX.Y.Z (got $REF_TYPE/$REF_NAME); Flux OCIRepository semver selection depends on it."
+            exit 1
+          fi
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🔐 Log in to registry
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ env.GH_TOKEN }}
+
+      - name: ⚙️ Setup Flux CLI
+        uses: fluxcd/flux2/action@1fd61a06264d71cf445ed55c4f14d401d26a1c64 # v2.8.8
+
+      - name: ✍️ Setup Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: 📦 Push & sign manifests artifact
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          OCI_NAME: ${{ inputs.oci-name }}
+          DEPLOY_PATH: ${{ inputs.deploy-path }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Default the OCI name to the caller repo; override (oci-name) for repos
+          # whose name is an invalid OCI path component, e.g. `.github`.
+          NAME="${OCI_NAME:-$REPOSITORY}"
+          VERSION="${REF_NAME#v}"
+          ARTIFACT="${REGISTRY}/${NAME}/manifests"
+          flux push artifact "oci://${ARTIFACT}:${VERSION}" \
+            --path="${DEPLOY_PATH}" \
+            --source="${SERVER_URL}/${REPOSITORY}" \
+            --revision="${REF_NAME}@sha1:${SHA}" \
+            --creds "${ACTOR}:${GH_TOKEN}"
+          flux tag artifact "oci://${ARTIFACT}:${VERSION}" --tag latest --creds "${ACTOR}:${GH_TOKEN}"
+          # Resolve tag → digest and sign by digest (keyless via OIDC): cosign
+          # signs exactly the resolved bytes — no tag→digest TOCTOU if the tag
+          # moves — and stays forward-compatible with cosign dropping tag-based
+          # signing. docker buildx imagetools is preinstalled on ubuntu-latest;
+          # cosign's own `cosign manifest digest` was removed in cosign v3.0.
+          DIGEST=$(docker buildx imagetools inspect "${ARTIFACT}:${VERSION}" --format '{{ .Manifest.Digest }}')
+          cosign sign --yes "${ARTIFACT}@${DIGEST}"

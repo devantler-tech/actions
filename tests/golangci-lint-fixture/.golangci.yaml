@@ -1,0 +1,10 @@
+# Deterministic config for the golangci-lint gate failure-mode self-test
+# (test-validate-go-lint-blocks in .github/workflows/ci.yaml). It enables ONLY
+# errcheck so the fixture's deliberate unchecked-error finding is reported
+# regardless of golangci-lint's evolving default linter set or any repo-root
+# config — keeping the self-test stable across golangci-lint releases.
+version: "2"
+linters:
+  default: none
+  enable:
+    - errcheck

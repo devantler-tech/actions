@@ -8,6 +8,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: "ci-${{ github.event.number || github.sha }}"
+  cancel-in-progress: true
+
 jobs:
   # ── approve-pr ──────────────────────────────────────────────
   test-approve-pr:
@@ -1128,6 +1132,558 @@ jobs:
           fi
           exit "$status"
 
+  test-zizmor:
+    name: "[Test] Zizmor - Default Settings"
+    uses: ./.github/workflows/scan-for-workflow-vulnerabilities.yaml
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+  test-dependency-review-workflow:
+    name: "[Test] Dependency Review - Default Settings"
+    uses: ./.github/workflows/dependency-review.yaml
+    permissions:
+      contents: read
+
+  test-delete-workflow-runs-all:
+    name: "[Test] Delete Workflow Runs - All Workflows"
+    uses: ./.github/workflows/delete-workflow-runs.yaml
+    with:
+      days: 30
+      minimum-runs: 6
+      delete-workflow-by-state-pattern: "ALL"
+      delete-run-by-conclusion-pattern: "ALL"
+      dry-run: true
+    permissions:
+      actions: write
+      contents: read
+
+  test-delete-workflow-runs-specific:
+    name: "[Test] Delete Workflow Runs - Specific Pattern"
+    uses: ./.github/workflows/delete-workflow-runs.yaml
+    with:
+      days: 7
+      minimum-runs: 3
+      delete-workflow-pattern: "test-delete-workflow-runs.yaml"
+      delete-run-by-conclusion-pattern: "cancelled,failure"
+      dry-run: true
+    permissions:
+      actions: write
+      contents: read
+
+  test-delete-workflow-runs-minimal:
+    name: "[Test] Delete Workflow Runs - Minimal Parameters"
+    uses: ./.github/workflows/delete-workflow-runs.yaml
+    with:
+      dry-run: true
+    permissions:
+      actions: write
+      contents: read
+
+  test-validate-go-project:
+    name: "[Test] Validate Go Project"
+    uses: ./.github/workflows/validate-go-project.yaml
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  test-run-dotnet-tests-workflow:
+    name: "[Test] Run .NET Tests"
+    uses: ./.github/workflows/run-dotnet-tests.yaml
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  test-enable-auto-merge:
+    name: "[Test] Enable Auto-Merge"
+    uses: ./.github/workflows/enable-auto-merge.yaml
+    permissions:
+      pull-requests: write
+      contents: write
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-create-release:
+    name: "[Test] Create Release - Dry Run"
+    uses: ./.github/workflows/create-release.yaml
+    with:
+      dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-deploy-github-pages:
+    name: "[Test] Deploy GitHub Pages - Dry Run"
+    uses: ./.github/workflows/deploy-github-pages.yaml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      dry-run: true
+
+  test-publish-dotnet-library:
+    name: "[Test] Publish .NET Library - Dry Run"
+    uses: ./.github/workflows/publish-dotnet-library.yaml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      dry-run: true
+
+  test-publish-app:
+    name: "[Test] Publish App - Dry Run"
+    uses: ./.github/workflows/publish-app.yaml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      app-name: app
+      dry-run: true
+
+  test-publish-manifests:
+    name: "[Test] Publish Manifests - Dry Run"
+    uses: ./.github/workflows/publish-manifests.yaml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      dry-run: true
+
+  test-scan-for-todo-comments:
+    name: "[Test] Scan for TODO Comments - Dry Run"
+    uses: ./.github/workflows/scan-for-todo-comments.yaml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-sync-cluster-policies:
+    name: "[Test] Sync Cluster Policies - Dry Run"
+    uses: ./.github/workflows/sync-cluster-policies.yaml
+    with:
+      kyverno-policies-dir: /tmp/test-policies
+      dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-update-agent-skills:
+    name: "[Test] Update Agent Skills - Dry Run"
+    uses: ./.github/workflows/update-agent-skills.yaml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      dry-run: true
+
+  test-template-sync:
+    name: "[Test] Template Sync - Dry Run"
+    uses: ./.github/workflows/template-sync.yaml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      source-repo-path: devantler-tech/gitops-tenant-template
+      use-app-token: false
+      dry-run: true
+
+  # ── Govulncheck allowlist self-test (regression guard for #282/#283) ──────────
+  # validate-go-project.yaml's vuln-scan gate honors a `.govulncheck-allow.txt`
+  # allowlist so consumers can risk-accept a reachable advisory with no upstream
+  # fix. That contract was silently lost for several releases (v5.4.1–v5.4.4, on
+  # the official action which has no allow-file input) with no test catching it.
+  # These jobs exercise the SAME action the gate uses against a pinned-vulnerable
+  # fixture (tests/govulncheck-allowlist) so the contract is provable and stable:
+  #   • allowlisted ⇒ the scan PASSES,  • strict (no allow-file) ⇒ the scan FAILS.
+  # The govulncheck job in validate-go-project.yaml is skipped on this repo, so it
+  # cannot self-test itself — hence a dedicated, faithful replica here.
+  test-govulncheck-allowlist-honored:
+    name: "[Test] Govulncheck Allowlist - Allowlisted Advisory Passes"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # Mirror validate-go-project.yaml's scan step (same action SHA + inputs).
+      # The fixture reachably calls a GO-2021-0113 symbol; with that ID listed in
+      # .govulncheck-allow.txt the scan MUST pass. Keep this `uses:` in lockstep
+      # with validate-go-project.yaml — enforced by test-govulncheck-action-lockstep.
+      - name: 🛡️ Scan fixture with allowlist (must pass)
+        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        with:
+          repo-checkout: false
+          work-dir: tests/govulncheck-allowlist
+          go-version-input: ""
+          go-version-file: tests/govulncheck-allowlist/go.mod
+          allow-file: tests/govulncheck-allowlist/.govulncheck-allow.txt
+
+  test-govulncheck-strict-blocks:
+    name: "[Test] Govulncheck Allowlist - Strict Path Blocks"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # Same fixture, but with NO allow-file: the strict path must FAIL on the
+      # reachable advisory. continue-on-error lets the run proceed so the next step
+      # can assert the failure, turning "the gate stopped blocking" into a red test.
+      # output-file captures the scan output so the assertion can confirm the run
+      # actually detected the advisory — distinguishing a real block from an
+      # operational error (e.g. toolchain/install failure) that would otherwise make
+      # a bare "the step failed" check pass for the wrong reason.
+      - name: 🛡️ Scan fixture without allowlist (expected to fail)
+        id: scan
+        continue-on-error: true
+        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        with:
+          repo-checkout: false
+          work-dir: tests/govulncheck-allowlist
+          go-version-input: ""
+          go-version-file: tests/govulncheck-allowlist/go.mod
+          allow-file: ""
+          output-file: govulncheck-strict.txt
+
+      - name: ✅ Assert the strict scan blocked on the advisory
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Strict govulncheck scan should FAIL on the reachable GO-2021-0113 fixture, but its outcome was '$OUTCOME'. The strict gate is no longer blocking reachable advisories."
+            exit 1
+          fi
+          if ! grep -q "GO-2021-0113" govulncheck-strict.txt; then
+            echo "::error::Strict scan failed, but its output did not report GO-2021-0113 — the failure was operational (e.g. toolchain/install), not a real vulnerability block. Output:"
+            cat govulncheck-strict.txt || echo "(no output captured)"
+            exit 1
+          fi
+          echo "Strict scan correctly blocked on the reachable advisory ✅"
+
+  test-govulncheck-action-lockstep:
+    name: "[Test] Govulncheck Allowlist - Gate Pins Self-Tested Action"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # `uses:` cannot be parametrized, so the two scan jobs above hard-code the
+      # govulncheck action SHA. This guard asserts validate-go-project.yaml pins
+      # that SAME SHA, so the self-test always exercises the real gate. If the gate
+      # is ever swapped to an action without allow-file support, this check goes red
+      # and forces the self-test to be updated — at which point the allowlisted case
+      # fails too. That is what makes this suite catch the v5.4.1–v5.4.4 regression.
+      - name: 🔒 Assert the gate pins the self-tested action SHA
+        shell: bash
+        env:
+          # Match the full `uses:` line fragment, not the bare action ref — the ref
+          # also appears in surrounding comments in validate-go-project.yaml, so a
+          # bare-ref grep would false-pass if the real `uses:` SHA were changed while
+          # a comment still mentioned the old ref.
+          EXPECTED: "uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5"
+        run: |
+          set -euo pipefail
+          if ! grep -qF "$EXPECTED" .github/workflows/validate-go-project.yaml; then
+            echo "::error::validate-go-project.yaml no longer pins '$EXPECTED'. If the govulncheck action was changed intentionally, update both scan jobs in ci.yaml (test-govulncheck-allowlist-honored / test-govulncheck-strict-blocks) and this EXPECTED value so the allowlist self-test keeps exercising the real gate."
+            exit 1
+          fi
+          echo "validate-go-project.yaml pins the self-tested govulncheck action ✅"
+
+  # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
+  # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
+  # when a workflow has a finding. The happy-path test-zizmor job only proves the gate
+  # runs *clean* on this repo's own (clean) workflows — it can NOT prove the gate still
+  # BITES. This job points the SAME zizmor-action the gate uses at a deliberately-
+  # vulnerable fixture and asserts the scan FAILS and reports the finding, turning "the
+  # gate silently stopped blocking" into a red test (the exact #282/#283 failure mode,
+  # mirroring test-govulncheck-strict-blocks).
+  # The fixture (tests/zizmor-fixture/template-injection.yml) lives OUTSIDE
+  # .github/workflows/ so zizmor's repo-wide canonical discovery — the real gate and the
+  # test-zizmor self-test — never sees it; only this job, pointing zizmor at the exact
+  # path, audits it. Keep the action SHA in lockstep with the gate
+  # (enforced by test-zizmor-action-lockstep).
+  test-zizmor-blocks:
+    name: "[Test] Zizmor - Blocks On Vulnerable Fixture"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # Same action SHA as scan-for-workflow-vulnerabilities.yaml, pointed at the
+      # fixture. advanced-security:false keeps the fixture's deliberate finding OUT of
+      # the Security tab (and needs no security-events permission); continue-on-error
+      # lets the run proceed so the next step can assert the failure. The action tees
+      # zizmor's output to "${RUNNER_TEMP}/zizmor" regardless of format, which the
+      # assertion reads to confirm the finding was actually reported — distinguishing a
+      # real block from an operational error (e.g. image pull) that would otherwise make
+      # a bare "the step failed" check pass for the wrong reason.
+      - name: 🌈 Scan vulnerable fixture (expected to fail)
+        id: scan
+        continue-on-error: true
+        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        with:
+          inputs: tests/zizmor-fixture/template-injection.yml
+          advanced-security: false
+          annotations: false
+          color: false
+
+      - name: ✅ Assert the gate blocked on the vulnerable fixture
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Zizmor scan of the deliberately-vulnerable fixture should FAIL, but its outcome was '$OUTCOME'. The scan-for-workflow-vulnerabilities gate is no longer blocking workflow findings."
+            exit 1
+          fi
+          report="${RUNNER_TEMP}/zizmor"
+          if ! grep -q "template-injection" "$report" 2>/dev/null; then
+            echo "::error::Zizmor scan failed, but its output did not report the expected template-injection finding — the failure was operational (e.g. image pull), not a real workflow-vulnerability block. Output:"
+            cat "$report" 2>/dev/null || echo "(no output captured)"
+            exit 1
+          fi
+          echo "Zizmor gate correctly blocked on the vulnerable fixture ✅"
+
+  test-zizmor-action-lockstep:
+    name: "[Test] Zizmor - Gate Pins Self-Tested Action"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # `uses:` cannot be parametrized, so test-zizmor-blocks hard-codes the zizmor-action
+      # SHA. This guard asserts the gate pins that SAME SHA, so the self-test always
+      # exercises the real gate. If the gate's action is bumped without updating the
+      # self-test, this check goes red and forces both to move in lockstep.
+      - name: 🔒 Assert the gate pins the self-tested zizmor-action SHA
+        shell: bash
+        env:
+          # Match the full `uses:` line, not the bare ref — the ref also appears in
+          # comments, so a bare-ref grep could false-pass if the real `uses:` SHA changed
+          # while a comment still mentioned the old ref.
+          EXPECTED: "uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d"
+        run: |
+          set -euo pipefail
+          if ! grep -qF "$EXPECTED" .github/workflows/scan-for-workflow-vulnerabilities.yaml; then
+            echo "::error::scan-for-workflow-vulnerabilities.yaml no longer pins '$EXPECTED'. If the zizmor action was changed intentionally, update test-zizmor-blocks and this EXPECTED value so the failure-mode self-test keeps exercising the real gate."
+            exit 1
+          fi
+          echo "scan-for-workflow-vulnerabilities.yaml pins the self-tested zizmor action ✅"
+
+  # ── validate-go-project quality-gate failure-mode self-tests (#316) ───────────
+  # The govulncheck/zizmor guards above prove the security-scan gates fail closed;
+  # these extend the same pattern to validate-go-project.yaml's remaining quality
+  # gates — golangci-lint and `go test`. Each runs the gate's real tool against a
+  # deliberately-broken fixture under continue-on-error and asserts it FAILED on a
+  # real finding (not an operational error such as a failed tool install), turning
+  # "the gate silently stopped blocking" into a red check. test-validate-go-gate-lockstep
+  # keeps the tool pins hard-coded here in step with the gate.
+  test-validate-go-lint-blocks:
+    name: "[Test] Validate Go Project - Lint Gate Blocks"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: tests/golangci-lint-fixture/go.mod
+
+      # Mirror validate-go-project.yaml's lint step (same action SHA + version + --fix
+      # args). The fixture has a deliberate, NON-auto-fixable errcheck violation, so
+      # golangci-lint exits non-zero — exactly the gate's "lint fails the build" block
+      # path. --output.text.path captures the findings so the next step can confirm a
+      # real lint block rather than an operational failure. Keep this `uses:` + version
+      # in lockstep with the gate (enforced by test-validate-go-gate-lockstep).
+      - name: 🧹 Lint broken fixture (expected to fail)
+        id: lint
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: v2.11.4
+          args: --fix --output.text.path=golangci-report.txt
+          working-directory: tests/golangci-lint-fixture
+          verify: false
+
+      - name: ✅ Assert the lint gate blocked on the violation
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.lint.outcome }}
+        run: |
+          set -euo pipefail
+          REPORT=tests/golangci-lint-fixture/golangci-report.txt
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::golangci-lint should FAIL on the deliberate errcheck violation in tests/golangci-lint-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's lint gate is no longer blocking on lint violations."
+            exit 1
+          fi
+          if ! grep -q "errcheck" "$REPORT" 2>/dev/null; then
+            echo "::error::golangci-lint failed, but its report did not contain the expected errcheck finding — the failure was operational (e.g. a failed tool install), not a real lint block. Report:"
+            cat "$REPORT" 2>/dev/null || echo "(no report captured)"
+            exit 1
+          fi
+          echo "Lint gate correctly blocked on the errcheck violation ✅"
+
+  test-validate-go-test-blocks:
+    name: "[Test] Validate Go Project - Test Gate Blocks"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: tests/go-test-fixture/go.mod
+
+      # Mirror validate-go-project.yaml's test step (`go test ./...`) against a fixture
+      # whose only test fails on purpose, so the run exits non-zero — exactly the gate's
+      # "a failing test fails the build" block path. The output is captured so the next
+      # step can confirm a real test failure rather than a build/operational error. The
+      # command is kept in lockstep with the gate by test-validate-go-gate-lockstep.
+      - name: 🧪 Test broken fixture (expected to fail)
+        id: gotest
+        continue-on-error: true
+        working-directory: tests/go-test-fixture
+        shell: bash
+        run: |
+          set -uo pipefail
+          go test ./... 2>&1 | tee go-test-output.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: ✅ Assert the test gate blocked on the failing test
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.gotest.outcome }}
+        run: |
+          set -euo pipefail
+          OUT=tests/go-test-fixture/go-test-output.txt
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::go test should FAIL on the deliberately failing test in tests/go-test-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's test gate is no longer blocking on failing tests."
+            exit 1
+          fi
+          if ! grep -q "^--- FAIL: TestDeliberatelyFails" "$OUT" 2>/dev/null; then
+            echo "::error::go test failed, but its output did not show '--- FAIL: TestDeliberatelyFails' — the failure was operational (e.g. a build error), not a real test failure. Output:"
+            cat "$OUT" 2>/dev/null || echo "(no output captured)"
+            exit 1
+          fi
+          echo "Test gate correctly blocked on the failing test ✅"
+
+  test-validate-go-gate-lockstep:
+    name: "[Test] Validate Go Project - Gate Lockstep"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # The two jobs above hard-code the lint action SHA + version and the `go test`
+      # command. This guard asserts validate-go-project.yaml still pins the SAME ones, so
+      # the self-tests always exercise the real gate. If a gate is changed without
+      # updating the self-test, this check goes red and forces them to move in lockstep.
+      - name: 🔒 Assert the gate pins the self-tested lint action + test command
+        shell: bash
+        env:
+          GATE: .github/workflows/validate-go-project.yaml
+          # Match full lines, not bare refs — refs/commands also appear in comments, so a
+          # looser grep could false-pass if the real value changed while a comment did not.
+          EXPECTED_LINT_ACTION: "uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee"
+          EXPECTED_LINT_VERSION: "version: v2.11.4"
+          EXPECTED_TEST_CMD: "go test ./..."
+        run: |
+          set -euo pipefail
+          status=0
+          for expected in "$EXPECTED_LINT_ACTION" "$EXPECTED_LINT_VERSION" "$EXPECTED_TEST_CMD"; do
+            if ! grep -qF "$expected" "$GATE"; then
+              echo "::error::$GATE no longer contains '$expected'. If the lint action/version or test command changed intentionally, update test-validate-go-lint-blocks / test-validate-go-test-blocks and these EXPECTED values so the self-tests keep exercising the real gate."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "validate-go-project.yaml pins the self-tested lint action + test command ✅"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -1169,6 +1725,31 @@ jobs:
       - test-run-dotnet-tests-missing-working-directory
       - zizmor
       - lint-readme-parity
+      - test-zizmor
+      - test-dependency-review-workflow
+      - test-delete-workflow-runs-all
+      - test-delete-workflow-runs-specific
+      - test-delete-workflow-runs-minimal
+      - test-validate-go-project
+      - test-run-dotnet-tests-workflow
+      - test-enable-auto-merge
+      - test-create-release
+      - test-deploy-github-pages
+      - test-publish-dotnet-library
+      - test-publish-app
+      - test-publish-manifests
+      - test-scan-for-todo-comments
+      - test-sync-cluster-policies
+      - test-update-agent-skills
+      - test-template-sync
+      - test-govulncheck-allowlist-honored
+      - test-govulncheck-strict-blocks
+      - test-govulncheck-action-lockstep
+      - test-zizmor-blocks
+      - test-zizmor-action-lockstep
+      - test-validate-go-lint-blocks
+      - test-validate-go-test-blocks
+      - test-validate-go-gate-lockstep
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1215,3 +1796,28 @@ jobs:
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.zizmor.result }}
             ${{ needs.lint-readme-parity.result }}
+            ${{ needs.test-zizmor.result }}
+            ${{ needs.test-dependency-review-workflow.result }}
+            ${{ needs.test-delete-workflow-runs-all.result }}
+            ${{ needs.test-delete-workflow-runs-specific.result }}
+            ${{ needs.test-delete-workflow-runs-minimal.result }}
+            ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-run-dotnet-tests-workflow.result }}
+            ${{ needs.test-enable-auto-merge.result }}
+            ${{ needs.test-create-release.result }}
+            ${{ needs.test-deploy-github-pages.result }}
+            ${{ needs.test-publish-dotnet-library.result }}
+            ${{ needs.test-publish-app.result }}
+            ${{ needs.test-publish-manifests.result }}
+            ${{ needs.test-scan-for-todo-comments.result }}
+            ${{ needs.test-sync-cluster-policies.result }}
+            ${{ needs.test-update-agent-skills.result }}
+            ${{ needs.test-template-sync.result }}
+            ${{ needs.test-govulncheck-allowlist-honored.result }}
+            ${{ needs.test-govulncheck-strict-blocks.result }}
+            ${{ needs.test-govulncheck-action-lockstep.result }}
+            ${{ needs.test-zizmor-blocks.result }}
+            ${{ needs.test-zizmor-action-lockstep.result }}
+            ${{ needs.test-validate-go-lint-blocks.result }}
+            ${{ needs.test-validate-go-test-blocks.result }}
+            ${{ needs.test-validate-go-gate-lockstep.result }}
