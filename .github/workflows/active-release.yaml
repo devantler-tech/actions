@@ -1,0 +1,16 @@
+name: 🎉 Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  release:
+    # Local same-repo reusable-workflow call (scenario C) — resolves at this commit,
+    # no pin, no SHA-policy issue. create-release.yaml runs semantic-release.
+    uses: ./.github/workflows/create-release.yaml
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

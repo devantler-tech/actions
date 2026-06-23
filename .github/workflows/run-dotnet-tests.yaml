@@ -35,6 +35,6 @@ jobs:
           persist-credentials: false
 
       - name: 🧪 Test .NET solution or project
-        uses: devantler-tech/actions/run-dotnet-tests@v6.1.0 # x-release-please-version
+        uses: devantler-tech/actions/run-dotnet-tests@9d98cb8be059537ec1e82f71c90d75ecba321713 # v6.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

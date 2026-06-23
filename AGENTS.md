@@ -14,17 +14,15 @@ This file is the single canonical instructions file for the repository. It is re
 .github/
 ├── workflows/
 │   ├── ci.yaml                   # CI: one `test-<action>` job per action + one `[Test]` job per reusable workflow
-│   ├── release.yaml              # release-please — THIS repo's own release driver (release PR → tag)
+│   ├── active-release.yaml       # Self-release caller: runs semantic-release via the local create-release.yaml
+│   ├── active-sync-github-labels.yaml  # Self-maintenance caller
 │   ├── create-release.yaml       # Reusable workflow: semantic-release automation (a product for CONSUMER repos)
-│   ├── <reusable-workflow>.yaml  # The other reusable `workflow_call` workflows
-│   └── active-sync-github-labels.yaml  # Self-maintenance caller
+│   └── <reusable-workflow>.yaml  # The other reusable `workflow_call` workflows
 ├── fixtures/                     # Fixtures consumed by the action `test-<action>` jobs
 └── dependabot.yaml
 
 tests/                            # Fixtures for the reusable-workflow `[Test]` jobs (go-test, golangci-lint, govulncheck-allowlist, zizmor)
-release-please-config.json        # release-please config (incl. extra-files: self-reference pin rewrites)
-.release-please-manifest.json     # release-please version cursor
-.releaserc                        # semantic-release config — ONLY for the create-release self-test dry-run, NOT this repo's releases
+.releaserc                        # semantic-release config: drives this repo's own releases AND the create-release self-test
 zizmor.yml                        # Action/workflow pinning policy
 ```
 
@@ -34,8 +32,7 @@ See [README.md](README.md) for the full catalogue of actions and reusable workfl
 
 | File | Purpose |
 |---|---|
-| `release-please-config.json` / `.release-please-manifest.json` | release-please — this repo's release driver + self-reference pin rewrites |
-| `.releaserc` | semantic-release config — retained ONLY for the `create-release` reusable-workflow self-test's dry-run |
+| `.releaserc` | semantic-release config — this repo's own releases (via `active-release.yaml`) and the `create-release` self-test |
 | `.mega-linter.yml` | MegaLinter config (disables SPELL_CSPELL) |
 | `.yamllint.yml` | YAML linting rules |
 | `.cspell.json` | Spell-checker config and custom words |
@@ -49,22 +46,22 @@ Full detail in [CONTRIBUTING.md](CONTRIBUTING.md). Key rules:
 - **Action directory naming:** `<active-verb>-<purpose>` (e.g., `setup-go-toolchain`, not `go-setup`)
 - **Inputs/outputs:** kebab-case only (e.g., `app-id`, `github-token`)
 - **Action type:** Prefer **composite** over JavaScript/Docker
-- **External action pinning:** Pin third-party actions (non-`actions/*`, non-`github/*`, non-`devantler-tech/*`) to commit SHAs with a `# v<version>` comment — enforced by `zizmor.yml`. For a main-tracked dep with no releases, use `# <branch> (no upstream releases)`.
+- **External action pinning:** Pin third-party actions to commit SHAs with a `# v<version>` comment — the org enforces `sha_pinning_required`, so **every** `uses:` (incl. `actions/*`, `github/*`, and first-party `devantler-tech/*`) must be a full-length commit SHA at runtime. For a main-tracked dep with no releases, use `# <branch> (no upstream releases)`.
 - **`action.yaml`:** Always set `author: devantler-tech`
 
 ## Self-references within this repo (read before referencing one part of the repo from another)
 
-Because composite actions and reusable workflows now live together, one component may reference another **in the same repo**. GitHub resolves these differently — follow the matching rule:
+Composite actions and reusable workflows now live together, so one component may reference another **in the same repo**. GitHub resolves these differently — follow the matching rule:
 
 - **CI job → local action** (e.g. a `test-<action>` job): `uses: ./<action>` after `actions/checkout`. Works (the repo is checked out).
-- **Reusable workflow → co-located reusable workflow:** `uses: ./.github/workflows/<x>.yaml`. Works (same repo, same commit).
+- **Reusable workflow → co-located reusable workflow:** `uses: ./.github/workflows/<x>.yaml`. Works (same repo, same commit, no pin). This is how `active-release.yaml` calls `create-release.yaml`.
 - **Composite action → shared script:** invoke via `${{ github.action_path }}/…` (resolves at the calling ref, no pin). See `setup-agent-skills` / `update-agent-skills`.
-- **Reusable workflow → an action, OR composite action → a sibling composite action:** `./` does **NOT** work (a reusable workflow resolves `./` against the *caller's* checkout; a composite action cannot `uses:` a sibling by relative path). Use a full **tag pin** `devantler-tech/actions/<x>@vX.Y.Z` annotated with `# x-release-please-version`. **release-please rewrites that pin to the version being released** (`extra-files` in `release-please-config.json`), so each release tag references itself. **Never** hand-edit the version, **never** use `@main`/a floating major, and **never** put a SHA pin on a self-reference (release-please rewrites the semver, not a SHA).
+- **Reusable workflow → an action, OR composite action → a sibling composite action:** `./` does **NOT** work (a reusable workflow resolves `./` against the *caller's* checkout; a composite action can't `uses:` a sibling by relative path), so these must be a full `devantler-tech/actions/<x>@<ref>` reference. Because the org requires **SHA pins**, this is a **full commit SHA** with a `# v<version>` comment, **bumped by Dependabot** (which has no cooldown for `devantler-tech/*`).
+  - **Why not a tag, and why a one-release lag is unavoidable:** a tag (`@v7.0.0`) would let a release reference itself, but the org's `sha_pinning_required` forbids tags. A SHA self-reference **cannot** point at its own release commit — a commit's SHA is a hash of its own contents, so a file can't contain the SHA of the commit that introduces it (the hash would change). A SHA self-reference can therefore only ever name a **prior** release, so it trails the latest release by one bump (Dependabot closes the gap). This is identical to the pre-merge cross-repo posture; it is a property of SHA-pinning + self-reference, not a tooling gap. **Never** use `@main` or a floating major; **never** hand-roll a tag pin (CI/runtime will reject it).
 
-### Releases & autonomy
+### Releases
 
-- This repo **releases itself via release-please** (`release.yaml` → release PR → tag). The `create-release.yaml` reusable workflow (semantic-release) is a **product consumed by other repos**, not how this repo releases; the root `.releaserc` exists only for that workflow's self-test dry-run.
-- The release PR is **opened by botantler-1** (`APP_CLIENT_ID`/`APP_PRIVATE_KEY`), **approved by botantler-2** (`APP_CLIENT_ID_2`/`APP_PRIVATE_KEY_2`) — a PR cannot be approved by its opener — and **auto-merged armed with the App token** (not `GITHUB_TOKEN`; a `GITHUB_TOKEN`-armed merge would not re-trigger the workflow to cut the tag).
+This repo **releases itself via semantic-release**: `active-release.yaml` (on push to `main`) calls the local `create-release.yaml` (`./.github/workflows/create-release.yaml`), which runs `npx semantic-release`. `create-release.yaml` is also a **product consumed by other repos**. Releases are tag-only (no commit to `main`), so they coexist with branch protection. `.releaserc` drives both the self-release and the `create-release` self-test.
 
 ## Adding a New Action
 
@@ -78,11 +75,11 @@ Because composite actions and reusable workflows now live together, one componen
 ### All reusable workflows must
 
 1. **Use the `workflow_call` trigger** — this is what makes them reusable.
-2. **Pin all external actions to commit SHAs** — `uses: owner/repo@<sha> # <version>`; first-party self-references use the tag-pin + `# x-release-please-version` rule above.
+2. **Pin all external actions to commit SHAs** — `uses: owner/repo@<sha> # <version>`; first-party self-references are also full SHA pins (see *Self-references*).
 3. **Include `step-security/harden-runner`** as the first step of every job (`egress-policy: audit`).
 4. **Set `permissions: {}` at the workflow top level** — grant per-job.
 5. **Set `persist-credentials: false`** on `actions/checkout` unless the job pushes.
-6. **Conventional commits / release-please.** Releases are cut by **release-please** from the commit types since the last release: `feat:` → minor; `fix:`/`perf:` → patch; a breaking change (`!` or a `BREAKING CHANGE:` footer) → major. **Changed from the former reusable-workflows repo (which used semantic-release):** `ci:`/`build:`/`refactor:`/`chore:`/`docs:` do **not** by themselves trigger a release — they ride the next `feat:`/`fix:` release and appear in its changelog. A workflow/action change consumers must receive promptly should be committed as `fix:` (or `feat:`), not `ci:`/`refactor:`.
+6. **Use conventional commit messages** — semantic-release cuts releases from the commit type: a breaking change (`!` after the type, e.g. `feat!:`/`fix!:`/`refactor!:`/`ci!:`, or a `BREAKING CHANGE:` footer) → major; `feat:` → minor; `fix:`, `perf:`, `revert:`, and the workflow-changing types `ci:`/`build:`/`refactor:` → patch (the reusable workflows *are* this repo's product, so changes to them must ship to consumers — see `.releaserc`'s `releaseRules`); `chore:`/`docs:`/`test:`/`style:` do not trigger a release.
 7. **Document secrets and inputs** in `README.md` with usage examples.
 
 ### Required workflow triggers
@@ -98,6 +95,8 @@ on:
   merge_group:
   ##################################
 ```
+
+> These triggers also make the workflow fire **standalone on this repo's own PRs**. Workflows that operate on a project type this repo isn't (Go, .NET) must no-op gracefully (e.g. `validate-go-project`'s change-detection skip) rather than fail; such standalone runs are **not** the required check (`CI - Required Checks` is).
 
 ### Test jobs
 
@@ -116,10 +115,7 @@ GitHub App tokens (not `GITHUB_TOKEN`) are used for operations that must trigger
     private-key: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-Two App identities exist:
-
-- **botantler-1** — `APP_CLIENT_ID` (var) + `APP_PRIVATE_KEY` (secret): the primary release/automation identity (opens the release PR, arms auto-merge).
-- **botantler-2** — `APP_CLIENT_ID_2` (var) + `APP_PRIVATE_KEY_2` (secret): the approver identity (approves the release PR; must differ from the opener).
+The app credentials are `APP_CLIENT_ID` (a repository/org **variable**) and `APP_PRIVATE_KEY` (a repository/org **secret**).
 
 ## Validation Commands
 
@@ -142,7 +138,7 @@ These conventions guide the autonomous **Daily AI Assistant** — and any agenti
 
 **Blast radius first:** a change to a composite action / reusable workflow affects **every consumer repo**. Prefer additive, backward-compatible changes; call out any breaking input/output change prominently and treat it as a deliberate decision the maintainer promotes (keep an alias where feasible).
 
-**Validate before any PR:** `actionlint` on every changed workflow/action (else a thorough YAML parse); confirm `uses:` refs resolve and are pinned/aligned; check `inputs`/`outputs`/`shell:` are declared; for reusable workflows keep `on: workflow_call` inputs/secrets backward-compatible. No app build here — YAML correctness + pinning is the gate. Keep third-party actions pinned to full-length commit SHAs; first-party self-references use the tag-pin rule above. Never weaken a security control to pass a check.
+**Validate before any PR:** `actionlint` on every changed workflow/action (else a thorough YAML parse); confirm `uses:` refs resolve and are pinned/aligned; check `inputs`/`outputs`/`shell:` are declared; for reusable workflows keep `on: workflow_call` inputs/secrets backward-compatible. No app build here — YAML correctness + pinning is the gate. Keep every `uses:` pinned to a full-length commit SHA (the org enforces it). Never weaken a security control to pass a check.
 
 **Tested invariants (don't silently regress):** some behaviours of a workflow are a *contract* consumers depend on, not an implementation detail — `validate-go-project.yaml`'s vuln-scan honoring a `.govulncheck-allow.txt` allowlist is the canonical one (it was silently lost across `v5.4.1`–`v5.4.4` when the gate swapped to an action with no `allow-file` input, wedging every consumer that had risk-accepted an advisory). These contracts are guarded by self-tests in `ci.yaml` (`test-govulncheck-allowlist-honored` / `test-govulncheck-strict-blocks` / `test-govulncheck-action-lockstep`, against the `tests/govulncheck-allowlist/` fixture). **Any swap of the vuln-scan implementation — including back to the official `golang/govulncheck-action` once it gains an `allow-file`-equivalent input — must keep that guard green**; update the self-test in lockstep, never delete it to make a swap pass.
 
@@ -151,7 +147,7 @@ These conventions guide the autonomous **Daily AI Assistant** — and any agenti
 **Task menu** (1–2 items/run; high care):
 
 - **Triage** new issues/PRs; one insightful comment on the oldest un-commented item.
-- **Action/version hygiene:** keep third-party actions pinned & aligned; bundle Dependabot `github_actions` PRs; flag majors. (First-party self-reference pins are owned by release-please — do not hand-bump them.)
+- **Action/version hygiene:** keep all actions pinned & aligned; bundle Dependabot `github_actions` PRs (incl. the repo's own first-party self-reference SHA bumps) and flag majors.
 - **Workflow health & dedup:** consolidate duplicated steps, split overgrown jobs, improve caching, remove dead workflows — backward-compatible, one concern per draft PR, `actionlint`-clean.
 - **Consistency** between actions and reusable workflows and with how consumer repos call them.
 - **Maintain your own PRs:** fix CI you caused, resolve conflicts.

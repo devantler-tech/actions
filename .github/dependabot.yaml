@@ -9,13 +9,6 @@ updates:
       # devantler-tech actions/workflows are our own code — bump now, no cooldown.
       exclude:
         - "devantler-tech/*"
-    ignore:
-      # The repo's own action/workflow self-references (devantler-tech/actions/*)
-      # are rewritten to each release tag by release-please (extra-files config),
-      # so Dependabot must NOT also bump them — that would double-manage the pins
-      # and fight the release PR. release-please owns these; everything else
-      # (third-party actions) is still bumped here.
-      - dependency-name: "devantler-tech/actions*"
   # The govulncheck allowlist self-test fixture (tests/govulncheck-allowlist)
   # DELIBERATELY pins a vulnerable golang.org/x/text v0.3.0 so the CI self-test
   # (ci.yaml: test-govulncheck-allowlist-honored / test-govulncheck-strict-blocks)
