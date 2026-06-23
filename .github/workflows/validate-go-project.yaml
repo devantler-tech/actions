@@ -181,7 +181,7 @@ jobs:
           commit_user_email: tidy-bot@users.noreply.github.com
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success'
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -263,7 +263,7 @@ jobs:
           commit_user_email: golangci-lint-bot@users.noreply.github.com
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success'
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -519,7 +519,7 @@ jobs:
           commit_user_email: 129584137+megalinter-bot@users.noreply.github.com
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success'
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
