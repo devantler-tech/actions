@@ -4,6 +4,12 @@ permissions: {}
 
 on:
   workflow_call:
+    inputs:
+      working-directory:
+        required: false
+        type: string
+        default: ""
+        description: "Directory containing the .NET solution/project to test. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can be exercised in a repo that is not itself a .NET project."
   ### Required Workflow Triggers ###
   pull_request:
   merge_group:
@@ -21,8 +27,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    # Ignore Require Workflow runs
-    if: github.repository != 'devantler-tech/reusable-workflows'
+    # Run for consumer calls (their repo) and for the fixture-targeted CI self-test
+    # (working-directory set). Skip a bare standalone fire in THIS repo, which has no
+    # .NET project at its root.
+    if: ${{ inputs.working-directory != '' || github.repository != 'devantler-tech/actions' }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -38,3 +46,4 @@ jobs:
         uses: devantler-tech/actions/run-dotnet-tests@v6.1.0 # x-release-please-version
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: ${{ inputs.working-directory || '.' }}

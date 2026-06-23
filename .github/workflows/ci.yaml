@@ -1193,6 +1193,10 @@ jobs:
   test-run-dotnet-tests-workflow:
     name: "[Test] Run .NET Tests"
     uses: ./.github/workflows/run-dotnet-tests.yaml
+    # Fixture-targeted: exercise the workflow against the known-good .NET fixture
+    # (this repo is not itself a .NET project).
+    with:
+      working-directory: .github/fixtures/run-dotnet-tests
     permissions:
       contents: read
       packages: read
