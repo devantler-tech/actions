@@ -7,6 +7,11 @@ on:
         required: false
         type: string
         description: "Pull request author login (used to disable auto-commit for bot PRs)"
+      working-directory:
+        required: false
+        type: string
+        default: ""
+        description: "Go module directory to validate. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can run in a repo that is not itself a Go module."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App Private Key"
@@ -119,6 +124,9 @@ jobs:
     name: 📦 Tidy
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on main/master branches or on reusable-workflows repo or in merge queue
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -155,7 +163,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
       - name: 🧹 go mod tidy
         run: go mod tidy
@@ -191,6 +199,9 @@ jobs:
     name: 🧹 Lint - golangci-lint
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -224,13 +235,14 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
       - name: 🧹 Run golangci-lint
         id: golangci-lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           version: v2.11.4
+          working-directory: ${{ inputs.working-directory || '.' }}
           args: --fix
           # Skip the action's `config verify` step: it fetches the golangci-lint
           # JSONSchema over the network (golangci-lint.run), which intermittently
@@ -269,6 +281,9 @@ jobs:
     name: 🔍 Dead Code Analysis
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo; only on PRs
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -303,7 +318,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
 
       - name: 📥 Install deadcode
@@ -341,6 +356,9 @@ jobs:
     name: 🛡️ Vulnerability Scan
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo; only on PRs
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -411,6 +429,7 @@ jobs:
         uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
         with:
           repo-checkout: false
+          work-dir: ${{ inputs.working-directory || '.' }}
           # Scan under the SAME Go version the consumer actually ships (its go.mod), so
           # govulncheck's stdlib analysis matches the produced binary. The fork's setup-go
           # receives BOTH go-version (default 'stable') and go-version-file, and in
@@ -423,7 +442,7 @@ jobs:
           # passing scan, wedging its entire Go PR lane. Empty go-version-input lets setup-go
           # honour go-version-file (go.mod), installing the exact shipped version.
           go-version-input: ''
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           # present ⇒ honour the allowlist (JSON mode, risk-accept listed IDs); absent ⇒ '' ⇒ strict.
           allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && '.govulncheck-allow.txt' || '' }}
 
@@ -431,6 +450,9 @@ jobs:
     name: 🧹 Lint - mega-linter
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Run if Go files OR other lintable files changed (markdown, yaml, json, etc.)
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -466,12 +488,14 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
       - name: 🧹 Lint
         id: ml
         uses: oxsecurity/megalinter/flavors/go@0e3ce9b9c8c10effb9b269509cc47ca17cae31c7 # v9.5.0
         env:
+          DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
+          MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLY_FIXES: all
@@ -513,6 +537,9 @@ jobs:
     name: 🏗️ Build
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -556,7 +583,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
 
       - name: 🛠️ Build
@@ -566,6 +593,9 @@ jobs:
     name: 🧪 Test
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -609,7 +639,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
 
       - name: 🧪 Test
@@ -620,6 +650,9 @@ jobs:
     name: 📊 Code Coverage
     runs-on: ubuntu-latest
     needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
     # Skip if no Go files changed or on reusable-workflows repo
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
@@ -666,7 +699,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
 
       - name: 👨🏻‍🔧 Enable covdata (temp) see https://github.com/golang/go/issues/75031
@@ -688,6 +721,6 @@ jobs:
         continue-on-error: true
         uses: devantler-tech/actions/upload-coverage@v6.1.0 # x-release-please-version
         with:
-          file: coverage.cobertura.xml
+          file: ${{ inputs.working-directory || '.' }}/coverage.cobertura.xml
           language: Go
           label: code-coverage/go

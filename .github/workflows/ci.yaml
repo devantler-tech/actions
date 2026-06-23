@@ -1184,6 +1184,9 @@ jobs:
   test-validate-go-project:
     name: "[Test] Validate Go Project"
     uses: ./.github/workflows/validate-go-project.yaml
+    # Fixture-targeted: validate the known-good Go fixture (this repo is not itself a Go module).
+    with:
+      working-directory: .github/tests/go-valid-fixture
     permissions:
       contents: write
       pull-requests: write
