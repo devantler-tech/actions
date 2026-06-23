@@ -19,6 +19,12 @@ set -euo pipefail
 : "${REQUIRED:?REQUIRED (minimum gh version) must be set}"
 : "${INSTALL_NAMESPACE:?INSTALL_NAMESPACE must be set}"
 
+# Bounded retry for the network download below — a transient github.com release
+# 5xx or DNS/TLS blip must not red a required check (reliability pillar, #247).
+# Resolved relative to this script's own dir (alongside retry.sh), so it works for
+# both local `uses: ./<action>` and external `uses: …@<ref>` callers.
+retry() { bash "$(dirname "${BASH_SOURCE[0]}")/retry.sh" "$@"; }
+
 if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
   current=$(gh --version | awk '/^gh version /{print $3; exit}')
   if [ -z "$current" ]; then
@@ -46,15 +52,18 @@ tmp=$(mktemp -d)
 asset="gh_${REQUIRED}_${os}_${arch}.${ext}"
 url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
 echo "Downloading $url"
+if [ "$ext" = "zip" ] && ! command -v unzip >/dev/null 2>&1; then
+  echo "::error::unzip is required to extract the macOS gh release archive but is not available on PATH."
+  exit 1
+fi
+# Download (network — retried) to a file, then extract (local — not retried). The
+# Linux path downloads to a file rather than streaming `curl | tar` so the network
+# pull is a single retryable command.
+retry curl -fsSL -o "$tmp/$asset" "$url"
 if [ "$ext" = "zip" ]; then
-  if ! command -v unzip >/dev/null 2>&1; then
-    echo "::error::unzip is required to extract the macOS gh release archive but is not available on PATH."
-    exit 1
-  fi
-  curl -fsSL -o "$tmp/$asset" "$url"
   unzip -q "$tmp/$asset" -d "$tmp"
 else
-  curl -fsSL "$url" | tar -xzC "$tmp"
+  tar -xzC "$tmp" -f "$tmp/$asset"
 fi
 install_dir="${RUNNER_TEMP:-/tmp}/${INSTALL_NAMESPACE}/bin"
 mkdir -p "$install_dir"

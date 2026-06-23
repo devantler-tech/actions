@@ -98,8 +98,11 @@ retry brew install <formula>
 `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY`) and exits non-zero
 with the command's last status once attempts are exhausted, so a genuine failure
 still reds the check. Only wrap the **network** commands — leave local operations
-unwrapped. `setup-ksail-cli` uses it for `brew tap` / `brew install`; extend it
-to the other network-pull composites as part of the reliability pillar
+unwrapped. It is used by `setup-ksail-cli` (`brew tap` / `brew install`), by the
+shared `.scripts/ensure-gh-skill.sh` (the `gh` release download), and by
+`setup-agent-skills` / `update-agent-skills` (`gh skill install` / `gh skill
+update` registry pulls) — covering every shell-based network pull in the suite as
+part of the reliability pillar
 ([#247](https://github.com/devantler-tech/actions/issues/247)).
 
 ## Commits
