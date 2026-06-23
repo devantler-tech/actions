@@ -1,0 +1,68 @@
+name: 🎉 Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Checkout so the local ./approve-pr and ./enable-auto-merge-on-pr actions resolve.
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # botantler-1 App token (NOT GITHUB_TOKEN): so the release PR triggers CI and the
+      # post-merge push re-triggers this workflow to cut the tag.
+      - name: 🔑 Generate App token (botantler-1)
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege (zizmor github-app): release-please needs contents
+          # (release + tag), pull-requests (the release PR), and issues (label
+          # management); the auto-merge step reuses this token (contents + PRs).
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      # Maintains the release PR — version bump, CHANGELOG, and (via extra-files) rewrites the
+      # self-referenced action/workflow tag pins to the version being released — then cuts the
+      # GitHub release + tag once that PR is merged. The tagged commit therefore references itself.
+      - name: 🚀 Run release-please
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # A PR cannot be approved by the identity that opened it, so approval comes from a
+      # SECOND App (botantler-2), distinct from the release-please opener (botantler-1).
+      - name: ✅ Approve the release PR (botantler-2)
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: ./approve-pr
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID_2 }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY_2 }}
+          pr-number: ${{ fromJSON(steps.release.outputs.pr).number }}
+
+      # Armed with the App token (not GITHUB_TOKEN) so the squash-merge's push to main
+      # re-triggers this workflow and release-please cuts the tag.
+      - name: 🤖 Enable auto-merge on the release PR
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: ./enable-auto-merge-on-pr
+        with:
+          pr-number: ${{ fromJSON(steps.release.outputs.pr).number }}
+          merge-method: squash
+          token: ${{ steps.app-token.outputs.token }}

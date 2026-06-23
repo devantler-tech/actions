@@ -14,6 +14,13 @@ inputs:
     description: Validate only; do not enable auto-merge
     required: false
     default: "false"
+  token:
+    description: >-
+      GitHub token used to arm auto-merge. Defaults to the workflow token; pass a GitHub App
+      token when the resulting merge must trigger downstream workflows — a GITHUB_TOKEN-armed
+      merge does NOT re-trigger workflows (e.g. release-please needs the post-merge push to cut the tag).
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -22,7 +29,7 @@ runs:
       id: check-auto-merge
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ inputs.token }}
         REPOSITORY: ${{ github.repository }}
       run: |
         REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
@@ -36,7 +43,7 @@ runs:
       if: steps.check-auto-merge.outputs.auto-merge-enabled == 'true' && inputs.dry-run != 'true'
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ inputs.token }}
         MERGE_METHOD: ${{ inputs.merge-method }}
         PR_NUMBER: ${{ inputs.pr-number }}
         REPOSITORY: ${{ github.repository }}

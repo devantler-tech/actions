@@ -97,7 +97,7 @@ jobs:
 
       - name: 🔄 Update installed skills
         id: update
-        uses: devantler-tech/actions/update-agent-skills@9d98cb8be059537ec1e82f71c90d75ecba321713 # v6.1.0
+        uses: devantler-tech/actions/update-agent-skills@v6.1.0 # x-release-please-version
         with:
           dir: ${{ inputs.dir }}
           unpin: ${{ inputs.unpin }}
