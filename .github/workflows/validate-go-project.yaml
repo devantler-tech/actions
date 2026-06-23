@@ -35,7 +35,7 @@ jobs:
     # Ignore Required Workflow runs on the reusable-workflows repo itself
     # Skip merge queue — these checks already passed on the PR
     if: >-
-      github.repository != 'devantler-tech/reusable-workflows'
+      (inputs.working-directory != '' || github.repository != 'devantler-tech/actions')
       && github.event_name != 'merge_group'
     permissions:
       contents: read
