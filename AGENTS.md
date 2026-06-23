@@ -12,16 +12,19 @@ This file is the single canonical instructions file for the repository. It is re
 └── README.md                     # Per-action docs (template in CONTRIBUTING.md)
 
 .github/
-├── workflows/
-│   ├── ci.yaml                   # CI: one `test-<action>` job per action + one `[Test]` job per reusable workflow
-│   ├── release.yaml              # release-please — THIS repo's own release driver (release PR → tag)
-│   ├── create-release.yaml       # Reusable workflow: semantic-release automation (a product for CONSUMER repos)
-│   ├── <reusable-workflow>.yaml  # The other reusable `workflow_call` workflows
-│   └── active-sync-github-labels.yaml  # Self-maintenance caller
-├── fixtures/                     # Fixtures consumed by the action `test-<action>` jobs
+├── workflows/                    # ALL workflows live here (GitHub requires it); NAMING differentiates them:
+│   │                             #   repo-owned = `ci.yaml` + `active-*.yaml`;  reusable products = every other name.
+│   ├── ci.yaml                   # repo-owned: one `test-<action>` job per action + one `[Test]` job per reusable workflow
+│   ├── active-release.yaml       # repo-owned: release-please driver (release PR → tag)
+│   ├── active-sync-github-labels.yaml  # repo-owned: label-sync caller
+│   ├── create-release.yaml       # reusable product (workflow_call): semantic-release automation for consumer repos
+│   └── <name>.yaml               # the other reusable `workflow_call` products (dependency-review, validate-go-project, …)
+├── fixtures/                     # fixtures for the action `test-<action>` jobs
+├── tests/                        # fixtures for the reusable-workflow `[Test]` jobs (go-test, golangci-lint, govulncheck-allowlist, zizmor)
 └── dependabot.yaml
 
-tests/                            # Fixtures for the reusable-workflow `[Test]` jobs (go-test, golangci-lint, govulncheck-allowlist, zizmor)
+# The repo root holds ONLY composite-action folders (each is <action>/action.yaml) + dotfiles/dotfolders —
+# no other folders, so nothing is mistaken for an action.
 release-please-config.json        # release-please config (incl. extra-files: self-reference pin rewrites)
 .release-please-manifest.json     # release-please version cursor
 .releaserc                        # semantic-release config — ONLY for the create-release self-test dry-run, NOT this repo's releases
@@ -65,7 +68,7 @@ Because composite actions and reusable workflows now live together, one componen
 
 ### Releases & autonomy
 
-- This repo **releases itself via release-please** (`release.yaml` → release PR → tag). The `create-release.yaml` reusable workflow (semantic-release) is a **product consumed by other repos**, not how this repo releases; the root `.releaserc` exists only for that workflow's self-test dry-run.
+- This repo **releases itself via release-please** (`active-release.yaml` → release PR → tag). The `create-release.yaml` reusable workflow (semantic-release) is a **product consumed by other repos**, not how this repo releases; the root `.releaserc` exists only for that workflow's self-test dry-run.
 - The release PR is **opened by botantler-1** (`APP_CLIENT_ID`/`APP_PRIVATE_KEY`), **approved by botantler-2** (`APP_CLIENT_ID_2`/`APP_PRIVATE_KEY_2`) — a PR cannot be approved by its opener — and **auto-merged armed with the App token** (not `GITHUB_TOKEN`; a `GITHUB_TOKEN`-armed merge would not re-trigger the workflow to cut the tag).
 
 ## Adding a New Action
@@ -103,7 +106,7 @@ on:
 
 ### Test jobs
 
-Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/workflows/ci.yaml): `test-<action>` jobs call the action via `uses: ./<action>`; `[Test] <Workflow> - <Scenario>` jobs call the workflow via `uses: ./.github/workflows/<x>.yaml` with safe parameters (dry-run, fixtures from `tests/` or `.github/fixtures/` — never destructive). Every new action/workflow gets a job, wired into the `ci-required-checks` job (display `CI - Required Checks`) in **two** places: the `needs:` list **and** `${{ needs.<job-id>.result }}` in the `job-results` input of its `./aggregate-job-checks` step. `ci-required-checks` runs `if: ${{ always() }}` and fails if any listed result is not `success`, so it is the single required status check — a job added to `needs:` but omitted from `job-results` would have its failure silently ignored. When a reusable-workflow test-job id would collide with an action's (`test-dependency-review`, `test-run-dotnet-tests`), the workflow job carries a `-workflow` suffix.
+Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/workflows/ci.yaml): `test-<action>` jobs call the action via `uses: ./<action>`; `[Test] <Workflow> - <Scenario>` jobs call the workflow via `uses: ./.github/workflows/<x>.yaml` with safe parameters (dry-run, fixtures from `.github/tests/` or `.github/fixtures/` — never destructive). Every new action/workflow gets a job, wired into the `ci-required-checks` job (display `CI - Required Checks`) in **two** places: the `needs:` list **and** `${{ needs.<job-id>.result }}` in the `job-results` input of its `./aggregate-job-checks` step. `ci-required-checks` runs `if: ${{ always() }}` and fails if any listed result is not `success`, so it is the single required status check — a job added to `needs:` but omitted from `job-results` would have its failure silently ignored. When a reusable-workflow test-job id would collide with an action's (`test-dependency-review`, `test-run-dotnet-tests`), the workflow job carries a `-workflow` suffix.
 
 ## Authentication Patterns
 
@@ -146,9 +149,9 @@ These conventions guide the autonomous **Daily AI Assistant** — and any agenti
 
 **Validate before any PR:** `actionlint` on every changed workflow/action (else a thorough YAML parse); confirm `uses:` refs resolve and are pinned/aligned; check `inputs`/`outputs`/`shell:` are declared; for reusable workflows keep `on: workflow_call` inputs/secrets backward-compatible. No app build here — YAML correctness + pinning is the gate. Keep third-party actions pinned to full-length commit SHAs; first-party self-references use the tag-pin rule above. Never weaken a security control to pass a check.
 
-**Tested invariants (don't silently regress):** some behaviours of a workflow are a *contract* consumers depend on, not an implementation detail — `validate-go-project.yaml`'s vuln-scan honoring a `.govulncheck-allow.txt` allowlist is the canonical one (it was silently lost across `v5.4.1`–`v5.4.4` when the gate swapped to an action with no `allow-file` input, wedging every consumer that had risk-accepted an advisory). These contracts are guarded by self-tests in `ci.yaml` (`test-govulncheck-allowlist-honored` / `test-govulncheck-strict-blocks` / `test-govulncheck-action-lockstep`, against the `tests/govulncheck-allowlist/` fixture). **Any swap of the vuln-scan implementation — including back to the official `golang/govulncheck-action` once it gains an `allow-file`-equivalent input — must keep that guard green**; update the self-test in lockstep, never delete it to make a swap pass.
+**Tested invariants (don't silently regress):** some behaviours of a workflow are a *contract* consumers depend on, not an implementation detail — `validate-go-project.yaml`'s vuln-scan honoring a `.govulncheck-allow.txt` allowlist is the canonical one (it was silently lost across `v5.4.1`–`v5.4.4` when the gate swapped to an action with no `allow-file` input, wedging every consumer that had risk-accepted an advisory). These contracts are guarded by self-tests in `ci.yaml` (`test-govulncheck-allowlist-honored` / `test-govulncheck-strict-blocks` / `test-govulncheck-action-lockstep`, against the `.github/tests/govulncheck-allowlist/` fixture). **Any swap of the vuln-scan implementation — including back to the official `golang/govulncheck-action` once it gains an `allow-file`-equivalent input — must keep that guard green**; update the self-test in lockstep, never delete it to make a swap pass.
 
-**Failure-mode coverage for gating workflows (the convention):** every **gating** reusable workflow — one whose job is to *fail a PR on bad input* — carries **both** a *passes-on-good-input* and a *blocks-on-bad-input* self-test, because a happy-path test alone cannot catch a gate that silently stopped biting. The pattern (per `test-govulncheck-strict-blocks` and `test-zizmor-blocks`): point the gate's **own** action — pinned to the **same SHA**, guarded by a `*-action-lockstep` check — at a deliberately-bad fixture under `tests/`, `continue-on-error`, then assert the run *failed* **and** reported the expected finding (so an operational error can't false-pass). The fixture lives **outside** the gate's own scan scope (e.g. `tests/zizmor-fixture/` is outside `.github/workflows/`) so it never trips the real gate. **Non-gating** workflows (release/publish/deploy dry-runs, `delete-workflow-runs`, `enable-auto-merge`, `template-sync`, `sync-cluster-policies`, `update-agent-skills`, `scan-for-todo-comments`) have no "bad input" to reject, so a happy-path `[Test]` job is complete coverage. Where a clean failure-mode fixture is genuinely impractical (e.g. `dependency-review` needs a PR diff introducing a bad dependency), record the reasoned gap rather than forcing a fragile test.
+**Failure-mode coverage for gating workflows (the convention):** every **gating** reusable workflow — one whose job is to *fail a PR on bad input* — carries **both** a *passes-on-good-input* and a *blocks-on-bad-input* self-test, because a happy-path test alone cannot catch a gate that silently stopped biting. The pattern (per `test-govulncheck-strict-blocks` and `test-zizmor-blocks`): point the gate's **own** action — pinned to the **same SHA**, guarded by a `*-action-lockstep` check — at a deliberately-bad fixture under `.github/tests/`, `continue-on-error`, then assert the run *failed* **and** reported the expected finding (so an operational error can't false-pass). The fixture lives **outside** the gate's own scan scope (e.g. `.github/tests/zizmor-fixture/` is outside `.github/workflows/`) so it never trips the real gate. **Non-gating** workflows (release/publish/deploy dry-runs, `delete-workflow-runs`, `enable-auto-merge`, `template-sync`, `sync-cluster-policies`, `update-agent-skills`, `scan-for-todo-comments`) have no "bad input" to reject, so a happy-path `[Test]` job is complete coverage. Where a clean failure-mode fixture is genuinely impractical (e.g. `dependency-review` needs a PR diff introducing a bad dependency), record the reasoned gap rather than forcing a fragile test.
 
 **Task menu** (1–2 items/run; high care):
 

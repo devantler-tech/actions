@@ -1301,7 +1301,7 @@ jobs:
   # fix. That contract was silently lost for several releases (v5.4.1–v5.4.4, on
   # the official action which has no allow-file input) with no test catching it.
   # These jobs exercise the SAME action the gate uses against a pinned-vulnerable
-  # fixture (tests/govulncheck-allowlist) so the contract is provable and stable:
+  # fixture (.github/tests/govulncheck-allowlist) so the contract is provable and stable:
   #   • allowlisted ⇒ the scan PASSES,  • strict (no allow-file) ⇒ the scan FAILS.
   # The govulncheck job in validate-go-project.yaml is skipped on this repo, so it
   # cannot self-test itself — hence a dedicated, faithful replica here.
@@ -1329,10 +1329,10 @@ jobs:
         uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
         with:
           repo-checkout: false
-          work-dir: tests/govulncheck-allowlist
+          work-dir: .github/tests/govulncheck-allowlist
           go-version-input: ""
-          go-version-file: tests/govulncheck-allowlist/go.mod
-          allow-file: tests/govulncheck-allowlist/.govulncheck-allow.txt
+          go-version-file: .github/tests/govulncheck-allowlist/go.mod
+          allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt
 
   test-govulncheck-strict-blocks:
     name: "[Test] Govulncheck Allowlist - Strict Path Blocks"
@@ -1363,9 +1363,9 @@ jobs:
         uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
         with:
           repo-checkout: false
-          work-dir: tests/govulncheck-allowlist
+          work-dir: .github/tests/govulncheck-allowlist
           go-version-input: ""
-          go-version-file: tests/govulncheck-allowlist/go.mod
+          go-version-file: .github/tests/govulncheck-allowlist/go.mod
           allow-file: ""
           output-file: govulncheck-strict.txt
 
@@ -1432,7 +1432,7 @@ jobs:
   # vulnerable fixture and asserts the scan FAILS and reports the finding, turning "the
   # gate silently stopped blocking" into a red test (the exact #282/#283 failure mode,
   # mirroring test-govulncheck-strict-blocks).
-  # The fixture (tests/zizmor-fixture/template-injection.yml) lives OUTSIDE
+  # The fixture (.github/tests/zizmor-fixture/template-injection.yml) lives OUTSIDE
   # .github/workflows/ so zizmor's repo-wide canonical discovery — the real gate and the
   # test-zizmor self-test — never sees it; only this job, pointing zizmor at the exact
   # path, audits it. Keep the action SHA in lockstep with the gate
@@ -1466,7 +1466,7 @@ jobs:
         continue-on-error: true
         uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
         with:
-          inputs: tests/zizmor-fixture/template-injection.yml
+          inputs: .github/tests/zizmor-fixture/template-injection.yml
           advanced-security: false
           annotations: false
           color: false
@@ -1551,7 +1551,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: tests/golangci-lint-fixture/go.mod
+          go-version-file: .github/tests/golangci-lint-fixture/go.mod
 
       # Mirror validate-go-project.yaml's lint step (same action SHA + version + --fix
       # args). The fixture has a deliberate, NON-auto-fixable errcheck violation, so
@@ -1566,7 +1566,7 @@ jobs:
         with:
           version: v2.11.4
           args: --fix --output.text.path=golangci-report.txt
-          working-directory: tests/golangci-lint-fixture
+          working-directory: .github/tests/golangci-lint-fixture
           verify: false
 
       - name: ✅ Assert the lint gate blocked on the violation
@@ -1575,9 +1575,9 @@ jobs:
           OUTCOME: ${{ steps.lint.outcome }}
         run: |
           set -euo pipefail
-          REPORT=tests/golangci-lint-fixture/golangci-report.txt
+          REPORT=.github/tests/golangci-lint-fixture/golangci-report.txt
           if [ "$OUTCOME" != "failure" ]; then
-            echo "::error::golangci-lint should FAIL on the deliberate errcheck violation in tests/golangci-lint-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's lint gate is no longer blocking on lint violations."
+            echo "::error::golangci-lint should FAIL on the deliberate errcheck violation in .github/tests/golangci-lint-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's lint gate is no longer blocking on lint violations."
             exit 1
           fi
           if ! grep -q "errcheck" "$REPORT" 2>/dev/null; then
@@ -1606,7 +1606,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version-file: tests/go-test-fixture/go.mod
+          go-version-file: .github/tests/go-test-fixture/go.mod
 
       # Mirror validate-go-project.yaml's test step (`go test ./...`) against a fixture
       # whose only test fails on purpose, so the run exits non-zero — exactly the gate's
@@ -1616,7 +1616,7 @@ jobs:
       - name: 🧪 Test broken fixture (expected to fail)
         id: gotest
         continue-on-error: true
-        working-directory: tests/go-test-fixture
+        working-directory: .github/tests/go-test-fixture
         shell: bash
         run: |
           set -uo pipefail
@@ -1629,9 +1629,9 @@ jobs:
           OUTCOME: ${{ steps.gotest.outcome }}
         run: |
           set -euo pipefail
-          OUT=tests/go-test-fixture/go-test-output.txt
+          OUT=.github/tests/go-test-fixture/go-test-output.txt
           if [ "$OUTCOME" != "failure" ]; then
-            echo "::error::go test should FAIL on the deliberately failing test in tests/go-test-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's test gate is no longer blocking on failing tests."
+            echo "::error::go test should FAIL on the deliberately failing test in .github/tests/go-test-fixture, but its outcome was '$OUTCOME'. validate-go-project.yaml's test gate is no longer blocking on failing tests."
             exit 1
           fi
           if ! grep -q "^--- FAIL: TestDeliberatelyFails" "$OUT" 2>/dev/null; then
