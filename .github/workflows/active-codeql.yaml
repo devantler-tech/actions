@@ -40,6 +40,14 @@ jobs:
         with:
           languages: actions
           build-mode: none
+          # Emit BOTH code-scanning (security) AND code-quality results — matching what
+          # default setup produced — so the repo's "Require code scanning results" and
+          # "Require code quality results" rulesets are both satisfied. analysis-kinds is
+          # flagged internal/subject-to-change in codeql-action, but it is the only way to
+          # produce code-quality from advanced setup; safe here as the action is SHA-pinned
+          # above and Dependabot bumps are CI-gated. If this input ever breaks, the
+          # alternative is to drop the "Require code quality results" ruleset.
+          analysis-kinds: code-scanning,code-quality
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: 🔬 Perform CodeQL Analysis
