@@ -1,0 +1,48 @@
+name: 🔍 CodeQL
+
+# Advanced setup (replaces CodeQL default setup) so a custom config can exclude
+# the actions/unpinned-tag query that duplicates the zizmor unpinned-uses gate.
+# See .github/codeql/codeql-config.yml. CodeQL default setup must be DISABLED for
+# this to run (the two are mutually exclusive).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+  schedule:
+    - cron: "30 1 * * 1" # weekly, mirroring the former default-setup schedule
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🔍 Initialize CodeQL
+        uses: github/codeql-action/init@c35d1b164463ee62a100735382aaaa525c5d3496 # codeql-bundle-v2.25.6
+        with:
+          languages: actions
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: 🔬 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@c35d1b164463ee62a100735382aaaa525c5d3496 # codeql-bundle-v2.25.6
+        with:
+          category: "/language:actions"
