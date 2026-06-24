@@ -32,9 +32,12 @@ jobs:
           # Least-privilege (zizmor github-app): release-please needs contents
           # (release + tag), pull-requests (the release PR), and issues (label
           # management); the auto-merge step reuses this token (contents + PRs).
+          # workflows: the extra-files self-pin rewrites touch .github/workflows/*,
+          # which GitHub refuses to write without the workflows scope.
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+          permission-workflows: write
 
       # Maintains the release PR — version bump, CHANGELOG, and (via extra-files) rewrites the
       # self-referenced action/workflow tag pins to the version being released — then cuts the
