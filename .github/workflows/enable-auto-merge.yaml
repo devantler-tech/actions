@@ -1,0 +1,74 @@
+name: 🔀 Enable Auto-Merge
+
+on:
+  workflow_call:
+    secrets:
+      APP_PRIVATE_KEY:
+        required: true
+        description: "The private key for the GitHub App"
+  ### Required Workflow Triggers ###
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+  ##################################
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    permissions:
+      pull-requests: write
+      contents: write
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege token scope: approving and enabling auto-merge on PRs.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: ✅ Approve PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set +e
+          REVIEW_OUTPUT=$(gh pr review "$PR_NUMBER" --approve --repo "$REPOSITORY" 2>&1)
+          REVIEW_EXIT_CODE=$?
+          set -e
+
+          if [[ $REVIEW_EXIT_CODE -eq 0 ]]; then
+            echo "✅ PR #${PR_NUMBER} approved"
+          elif [[ "$REVIEW_OUTPUT" == *"Can not approve your own pull request"* ]]; then
+            echo "::warning::Could not approve PR #${PR_NUMBER} because GitHub does not allow self-approval. Skipping approval."
+          else
+            echo "::error::Failed to approve PR #${PR_NUMBER}."
+            echo "$REVIEW_OUTPUT"
+            exit 1
+          fi
+
+      - name: 🔀 Enable Auto-Merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
+          if [[ "$REPO_INFO" != "true" ]]; then
+            echo "::warning::Auto-merge is not enabled on this repository. Contact a repository admin to enable it in Settings > Pull Requests > Allow auto-merge."
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY"
+          echo "✅ Auto-merge enabled for PR #${PR_NUMBER} using squash method"

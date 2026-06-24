@@ -1,0 +1,726 @@
+name: ✅ Validate Go Project
+
+on:
+  workflow_call:
+    inputs:
+      pr-owner:
+        required: false
+        type: string
+        description: "Pull request author login (used to disable auto-commit for bot PRs)"
+      working-directory:
+        required: false
+        type: string
+        default: ""
+        description: "Go module directory to validate. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can run in a repo that is not itself a Go module."
+    secrets:
+      APP_PRIVATE_KEY:
+        description: "GitHub App Private Key"
+        required: false
+  ### Required Workflow Triggers ###
+  pull_request:
+  merge_group:
+  ##################################
+
+concurrency:
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # Detect if Go files changed to conditionally skip jobs for non-Go changes
+  changes:
+    name: 🔍 Detect Changes
+    runs-on: ubuntu-latest
+    # Ignore Required Workflow runs on the reusable-workflows repo itself
+    # Skip merge queue — these checks already passed on the PR
+    if: >-
+      (inputs.working-directory != '' || github.repository != 'devantler-tech/actions')
+      && github.event_name != 'merge_group'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      lintable: ${{ steps.filter.outputs.lintable }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🔍 Filter paths
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.golangci.yml'
+              - '.golangci.yaml'
+            # Files lintable by MegaLinter Go flavor (excluding Go files which are covered above)
+            lintable:
+              # Languages
+              - '**/*.sh'
+              - '**/*.bash'
+              - '**/*.groovy'
+              - '**/*.gradle'
+              - '**/*.kt'
+              - '**/*.kts'
+              - '**/*.sql'
+              # Formats
+              - '**/*.css'
+              - '**/*.scss'
+              - '**/*.env'
+              - '.env*'
+              - '**/*.graphql'
+              - '**/*.gql'
+              - '**/*.html'
+              - '**/*.htm'
+              - '**/*.json'
+              - '**/*.md'
+              - '**/*.markdown'
+              - '**/*.proto'
+              - '**/*.xml'
+              - '**/*.yaml'
+              - '**/*.yml'
+              # Tooling formats
+              - '.github/workflows/**'
+              - '**/Dockerfile*'
+              - '**/*.dockerfile'
+              - '.editorconfig'
+              - '**/Chart.yaml'
+              - '**/values.yaml'
+              - '**/templates/**/*.yaml'
+              - '**/templates/**/*.yml'
+              # Linter config files (changes to these should trigger linting)
+              - '.mega-linter.yml'
+              - '.mega-linter.yaml'
+              - '.markdownlint.json'
+              - '.markdownlint.yaml'
+              - '.markdownlint.yml'
+              - '.yamllint.yml'
+              - '.yamllint.yaml'
+              - '.hadolint.yaml'
+              - '.hadolint.yml'
+              - '.cspell.json'
+              - 'cspell.json'
+              - '.vale.ini'
+              - '.prettierrc'
+              - '.prettierrc.*'
+              - 'lychee.toml'
+              - '.ls-lint.yml'
+              - '.secretlintrc.*'
+              - '.gitleaksignore'
+
+  tidy:
+    name: 📦 Tidy
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on main/master branches or on reusable-workflows repo or in merge queue
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+      && github.ref != 'refs/heads/main'
+      && github.ref != 'refs/heads/master'
+      && github.event_name != 'merge_group'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege token scope: only pushes linter auto-fixes back to the PR
+          # branch (contents); the token is never used for PR/issue API calls.
+          permission-contents: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
+          token: ${{ steps.generate-token.outputs.token || github.token }}
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+
+      - name: 🧹 go mod tidy
+        run: go mod tidy
+
+      - name: 💾 Commit and push applied linter fixes
+        if: |
+          steps.generate-token.outcome == 'success'
+          && github.event_name == 'pull_request'
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
+        uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7.1.0
+        with:
+          commit_message: "chore: tidy go modules"
+          commit_user_name: tidy-bot
+          commit_user_email: tidy-bot@users.noreply.github.com
+
+      - name: ❌ Fail if uncommitted changes remain (fork PR)
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Auto-fix produced changes that cannot be committed (fork PR). Please run the fix locally and push."
+            echo ""
+            echo "Changed files:"
+            git diff --stat
+            echo ""
+            echo "Full diff:"
+            git diff
+            exit 1
+          fi
+
+  golangci-lint:
+    name: 🧹 Lint - golangci-lint
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege token scope: only pushes linter auto-fixes back to the PR
+          # branch (contents); the token is never used for PR/issue API calls.
+          permission-contents: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
+          token: ${{ steps.generate-token.outputs.token || github.token }}
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+
+      - name: 🧹 Run golangci-lint
+        id: golangci-lint
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: v2.11.4
+          working-directory: ${{ inputs.working-directory || '.' }}
+          args: --fix
+          # Skip the action's `config verify` step: it fetches the golangci-lint
+          # JSONSchema over the network (golangci-lint.run), which intermittently
+          # times out ("context deadline exceeded") and fails the lint job. The
+          # config is still validated at runtime by `golangci-lint run`.
+          verify: false
+
+      - name: 💾 Commit and push applied linter fixes
+        if: |
+          steps.generate-token.outcome == 'success'
+          && github.event_name == 'pull_request'
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
+        uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7.1.0
+        with:
+          commit_message: "chore: apply golangci-lint fixes"
+          commit_user_name: golangci-lint-bot
+          commit_user_email: golangci-lint-bot@users.noreply.github.com
+
+      - name: ❌ Fail if uncommitted changes remain (fork PR)
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Auto-fix produced changes that cannot be committed (fork PR). Please run the fix locally and push."
+            echo ""
+            echo "Changed files:"
+            git diff --stat
+            echo ""
+            echo "Full diff:"
+            git diff
+            exit 1
+          fi
+
+  deadcode:
+    name: 🔍 Dead Code Analysis
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo; only on PRs
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+      && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    # `deadcode -test ./...` builds a whole-program SSA call graph in memory (same shape
+    # as govulncheck below), whose peak grows with the module's dependency graph. On large
+    # modules (ones importing Kubernetes / Flux / Talos clients) the peak exhausts the
+    # hosted runner's RAM, which the host resolves by killing the runner mid-analysis
+    # (exit 143 / "runner has received a shutdown signal") — an opaque, retry-resistant
+    # failure, not a real dead-code finding. GOMEMLIMIT caps the Go runtime's heap so the
+    # GC reclaims aggressively and stays under the host ceiling instead of OOM-killing;
+    # timeout-minutes bounds the worst case to a clear, fast failure rather than a hung
+    # runner. ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go
+    # toolchain subprocesses and harden-runner.
+    timeout-minutes: 15
+    env:
+      GOMEMLIMIT: 12GiB
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          cache: true
+
+      - name: 📥 Install deadcode
+        # Bounded retry so a transient module-proxy 5xx / network blip on this
+        # required-check path can't red the gate (reliability invariant — #305).
+        # go install is idempotent, so re-running it is always safe.
+        run: |
+          for attempt in 1 2 3; do
+            if go install golang.org/x/tools/cmd/deadcode@v0.43.0; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::deadcode install failed (attempt ${attempt}/3); retrying in $((attempt * 5))s..."
+              sleep "$((attempt * 5))"
+            fi
+          done
+          echo "::error::Failed to install deadcode after 3 attempts."
+          exit 1
+
+      - name: 🔍 Check for dead code
+        run: |
+          output_file="$(mktemp)"
+          trap 'rm -f "$output_file"' EXIT
+
+          deadcode -test ./... >"$output_file"
+
+          if [ -s "$output_file" ]; then
+            echo "::error::Dead code detected. Remove unreachable functions before merging."
+            cat "$output_file"
+            exit 1
+          fi
+          echo "No dead code found ✅"
+
+  govulncheck:
+    name: 🛡️ Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo; only on PRs
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+      && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    # govulncheck's default symbol scan builds a whole-program call graph in memory,
+    # whose peak grows with the module's dependency graph. On large modules (e.g. ones
+    # importing Kubernetes / Flux / Talos clients) it can exhaust the hosted runner's RAM,
+    # which the host resolves by killing the runner mid-scan (exit 143 / "runner has
+    # received a shutdown signal") — an opaque, retry-resistant failure. GOMEMLIMIT caps
+    # the Go runtime's heap so the GC reclaims aggressively and stays under the host
+    # ceiling instead of OOM-killing; timeout-minutes bounds the worst case to a clear,
+    # fast failure rather than a hung runner.
+    timeout-minutes: 15
+    env:
+      # ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go toolchain
+      # subprocesses and harden-runner.
+      GOMEMLIMIT: 12GiB
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # govulncheck reports only vulnerabilities your code actually CALLS (call-graph
+      # reachability), so the gate trips only on genuinely reachable issues —
+      # imported-but-unreachable advisories never block. The action sets up Go from
+      # go.mod, installs govulncheck, runs `govulncheck ./...`, and fails the job on any
+      # reachable finding. (We check out above with persist-credentials:false, so the
+      # action's own checkout is disabled via repo-checkout:false.)
+      #
+      # By default this is a strict gate that blocks on any reachable advisory. A consumer
+      # that opts in by committing a `.govulncheck-allow.txt` (one accepted advisory ID per
+      # line) gets the allowlist path: it can risk-accept a reachable advisory that has NO
+      # upstream fix (`Fixed in: N/A`) — e.g. a server-side symbol a CLI links transitively
+      # via k8s.io/kubernetes or docker/docker — with an explicit, version-controlled
+      # justification, instead of wedging EVERY Go PR on that consumer indefinitely.
+      #
+      # We use the `devantler/govulncheck-action` fork (not the official
+      # `golang/govulncheck-action`) on every path because: (1) it adds the `allow-file`
+      # input the official lacks, and (2) its nested actions are SHA-pinned
+      # (actions/checkout, actions/setup-go), whereas the official action's are tag-pinned
+      # (actions/checkout@v4.1.1, actions/setup-go@v5.0.0). Consumers that enforce "require
+      # actions pinned to a full-length commit SHA" reject those tags at JOB SETUP, and
+      # GitHub validates every `uses:` in the job — even ones behind an unreached `if` — so
+      # merely *referencing* the official action wedged the whole vuln-scan job on such repos.
+      # With no allow-file the fork behaves exactly like the official (strict). Swap back to
+      # `golang/govulncheck-action` once both `allow-file` and SHA-pinned internals land
+      # upstream (the fork is Gerrit-ready at devantler/govulncheck-action@feat/allow-file).
+      # See the action README for the allow-file format.
+      - name: 🔎 Detect govulncheck allowlist
+        id: govulncheck-allow
+        run: |
+          if [ -f .govulncheck-allow.txt ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🛡️ Scan for known vulnerabilities
+        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        with:
+          repo-checkout: false
+          work-dir: ${{ inputs.working-directory || '.' }}
+          # Scan under the SAME Go version the consumer actually ships (its go.mod), so
+          # govulncheck's stdlib analysis matches the produced binary. The fork's setup-go
+          # receives BOTH go-version (default 'stable') and go-version-file, and in
+          # actions/setup-go go-version WINS over go-version-file when both are non-empty —
+          # so without this override the scan always ran under 'stable' (currently 1.26.3)
+          # and IGNORED go.mod. That made the gate unable to clear a stdlib advisory whose
+          # only fix ships in a Go release newer than the runner's 'stable' channel: a
+          # consumer that bumps go.mod past 'stable' got an operational error
+          # ("go.mod requires go >= X; running go <stable>; GOTOOLCHAIN=local") instead of a
+          # passing scan, wedging its entire Go PR lane. Empty go-version-input lets setup-go
+          # honour go-version-file (go.mod), installing the exact shipped version.
+          go-version-input: ''
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          # present ⇒ honour the allowlist (JSON mode, risk-accept listed IDs); absent ⇒ '' ⇒ strict.
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && '.govulncheck-allow.txt' || '' }}
+
+  lint:
+    name: 🧹 Lint - mega-linter
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Run if Go files OR other lintable files changed (markdown, yaml, json, etc.)
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege token scope: only pushes MegaLinter auto-fixes back to the
+          # PR branch (contents). MegaLinter's PR/issue reporting uses the default
+          # GITHUB_TOKEN (job permissions below), not this App token.
+          permission-contents: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
+          token: ${{ steps.generate-token.outputs.token || github.token }}
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+
+      - name: 🧹 Lint
+        id: ml
+        uses: oxsecurity/megalinter/flavors/go@0e3ce9b9c8c10effb9b269509cc47ca17cae31c7 # v9.5.0
+        env:
+          DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
+          MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
+          VALIDATE_ALL_CODEBASE: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLY_FIXES: all
+          APPLY_FIXES_EVENT: all
+          APPLY_FIXES_MODE: commit
+          # actionlint (<=1.7.12, bundled in MegaLinter) doesn't yet know the `code-quality`
+          # permission scope that GitHub Code Quality coverage requires callers to grant, so it
+          # reports a false "unknown permission scope" error. Ignore it until actionlint catches up.
+          ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality
+
+      - name: Commit and push applied linter fixes
+        if: |
+          steps.generate-token.outcome == 'success'
+          && github.event_name == 'pull_request'
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
+          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
+        uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7.1.0
+        with:
+          commit_message: "chore: Apply megalinter fixes"
+          commit_user_name: megalinter-bot
+          commit_user_email: 129584137+megalinter-bot@users.noreply.github.com
+
+      - name: ❌ Fail if uncommitted changes remain (fork PR)
+        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Auto-fix produced changes that cannot be committed (fork PR). Please run the fix locally and push."
+            echo ""
+            echo "Changed files:"
+            git diff --stat
+            echo ""
+            echo "Full diff:"
+            git diff
+            exit 1
+          fi
+
+  build:
+    name: 🏗️ Build
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🧹 Free disk space
+        # Reclaim ~11+ GB by removing large preinstalled toolchains a Go
+        # build/test never uses (Android SDK, .NET, GHC, …). A large consumer
+        # module's `go build`/`go test ./...` build cache (and the coverage
+        # job's `-race` binaries) can otherwise exhaust the runner disk —
+        # observed as a hard "No space left on device" failure. Targeted
+        # `rm -rf` only (avoids the slow apt-remove path); best-effort.
+        run: |
+          set -euo pipefail
+          before=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/share/swift \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/hostedtoolcache/PyPy \
+            /usr/local/share/powershell \
+            /usr/share/miniconda || true
+          after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          cache: true
+
+      - name: 🛠️ Build
+        run: go build -v ./...
+
+  test:
+    name: 🧪 Test
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🧹 Free disk space
+        # Reclaim ~11+ GB by removing large preinstalled toolchains a Go
+        # build/test never uses (Android SDK, .NET, GHC, …). A large consumer
+        # module's `go build`/`go test ./...` build cache (and the coverage
+        # job's `-race` binaries) can otherwise exhaust the runner disk —
+        # observed as a hard "No space left on device" failure. Targeted
+        # `rm -rf` only (avoids the slow apt-remove path); best-effort.
+        run: |
+          set -euo pipefail
+          before=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/share/swift \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/hostedtoolcache/PyPy \
+            /usr/local/share/powershell \
+            /usr/share/miniconda || true
+          after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          cache: true
+
+      - name: 🧪 Test
+        run: |
+          go test ./...
+
+  coverage:
+    name: 📊 Code Coverage
+    runs-on: ubuntu-latest
+    needs: [changes]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    # Skip if no Go files changed or on reusable-workflows repo
+    if: |
+      github.repository != 'devantler-tech/reusable-workflows'
+      && needs.changes.outputs.go == 'true'
+    permissions:
+      contents: write
+      # Required by upload-coverage to post coverage to GitHub Code Quality. The CALLING workflow
+      # must also grant this (a reusable workflow's token is capped by the caller's grant).
+      code-quality: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🧹 Free disk space
+        # Reclaim ~11+ GB by removing large preinstalled toolchains a Go
+        # build/test never uses (Android SDK, .NET, GHC, …). A large consumer
+        # module's `go build`/`go test ./...` build cache (and the coverage
+        # job's `-race` binaries) can otherwise exhaust the runner disk —
+        # observed as a hard "No space left on device" failure. Targeted
+        # `rm -rf` only (avoids the slow apt-remove path); best-effort.
+        run: |
+          set -euo pipefail
+          before=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/share/swift \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/hostedtoolcache/PyPy \
+            /usr/local/share/powershell \
+            /usr/share/miniconda || true
+          after=$(df --output=avail -BG / | tail -1 | tr -dc '0-9')
+          echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
+
+      - name: ⚙️ Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          cache: true
+
+      - name: 👨🏻‍🔧 Enable covdata (temp) see https://github.com/golang/go/issues/75031
+        run: go env -w GOTOOLCHAIN=go1.26.0+auto
+
+      - name: 📄 Generate coverage
+        run: |
+          go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      # best-effort: coverage reporting is a preview feature and must never block a Go PR. This job
+      # runs on every Go PR org-wide via the required-workflow ruleset (pinned to this repo's main).
+      - name: 🔄 Convert coverage to Cobertura
+        continue-on-error: true
+        run: |
+          go run github.com/boumenot/gocover-cobertura@v1.5.0 < coverage.txt > coverage.cobertura.xml
+
+      # Uploads coverage to GitHub Code Quality (native PR coverage). best-effort: never blocks CI.
+      - name: 📊 Upload coverage
+        continue-on-error: true
+        uses: devantler-tech/actions/upload-coverage@v6.1.0 # x-release-please-version
+        with:
+          file: ${{ inputs.working-directory || '.' }}/coverage.cobertura.xml
+          language: Go
+          label: code-coverage/go

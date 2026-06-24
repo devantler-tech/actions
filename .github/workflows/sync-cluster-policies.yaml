@@ -1,0 +1,113 @@
+name: 🔄 Sync Cluster Policies
+
+on:
+  workflow_call:
+    secrets:
+      APP_PRIVATE_KEY:
+        description: "GitHub App Private Key"
+        required: true
+    inputs:
+      dry-run:
+        description: "Skip sync and PR creation (validate workflow interface only)"
+        required: false
+        default: false
+        type: boolean
+      kyverno-policies-dir:
+        description: "Directory to sync Kyverno policies to"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  sync-policies:
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    env:
+      KYVERNO_POLICIES_DIR: ${{ inputs.kyverno-policies-dir }}
+      KYVERNO_POLICIES_TEMP_DIR: /tmp/cluster-policies
+
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Generate GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Least-privilege token scope: checkout and open the sync PR.
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          token: ${{ steps.generate-token.outputs.token }}
+      - name: Download latest Cluster Policies
+        run: |
+          git clone --filter=blob:none --sparse https://github.com/kyverno/policies "$KYVERNO_POLICIES_TEMP_DIR"
+          cd "$KYVERNO_POLICIES_TEMP_DIR"
+          git sparse-checkout set --no-cone '*/' ':!.*'
+      - name: Remove blacklisted policies
+        run: |
+          # .policyignore is gitignore-style: ordered patterns where a leading `!`
+          # re-includes. The previous `find -path "$pattern" -exec rm` loop had no
+          # notion of negation, so a `!keep/this` line was a silent no-op and a broad
+          # `keep*` line above it would still delete the path meant to be kept.
+          # Instead evaluate every file against all patterns with last-match-wins,
+          # honoring `!` negation (a re-include wins even when a broad pattern
+          # excluded the parent — which the find loop could never express).
+          matches() {
+            # True if path $1 equals glob $2, or sits beneath a directory it matches.
+            # Strip one trailing "/" so a gitignore-style directory pattern (foo/)
+            # also matches files under it (foo/bar), not just the literal "foo/".
+            glob="${2%/}"
+            # shellcheck disable=SC2254  # $glob is a gitignore-style glob; glob-matching it is intentional.
+            case "$1" in $glob | $glob/*) return 0 ;; esac
+            return 1
+          }
+          policyignore="$PWD/.policyignore"
+          patterns=()
+          while IFS= read -r line; do
+            # Strip a trailing CR so CRLF .policyignore files don't break matching.
+            patterns+=("${line%$'\r'}")
+          done < <(grep -vE '^[[:space:]]*(#|$)' "$policyignore")
+          cd "$KYVERNO_POLICIES_TEMP_DIR"
+          while IFS= read -r rel; do
+            keep=1
+            for pattern in "${patterns[@]}"; do
+              if [[ "$pattern" == '!'* ]]; then
+                if matches "$rel" "${pattern#!}"; then keep=1; fi
+              else
+                if matches "$rel" "$pattern"; then keep=0; fi
+              fi
+            done
+            if [ "$keep" -eq 0 ]; then
+              rm -f -- "$rel"
+            fi
+          done < <(find . -type f -not -path './.git/*' | sed 's|^\./||')
+          # Prune directories left empty by the removals.
+          find . -type d -not -path './.git' -not -path './.git/*' -empty -delete 2>/dev/null || true
+      - name: Copy Cluster Policies to the target directory
+        run: |
+          mkdir -p "$KYVERNO_POLICIES_DIR"
+          rm -rf -- "${KYVERNO_POLICIES_DIR:?}/"*
+          cp -r "$KYVERNO_POLICIES_TEMP_DIR"/* "$KYVERNO_POLICIES_DIR" || echo "No policies found to copy."
+      - name: Create PR with changes
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          commit-message: "chore: sync cluster policies"
+          title: "chore: sync cluster policies"
+          body: "Sync Cluster Policies from <https://github.com/kyverno/policies>"
+          branch: sync-cluster-policies
+          delete-branch: true
+          signoff: true
+          sign-commits: true
+          reviewers: devantler
+          assignees: devantler
+          token: ${{ steps.generate-token.outputs.token }}
+          branch-token: ${{ steps.generate-token.outputs.token }}

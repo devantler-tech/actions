@@ -1,0 +1,40 @@
+name: 📝 Scan for TODO Comments
+
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        description: "Skip issue creation (validate workflow interface only)"
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  todos:
+    if: ${{ !inputs.dry-run }}
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 📝 Create issues from TODOs
+        uses: devantler-tech/actions/create-issues-from-todos@v6.1.0 # x-release-please-version
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          project: organization/devantler-tech/5

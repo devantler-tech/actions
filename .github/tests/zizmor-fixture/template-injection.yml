@@ -1,0 +1,22 @@
+# ⚠️ DELIBERATELY VULNERABLE FIXTURE — DO NOT FIX, DO NOT COPY ⚠️
+#
+# This workflow exists ONLY to prove the `scan-for-workflow-vulnerabilities.yaml`
+# gate actually BLOCKS on a real finding (the failure-mode self-test
+# `test-zizmor-blocks` in ci.yaml), mirroring the govulncheck `-strict-blocks`
+# guard. The `run:` step below interpolates an attacker-controllable
+# `issue_comment` body straight into a shell command — zizmor's `template-injection`
+# audit reports this as a High-confidence finding and exits non-zero.
+#
+# It lives OUTSIDE `.github/workflows/` on purpose: zizmor's repo-wide scan (the
+# real gate + the `test-zizmor` self-test) only discovers workflows in their
+# canonical location, so this fixture is invisible to them and is audited ONLY
+# when `test-zizmor-blocks` points zizmor at this exact path.
+name: zizmor-fixture (template-injection)
+on: issue_comment
+permissions: {}
+jobs:
+  vulnerable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Template injection via attacker-controllable comment body
+        run: echo "${{ github.event.comment.body }}"

@@ -1,0 +1,77 @@
+name: 🗑️ Delete Workflow Runs
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: "Repository to target for workflow run deletion (defaults to the calling repository)"
+        required: false
+        type: string
+      days:
+        description: "Days-worth of runs to keep for each workflow"
+        required: false
+        default: 30
+        type: number
+      minimum-runs:
+        description: "Minimum runs to keep for each workflow"
+        required: false
+        default: 6
+        type: number
+      delete-workflow-pattern:
+        description: "Name or filename of the workflow (if not set, all workflows are targeted)"
+        required: false
+        type: string
+      delete-workflow-by-state-pattern:
+        description: |
+          Filter workflows by state:
+            - ALL, active, deleted, disabled_fork, disabled_inactivity, disabled_manually
+          Accepts a comma-separated list of states.
+        required: false
+        default: "ALL"
+        type: string
+      delete-run-by-conclusion-pattern:
+        description: |
+          Remove runs based on conclusion:
+            - ALL, action_required, cancelled, failure, skipped, success
+          Accepts a comma-separated list of conclusions.
+        required: false
+        default: "ALL"
+        type: string
+      dry-run:
+        description: "Logs simulated changes, no deletions are performed"
+        required: false
+        default: true
+        type: boolean
+
+permissions: {}
+
+jobs:
+  delete-runs:
+    name: Delete workflow runs
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🗑️ Delete workflow runs
+        # Pinned past v2.1.0 to commit 0cf693b, which adds bounded retry/backoff on
+        # transient GitHub API 5xx + network errors via @octokit/plugin-retry (upstream
+        # PR Mattraks/delete-workflow-runs#39, merged 2026-06-05 but not yet tagged).
+        # Repin to the next tagged release once cut. Fixes the flaky required-check 5xx.
+        # No inline version comment: this SHA is an untagged commit, so a `# vX.Y.Z`
+        # tag comment would mismatch the pin (zizmor ref-version-mismatch).
+        uses: Mattraks/delete-workflow-runs@0cf693bc9909e5e867ee8f27b813224ba862939c
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ inputs.repository || github.repository }}
+          retain_days: ${{ inputs.days }}
+          keep_minimum_runs: ${{ inputs.minimum-runs }}
+          delete_workflow_pattern: ${{ inputs.delete-workflow-pattern }}
+          delete_workflow_by_state_pattern: ${{ inputs.delete-workflow-by-state-pattern }}
+          delete_run_by_conclusion_pattern: ${{ inputs.delete-run-by-conclusion-pattern }}
+          dry_run: ${{ inputs.dry-run }}

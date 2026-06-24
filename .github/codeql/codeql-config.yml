@@ -1,0 +1,18 @@
+name: "CodeQL config — devantler-tech/actions"
+
+# Mirrors what CodeQL default setup ran (the extended suite for the `actions`
+# language) but drops ONE query: actions/unpinned-tag.
+#
+# zizmor's `unpinned-uses` rule already gates action pinning in this repo, and —
+# unlike CodeQL's actions/unpinned-tag — it supports a by-owner policy: first-party
+# `devantler-tech/*` self-references may be TAG-pinned (so release-please rewrites
+# them to each release for zero-lag self-consistency; see AGENTS.md), while every
+# third-party action still requires a full commit SHA. CodeQL has no by-owner
+# allow, so it flagged the intentional first-party tags. Excluding just this one
+# query removes that duplication; ALL other CodeQL Actions security queries
+# (code injection, untrusted checkout, secrets, …) still run.
+queries:
+  - uses: security-extended
+query-filters:
+  - exclude:
+      id: actions/unpinned-tag

@@ -1,0 +1,146 @@
+name: 🔄 Template Sync
+
+on:
+  workflow_call:
+    inputs:
+      source-repo-path:
+        description: >-
+          The `owner/repo` path of the upstream template repository to sync from
+          (passed to `actions-template-sync` as `source_repo_path`). When
+          `use-app-token` is set, the App token is auto-scoped to read this repo
+          as well, so a PRIVATE template under the same owner works out of the
+          box; a cross-owner private template needs a custom token with read
+          access to it.
+        required: true
+        type: string
+      upstream-branch:
+        description: Branch of the template repository to sync from
+        required: false
+        type: string
+        default: main
+      pr-title:
+        description: >-
+          Title of the sync PR. Defaults to a Conventional-Commit `chore:` title
+          because every consumer squash-merges on the PR title into its changelog.
+        required: false
+        type: string
+        default: "chore: sync changes from the upstream template"
+      pr-commit-msg:
+        description: Commit message for the sync PR
+        required: false
+        type: string
+        default: "chore: sync changes from the upstream template"
+      pr-labels:
+        description: Comma-separated labels applied to the sync PR
+        required: false
+        type: string
+        default: dependencies,automation
+      pr-branch-name-prefix:
+        description: Prefix for the branch the sync PR is opened from
+        required: false
+        type: string
+        default: chore/template-sync
+      template-sync-ignore-file-path:
+        description: >-
+          Path to the ignore file listing consumer-owned files that must NOT be
+          overwritten by the template (same format as `.gitignore`).
+        required: false
+        type: string
+        default: .templatesyncignore
+      dry-run:
+        description: "Skip the sync and PR creation (validate the workflow interface only)"
+        required: false
+        default: false
+        type: boolean
+      use-app-token:
+        description: >-
+          When `true` (the default), open the sync PR with a GitHub App token
+          (minted from the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret)
+          instead of the default `GITHUB_TOKEN`. A PR opened with `GITHUB_TOKEN`
+          does NOT trigger the caller's `on: pull_request`/`push` CI runs, so its
+          required checks never report and it stays blocked; an App token avoids
+          this. Set to `false` to fall back to `GITHUB_TOKEN`.
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      APP_PRIVATE_KEY:
+        description: >-
+          GitHub App private key, required when `use-app-token` is `true` (the
+          default). Paired with the `APP_CLIENT_ID` repository/organization variable to
+          mint an App token for opening the sync PR.
+        required: false
+
+permissions: {}
+
+jobs:
+  template-sync:
+    name: Template sync
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 🧮 Resolve template repo name
+        id: template
+        if: ${{ inputs.use-app-token }}
+        shell: bash
+        env:
+          SOURCE_REPO_PATH: ${{ inputs.source-repo-path }}
+        run: echo "name=${SOURCE_REPO_PATH##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: 🔑 Generate GitHub App token
+        id: app-token
+        if: ${{ inputs.use-app-token }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Scope the token to exactly the caller repo (push the sync branch +
+          # open the PR) AND the upstream template repo (clone it — required when
+          # the template is PRIVATE, harmless when it is public). Assumes both
+          # live under the same owner; a cross-owner private template needs its
+          # own read-scoped token instead.
+          repositories: ${{ github.event.repository.name }},${{ steps.template.outputs.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          # The template ships `.github/workflows/**`; pushing a sync commit that
+          # creates/updates a workflow file requires the `workflows` scope, else
+          # GitHub rejects the push ("refusing to allow a GitHub App to create or
+          # update workflow … without `workflows` permission"). This is the ONLY
+          # token path that can sync workflow changes — the `use-app-token: false`
+          # fallback (`GITHUB_TOKEN`) can never push workflow files regardless of
+          # job permissions (a GitHub safety restriction), so a template carrying
+          # workflow changes requires `use-app-token: true` (the default).
+          # NOTE: the App must have the **Workflows** repository permission granted
+          # for this scope to mint; without it `create-github-app-token` 422s.
+          permission-workflows: write
+
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # actions-template-sync needs full history to compute and merge the
+          # template diff. It handles its own git auth via `github_token`, so the
+          # checkout does not need to persist credentials.
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 🔄 Sync from template
+        uses: AndreasAugustin/actions-template-sync@8a0f668b83c32a0f673353086d74f12b8853d4f5 # v2.5.3
+        with:
+          source_repo_path: ${{ inputs.source-repo-path }}
+          upstream_branch: ${{ inputs.upstream-branch }}
+          github_token: ${{ steps.app-token.outputs.token || github.token }}
+          pr_title: ${{ inputs.pr-title }}
+          pr_commit_msg: ${{ inputs.pr-commit-msg }}
+          pr_labels: ${{ inputs.pr-labels }}
+          pr_branch_name_prefix: ${{ inputs.pr-branch-name-prefix }}
+          template_sync_ignore_file_path: ${{ inputs.template-sync-ignore-file-path }}

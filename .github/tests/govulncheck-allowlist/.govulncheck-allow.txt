@@ -1,0 +1,5 @@
+# Risk-accepted advisories for the govulncheck allowlist self-test fixture.
+# One advisory ID per line; "#" comments and blank lines are ignored.
+# GO-2021-0113 is the reachable advisory in the pinned golang.org/x/text v0.3.0
+# (see main.go). Listing it here is what the "allowlisted ⇒ pass" case asserts.
+GO-2021-0113
