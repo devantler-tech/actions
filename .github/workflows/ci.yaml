@@ -670,6 +670,129 @@ jobs:
 
           rm -f "$counter" "$flaky"
 
+  # ── .scripts/ensure-gh-skill.sh (shared gh-skill bootstrap) ─
+  test-ensure-gh-skill-script:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Exercise ensure-gh-skill.sh (guards, fast-return, platform/arch errors)
+        shell: bash
+        run: |
+          set -uo pipefail
+          script="$GITHUB_WORKSPACE/.scripts/ensure-gh-skill.sh"
+
+          # 0. Script parses cleanly.
+          bash -n "$script"
+          echo "✅ syntax: parses cleanly"
+
+          # 1. Missing REQUIRED → guard fires with an actionable, non-zero exit.
+          set +e
+          out=$(unset REQUIRED; INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "REQUIRED"; then
+            echo "::error::expected REQUIRED guard to fail; status=$status out=$out"; exit 1
+          fi
+          echo "✅ missing-REQUIRED: guarded as expected"
+
+          # 2. Missing INSTALL_NAMESPACE → guard fires.
+          set +e
+          out=$(unset INSTALL_NAMESPACE; REQUIRED=2.81.0 bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "INSTALL_NAMESPACE"; then
+            echo "::error::expected INSTALL_NAMESPACE guard to fail; status=$status out=$out"; exit 1
+          fi
+          echo "✅ missing-INSTALL_NAMESPACE: guarded as expected"
+
+          # Fake skill-capable gh whose version satisfies REQUIRED (no network used).
+          okbin=$(mktemp -d)
+          cat > "$okbin/gh" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            --version) echo "gh version 2.81.0 (2026-01-01)"; echo "https://github.com/cli/cli/releases/tag/v2.81.0" ;;
+            skill) exit 0 ;;
+            *) exit 0 ;;
+          esac
+          EOF
+          chmod +x "$okbin/gh"
+
+          # 3. gh already supports skill and satisfies REQUIRED → fast-return, no install.
+          out=$(PATH="$okbin:$PATH" REQUIRED=2.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1)
+          if ! printf '%s' "$out" | grep -q "already supports"; then
+            echo "::error::expected fast-return 'already supports'; out=$out"; exit 1
+          fi
+          echo "✅ satisfied: fast-returns without installing"
+
+          # 4. Unparseable gh --version output → 'could not determine version' error.
+          badver=$(mktemp -d)
+          cat > "$badver/gh" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            --version) echo "not a version line" ;;
+            skill) exit 0 ;;
+            *) exit 0 ;;
+          esac
+          EOF
+          chmod +x "$badver/gh"
+          set +e
+          out=$(PATH="$badver:$PATH" REQUIRED=2.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "Could not determine"; then
+            echo "::error::expected version-parse error; status=$status out=$out"; exit 1
+          fi
+          echo "✅ unparseable-version: errored as expected"
+
+          # Fake gh WITHOUT skill support → forces fall-through to the install path,
+          # where platform/arch are validated before any network download.
+          noskill=$(mktemp -d)
+          cat > "$noskill/gh" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            skill) exit 1 ;;
+            *) exit 0 ;;
+          esac
+          EOF
+          chmod +x "$noskill/gh"
+
+          # 5. Unsupported OS (Windows) → actionable error, before any network call.
+          win=$(mktemp -d); cp "$noskill/gh" "$win/gh"
+          cat > "$win/uname" <<'EOF'
+          #!/usr/bin/env bash
+          [ "$1" = "-s" ] && { echo "MINGW64_NT-10.0"; exit 0; }
+          echo x86_64
+          EOF
+          chmod +x "$win/uname"
+          set +e
+          out=$(PATH="$win:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "only supported on Linux and macOS"; then
+            echo "::error::expected unsupported-platform error; status=$status out=$out"; exit 1
+          fi
+          echo "✅ unsupported-platform: errored before download"
+
+          # 6. Unsupported arch → actionable error, before any network call.
+          badarch=$(mktemp -d); cp "$noskill/gh" "$badarch/gh"
+          cat > "$badarch/uname" <<'EOF'
+          #!/usr/bin/env bash
+          [ "$1" = "-s" ] && { echo Linux; exit 0; }
+          echo sparc64
+          EOF
+          chmod +x "$badarch/uname"
+          set +e
+          out=$(PATH="$badarch:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "Unsupported arch"; then
+            echo "::error::expected unsupported-arch error; status=$status out=$out"; exit 1
+          fi
+          echo "✅ unsupported-arch: errored before download"
+
+          rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch"
+
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
     runs-on: ubuntu-latest
@@ -1718,6 +1841,7 @@ jobs:
       - test-setup-go-toolchain-private-modules
       - test-setup-ksail-cli
       - test-retry-script
+      - test-ensure-gh-skill-script
       - test-sync-github-labels
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
@@ -1789,6 +1913,7 @@ jobs:
             ${{ needs.test-setup-go-toolchain-private-modules.result }}
             ${{ needs.test-setup-ksail-cli.result }}
             ${{ needs.test-retry-script.result }}
+            ${{ needs.test-ensure-gh-skill-script.result }}
             ${{ needs.test-sync-github-labels.result }}
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
