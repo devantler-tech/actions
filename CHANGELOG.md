@@ -1,0 +1,26 @@
+# Changelog
+
+## [7.0.0](https://github.com/devantler-tech/actions/compare/v6.1.0...v7.0.0) (2026-06-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* All callers referencing old file names, input names, output names, or secret keys must be updated.
+
+### Features
+
+* merge reusable-workflows into the actions repo ([#314](https://github.com/devantler-tech/actions/issues/314)) ([b282265](https://github.com/devantler-tech/actions/commit/b282265e912820d25dd90248d1b1a910a0b4ce94))
+
+
+### Code Refactoring
+
+* **approve-pr:** accept client-id, deprecate app-id input ([#290](https://github.com/devantler-tech/actions/issues/290)) ([555e27d](https://github.com/devantler-tech/actions/commit/555e27de34b0f0f6b5aacb6fd82f24251225acac))
+
+
+### Continuous Integration
+
+* add shared retry.sh and bound setup-ksail-cli network pulls ([#302](https://github.com/devantler-tech/actions/issues/302)) ([b2c1104](https://github.com/devantler-tech/actions/commit/b2c1104d8a0ce00a089e340d2f5937bcff54e348))
+* bound gh-skill network pulls with shared retry helper ([#308](https://github.com/devantler-tech/actions/issues/308)) ([679f53b](https://github.com/devantler-tech/actions/commit/679f53b728468bc7e87087658394e66d7d4c8809))
+* grant release-please the workflows scope for self-pin rewrites ([#337](https://github.com/devantler-tech/actions/issues/337)) ([ea68e2b](https://github.com/devantler-tech/actions/commit/ea68e2b38262a6b3a2c67a76996da63a6e8e7e82))
+* guard ci.yaml test wiring and fix silently-ignored free-disk-space results ([#355](https://github.com/devantler-tech/actions/issues/355)) ([16239bb](https://github.com/devantler-tech/actions/commit/16239bb3b5174452d8d44b98ec26e9d244781dbe))
+* skip CI suite and dependency-review on release-please PRs ([#359](https://github.com/devantler-tech/actions/issues/359)) ([7f215f7](https://github.com/devantler-tech/actions/commit/7f215f7816adbbbc6beaba5248c5b3f9a1b91dfa))
