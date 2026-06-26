@@ -1255,6 +1255,73 @@ jobs:
           fi
           exit "$status"
 
+  lint-ci-coverage-parity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 📋 Check ci.yaml test wiring is complete
+        shell: bash
+        run: |
+          # Guards two hand-maintained conventions in this file (see AGENTS.md
+          # § Test jobs) so they can never silently drift:
+          #   (1) every composite action (*/action.yaml) is exercised by a job
+          #       that does `uses: ./<action>`; and
+          #   (2) ci-required-checks.needs and the `job-results` input of its
+          #       ./aggregate-job-checks step name the SAME set of jobs — a job
+          #       in `needs:` but missing from `job-results` has its failure
+          #       silently ignored (the single required check stays green).
+          # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
+          ci=".github/workflows/ci.yaml"
+          status=0
+
+          # (1) action -> test job
+          for action_yaml in */action.yaml; do
+            a="$(dirname "$action_yaml")"
+            if ! grep -qE "uses:[[:space:]]*\./$a([[:space:]]|\$)" "$ci"; then
+              echo "::error file=$action_yaml::action '$a' has no test job in $ci (expected a job step with 'uses: ./$a')"
+              status=1
+            fi
+          done
+
+          # (2) ci-required-checks: needs <-> job-results parity
+          needs="$(yq -r '.jobs.ci-required-checks.needs[]' "$ci" | sort -u)"
+          results="$(
+            yq -r '.jobs.ci-required-checks.steps[]
+                     | select(.uses == "./aggregate-job-checks")
+                     | .with["job-results"]' "$ci" \
+              | grep -oE 'needs\.[a-z0-9-]+\.result' \
+              | sed -E 's/needs\.(.*)\.result/\1/' | sort -u
+          )"
+
+          # forward: every needed job is aggregated (the silent-ignore hazard)
+          while IFS= read -r j; do
+            [[ -z "$j" ]] && continue
+            if ! grep -qxF "$j" <<<"$results"; then
+              echo "::error file=$ci::job '$j' is in ci-required-checks.needs but missing from the aggregate-job-checks job-results input — its failure would be silently ignored"
+              status=1
+            fi
+          done <<<"$needs"
+
+          # reverse: every aggregated result has a matching need (else it is never populated)
+          while IFS= read -r j; do
+            [[ -z "$j" ]] && continue
+            if ! grep -qxF "$j" <<<"$needs"; then
+              echo "::error file=$ci::job '$j' is referenced in job-results but not in ci-required-checks.needs — its result will never be populated"
+              status=1
+            fi
+          done <<<"$results"
+
+          if [[ "$status" -eq 0 ]]; then
+            echo "CI coverage parity OK: every action has a test job, and ci-required-checks needs <-> job-results are in sync."
+          fi
+          exit "$status"
+
   test-zizmor:
     name: "[Test] Zizmor - Default Settings"
     uses: ./.github/workflows/scan-for-workflow-vulnerabilities.yaml
@@ -1856,6 +1923,7 @@ jobs:
       - test-run-dotnet-tests-missing-working-directory
       - zizmor
       - lint-readme-parity
+      - lint-ci-coverage-parity
       - test-zizmor
       - test-dependency-review-workflow
       - test-delete-workflow-runs-all
@@ -1898,6 +1966,8 @@ jobs:
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-dependency-review.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
+            ${{ needs.test-free-disk-space.result }}
+            ${{ needs.test-free-disk-space-keep.result }}
             ${{ needs.test-login-to-ghcr.result }}
             ${{ needs.test-aggregate-job-checks-empty.result }}
             ${{ needs.test-aggregate-job-checks-success.result }}
@@ -1928,6 +1998,7 @@ jobs:
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.zizmor.result }}
             ${{ needs.lint-readme-parity.result }}
+            ${{ needs.lint-ci-coverage-parity.result }}
             ${{ needs.test-zizmor.result }}
             ${{ needs.test-dependency-review-workflow.result }}
             ${{ needs.test-delete-workflow-runs-all.result }}
