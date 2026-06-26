@@ -1,6 +1,6 @@
 # devantler-tech/actions
 
-Composite GitHub Actions **and** reusable `workflow_call` workflows — the shared CI/CD building blocks used across all DevantlerTech projects. (The reusable workflows were merged in from the former `devantler-tech/reusable-workflows` repo, which is now archived.)
+Composite GitHub Actions **and** reusable `workflow_call` workflows — the shared CI/CD building blocks used across all DevantlerTech projects. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`; that repo is being retired and will be archived once all consumers migrate their `uses:` pins here, so do new shared-CI work in this repo — not in `reusable-workflows`.)
 
 This file is the single canonical instructions file for the repository. It is read natively by GitHub Copilot, and by Cursor, Codex, and Claude (via `CLAUDE.md` → `@AGENTS.md`).
 

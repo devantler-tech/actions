@@ -1,6 +1,6 @@
 # DevantlerTech GitHub Actions & Reusable Workflows 🚀
 
-The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from the former `devantler-tech/reusable-workflows` repo, which is now archived.)
+The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`; that repo is being retired and will be archived once all consumers migrate their `uses:` pins here.)
 
 The diagram below shows how GitHub Workflows, Jobs, Steps, Reusable Workflows, and Actions relate.
 
