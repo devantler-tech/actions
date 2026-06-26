@@ -60,7 +60,11 @@ jobs:
     # underlying action has no diff to inspect and errors out, so guard with an allow-list of the
     # supported events and let the job no-op (skipped → green) everywhere else. This keeps the
     # reusable workflow safe to wire into a push-triggered CI without breaking it.
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    # Also skip release-please PRs (head branch `release-please--*`): they only bump versions +
+    # the changelog (no dependency changes to review) and rewrite x-release-please-version
+    # self-pins to a tag that does not exist until the release merges. A skipped run still
+    # satisfies the required-workflow rule (skipped → green).
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !startsWith(github.head_ref, 'release-please--') }}
     permissions:
       contents: read # read the dependency graph / diff base..head
     steps:
