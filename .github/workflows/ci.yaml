@@ -645,7 +645,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Exercise retry.sh (success, retry-then-succeed, exhaust, no-arg)
+      - name: 🧪 Exercise retry.sh (success, retry-then-succeed, exhaust, no-arg, backoff)
         shell: bash
         env:
           RETRY_BASE_DELAY: "0" # keep the test fast — no real backoff sleeps
@@ -695,6 +695,32 @@ jobs:
             echo "::error::expected exit 2 for missing command, got $status"; exit 1
           fi
           echo "✅ no-arg: exit 2 as expected"
+
+          # 5. Backoff doubles each retry then clamps at RETRY_MAX_DELAY, and the
+          #    final (exhausting) attempt does not sleep. Cases 1-4 run with the
+          #    step-level RETRY_BASE_DELAY=0, so the doubling (retry.sh L50) and the
+          #    cap clamp (L51-53) are otherwise never exercised. Intercept `sleep`
+          #    with a fake on PATH that records its argument and returns instantly,
+          #    so the real backoff sequence is asserted without any wall-clock wait.
+          fakebin="$(mktemp -d)"
+          sleeplog="$(mktemp)"
+          cat > "$fakebin/sleep" <<EOF
+          #!/usr/bin/env bash
+          printf '%s\n' "\$1" >> "$sleeplog"
+          EOF
+          chmod +x "$fakebin/sleep"
+          set +e
+          PATH="$fakebin:$PATH" RETRY_MAX_ATTEMPTS=5 RETRY_BASE_DELAY=10 RETRY_MAX_DELAY=30 \
+            bash "$retry" false
+          set -e
+          got="$(tr '\n' ' ' < "$sleeplog")"
+          # 5 attempts → 4 sleeps: 10, 20 (doubling), then 40→30 and 60→30 (clamped).
+          if [ "$got" != "10 20 30 30 " ]; then
+            echo "::error::expected backoff '10 20 30 30 ', got '$got'"; exit 1
+          fi
+          echo "✅ backoff: doubles 10→20 then clamps at RETRY_MAX_DELAY=30 (no sleep on last attempt)"
+          rm -rf "$fakebin"
+          rm -f "$sleeplog"
 
           rm -f "$counter" "$flaky"
 
