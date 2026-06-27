@@ -1407,14 +1407,16 @@ jobs:
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
-          # Guards two hand-maintained conventions in this file (see AGENTS.md
+          # Guards the hand-maintained conventions in this file (see AGENTS.md
           # § Test jobs) so they can never silently drift:
-          #   (1) every composite action (*/action.yaml) is exercised by a job
-          #       that does `uses: ./<action>`; and
-          #   (2) ci-required-checks.needs and the `job-results` input of its
-          #       ./aggregate-job-checks step name the SAME set of jobs — a job
-          #       in `needs:` but missing from `job-results` has its failure
-          #       silently ignored (the single required check stays green).
+          #   (1)  every composite action (*/action.yaml) is exercised by a job
+          #        that does `uses: ./<action>`;
+          #   (1b) every reusable workflow (workflow_call) is exercised by a job
+          #        that does `uses: ./.github/workflows/<x>.yaml`; and
+          #   (2)  ci-required-checks.needs and the `job-results` input of its
+          #        ./aggregate-job-checks step name the SAME set of jobs — a job
+          #        in `needs:` but missing from `job-results` has its failure
+          #        silently ignored (the single required check stays green).
           # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
           ci=".github/workflows/ci.yaml"
           status=0
@@ -1424,6 +1426,18 @@ jobs:
             a="$(dirname "$action_yaml")"
             if ! grep -qE "uses:[[:space:]]*\./$a([[:space:]]|\$)" "$ci"; then
               echo "::error file=$action_yaml::action '$a' has no test job in $ci (expected a job step with 'uses: ./$a')"
+              status=1
+            fi
+          done
+
+          # (1b) reusable workflow -> test job
+          # ci.yaml itself is the CI harness, not a reusable workflow — skip it.
+          for wf in .github/workflows/*.yaml; do
+            [[ "$wf" == "$ci" ]] && continue
+            grep -qE "^[[:space:]]+workflow_call:" "$wf" || continue
+            wname="$(basename "$wf")"
+            if ! grep -qE "uses:[[:space:]]*\./\.github/workflows/$wname([[:space:]]|\$)" "$ci"; then
+              echo "::error file=$wf::reusable workflow '$wname' has no test job in $ci (expected a job step with 'uses: ./.github/workflows/$wname')"
               status=1
             fi
           done
@@ -1457,7 +1471,7 @@ jobs:
           done <<<"$results"
 
           if [[ "$status" -eq 0 ]]; then
-            echo "CI coverage parity OK: every action has a test job, and ci-required-checks needs <-> job-results are in sync."
+            echo "CI coverage parity OK: every action and reusable workflow has a test job, and ci-required-checks needs <-> job-results are in sync."
           fi
           exit "$status"
 
