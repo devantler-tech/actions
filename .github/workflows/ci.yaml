@@ -846,7 +846,38 @@ jobs:
           fi
           echo "✅ unsupported-arch: errored before download"
 
-          rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch"
+          # 7. gh present and skill-capable but OLDER than REQUIRED → must NOT
+          #    fast-return; falls through the `sort -V -C` version gate into the
+          #    install path (asserted by reaching the arch check, which errors
+          #    before any network download). Cases 5/6 force the install path with a
+          #    skill-LESS gh, so this "present, skill-capable, but stale" branch was
+          #    otherwise unexercised — a broken comparison that fast-returned a
+          #    too-old gh would silently skip the required upgrade and stay green.
+          oldskill=$(mktemp -d)
+          cat > "$oldskill/gh" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            --version) echo "gh version 2.0.0 (2026-01-01)"; echo "https://github.com/cli/cli/releases/tag/v2.0.0" ;;
+            skill) exit 0 ;;
+            *) exit 0 ;;
+          esac
+          EOF
+          chmod +x "$oldskill/gh"
+          cat > "$oldskill/uname" <<'EOF'
+          #!/usr/bin/env bash
+          [ "$1" = "-s" ] && { echo Linux; exit 0; }
+          echo sparc64
+          EOF
+          chmod +x "$oldskill/uname"
+          set +e
+          out=$(PATH="$oldskill:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || printf '%s' "$out" | grep -q "already supports" || ! printf '%s' "$out" | grep -q "Unsupported arch"; then
+            echo "::error::expected too-old skill-capable gh to bypass fast-return and reach the arch check; status=$status out=$out"; exit 1
+          fi
+          echo "✅ stale-but-skill-capable: bypassed fast-return into install path"
+
+          rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch" "$oldskill"
 
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
