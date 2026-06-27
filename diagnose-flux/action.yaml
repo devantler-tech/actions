@@ -1,0 +1,94 @@
+name: Diagnose Flux on failure
+description: Dump Flux reconcile state, controller logs, and failing/CrashLooping pod logs to debug a stuck Flux deploy in CI/CD.
+author: devantler-tech
+inputs:
+  kustomizations:
+    description: Space-separated Flux Kustomization names (in flux-system) to `describe` on failure.
+    required: false
+    default: infrastructure-controllers infrastructure apps
+runs:
+  using: composite
+  steps:
+    - name: 🩺 Diagnose Flux on failure
+      shell: bash
+      # Best-effort diagnostics (`set +e`): never fail the calling step itself —
+      # the caller gates this with `if: failure()`, so a kubectl/jq hiccup here
+      # must not mask the original failure. CrashLoopBackOff pods stay in
+      # phase=Running with waiting.reason=CrashLoopBackOff, so we inspect
+      # containerStatuses (not just phase) to find pods worth dumping.
+      env:
+        KUSTOMIZATIONS: ${{ inputs.kustomizations }}
+      run: |
+        set +e
+        echo "::group::Nodes"
+        kubectl get nodes -o wide
+        echo "::endgroup::"
+        echo "::group::Flux Kustomizations"
+        kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A -o wide
+        echo "::endgroup::"
+        echo "::group::Flux HelmReleases"
+        kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o wide
+        echo "::endgroup::"
+        echo "::group::Flux OCIRepositories"
+        kubectl get ocirepositories.source.toolkit.fluxcd.io -A -o wide
+        echo "::endgroup::"
+        echo "::group::Failing Kustomizations describe"
+        for k in $KUSTOMIZATIONS; do
+          echo "--- $k ---"
+          kubectl describe kustomizations.kustomize.toolkit.fluxcd.io "$k" -n flux-system 2>&1 | tail -80
+        done
+        echo "::endgroup::"
+        echo "::group::Flux controller pods"
+        kubectl get pods -n flux-system -o wide
+        echo "::endgroup::"
+        echo "::group::kustomize-controller logs"
+        kubectl logs -n flux-system -l app=kustomize-controller --tail=300
+        echo "::endgroup::"
+        echo "::group::helm-controller logs"
+        kubectl logs -n flux-system -l app=helm-controller --tail=300
+        echo "::endgroup::"
+        echo "::group::source-controller logs"
+        kubectl logs -n flux-system -l app=source-controller --tail=200
+        echo "::endgroup::"
+        echo "::group::All pods"
+        kubectl get pods -A -o wide
+        echo "::endgroup::"
+        echo "::group::Recent events (warnings)"
+        kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -100
+        echo "::endgroup::"
+        echo "::group::Failed/CrashLooping pod logs"
+        # Dump previous + current logs from any pod that's not Running OR
+        # has containers in a waiting/terminated-error state. CrashLoopBackOff
+        # pods stay in phase=Running with waiting.reason=CrashLoopBackOff,
+        # so we must inspect containerStatuses, not just phase.
+        pods_to_dump=$(kubectl get pods -A -o json 2>/dev/null | jq -r '
+          .items[]
+          | select(
+              .status.phase != "Running" and .status.phase != "Succeeded"
+              or ((.status.containerStatuses // [])[]? | (.restartCount // 0) > 0)
+              or ((.status.containerStatuses // [])[]? | (.state.waiting.reason // "") | test("CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull|CreateContainerError"))
+              or ((.status.containerStatuses // [])[]? | (.state.terminated.reason // "") == "Error")
+            )
+          | "\(.metadata.namespace)\t\(.metadata.name)"
+        ' | sort -u)
+        while IFS=$'\t' read -r ns name; do
+          [ -z "$ns" ] && continue
+          echo "--- $ns/$name (previous + current) ---"
+          kubectl logs -n "$ns" "$name" --all-containers --previous --tail=200 2>&1 | sed 's/^/  /'
+          echo "  --- current ---"
+          kubectl logs -n "$ns" "$name" --all-containers --tail=200 2>&1 | sed 's/^/  /'
+        done <<< "$pods_to_dump"
+        # Also dump logs from any Job pods (these often complete then disappear from "not Running")
+        while IFS=$'\t' read -r ns name; do
+          [ -z "$ns" ] && continue
+          echo "--- Job pod $ns/$name ---"
+          kubectl logs -n "$ns" "$name" --all-containers --tail=200 2>&1 | sed 's/^/  /'
+        done < <(kubectl get pods -A -l job-name -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+        echo "::endgroup::"
+        echo "::group::Failing Jobs describe"
+        kubectl get jobs -A -o json 2>/dev/null | jq -r '.items[] | select(.status.failed > 0 or (.status.conditions // [])[]?.type == "Failed") | "\(.metadata.namespace)/\(.metadata.name)"' | while read -r job; do
+          ns="${job%%/*}"; name="${job##*/}"
+          echo "--- $ns/$name ---"
+          kubectl describe job -n "$ns" "$name" 2>&1 | tail -50
+        done
+        echo "::endgroup::"

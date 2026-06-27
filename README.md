@@ -30,6 +30,7 @@ flowchart TD
 | [cleanup-ghcr-packages](cleanup-ghcr-packages/README.md) | Clean up old GHCR packages |
 | [create-issues-from-todos](create-issues-from-todos/README.md) | Create GitHub issues from TODO comments |
 | [dependency-review](dependency-review/README.md) | Scan a PR's dependency changes for vulnerabilities and disallowed licenses |
+| [diagnose-flux](diagnose-flux/README.md) | Dump Flux reconcile state, controller logs, and failing pod logs on a stuck deploy |
 | [enable-auto-merge-on-pr](enable-auto-merge-on-pr/README.md) | Enable auto-merge on a pull request |
 | [free-disk-space](free-disk-space/README.md) | Reclaim runner disk by removing large preinstalled toolchains |
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
