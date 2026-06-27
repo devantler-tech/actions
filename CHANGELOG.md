@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.1.0](https://github.com/devantler-tech/actions/compare/v7.0.0...v7.1.0) (2026-06-27)
+
+
+### Features
+
+* **diagnose-flux:** add shared composite action for Flux failure diagnostics ([#368](https://github.com/devantler-tech/actions/issues/368)) ([d59a53c](https://github.com/devantler-tech/actions/commit/d59a53caea9f54b2782c44ea3fc3ee2088b20012))
+
 ## [7.0.0](https://github.com/devantler-tech/actions/compare/v6.1.0...v7.0.0) (2026-06-26)
 
 
