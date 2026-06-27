@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.1.1](https://github.com/devantler-tech/actions/compare/v7.1.0...v7.1.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **upsert-issue:** fail with a clear error when body-file is missing ([#385](https://github.com/devantler-tech/actions/issues/385)) ([aabeddb](https://github.com/devantler-tech/actions/commit/aabeddb5c8d5061b9454bdc32aec7a3724bca498))
+
 ## [7.1.0](https://github.com/devantler-tech/actions/compare/v7.0.0...v7.1.0) (2026-06-27)
 
 
