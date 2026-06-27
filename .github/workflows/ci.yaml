@@ -1249,6 +1249,35 @@ jobs:
             exit 1
           fi
 
+  test-upsert-issue-missing-body-file:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run upsert-issue with a non-existent body-file (expected to fail)
+        id: upsert
+        continue-on-error: true
+        uses: ./upsert-issue
+        with:
+          title: "[test] upsert-issue missing-body-file negative test"
+          body-file: does-not-exist.md
+
+      - name: ✅ Verify step failed as expected
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.upsert.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail when body-file does not exist, got: $OUTCOME"
+            exit 1
+          fi
+
   # ── run-dotnet-tests (negative path) ───────────────────────
   test-run-dotnet-tests-missing-working-directory:
     if: ${{ !startsWith(github.head_ref, 'release-please--') }}
@@ -2202,6 +2231,7 @@ jobs:
       - test-login-to-ghcr-empty-token
       - test-setup-go-toolchain-invalid-version
       - test-upsert-issue-missing-body
+      - test-upsert-issue-missing-body-file
       - test-run-dotnet-tests-missing-working-directory
       - zizmor
       - lint-readme-parity
@@ -2280,6 +2310,7 @@ jobs:
             ${{ needs.test-login-to-ghcr-empty-token.result }}
             ${{ needs.test-setup-go-toolchain-invalid-version.result }}
             ${{ needs.test-upsert-issue-missing-body.result }}
+            ${{ needs.test-upsert-issue-missing-body-file.result }}
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.zizmor.result }}
             ${{ needs.lint-readme-parity.result }}
