@@ -916,7 +916,44 @@ jobs:
           fi
           echo "✅ stale-but-skill-capable: bypassed fast-return into install path"
 
-          rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch" "$oldskill"
+          # 8. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
+          #    BEFORE any network download. A skill-LESS gh forces the install path;
+          #    uname is faked to Darwin/arm64 (valid arch → passes the arch check);
+          #    and PATH is a CURATED stub dir holding only the stubs plus the real
+          #    tools the pre-guard path needs (bash for the stubs' `env` shebang,
+          #    mktemp for the tmp dir) — but NOT unzip — so `! command -v unzip` is
+          #    true even on a runner that ships unzip. (Cases 5-7 keep the full PATH,
+          #    so this "ext=zip but no unzip" guard — dead on Linux, where ext=tar.gz
+          #    — was otherwise unexercised; a refactor dropping it would let the
+          #    script fall through to a cryptic `unzip` failure instead of the
+          #    actionable error.) The curated PATH means the stubs' `#!/usr/bin/env
+          #    bash` shebang must resolve `bash`, so it is symlinked in too.
+          nounzip=$(mktemp -d)
+          cat > "$nounzip/gh" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            skill) exit 1 ;;
+            *) exit 0 ;;
+          esac
+          EOF
+          chmod +x "$nounzip/gh"
+          cat > "$nounzip/uname" <<'EOF'
+          #!/usr/bin/env bash
+          [ "$1" = "-s" ] && { echo Darwin; exit 0; }
+          echo arm64
+          EOF
+          chmod +x "$nounzip/uname"
+          ln -s "$(command -v bash)" "$nounzip/bash"
+          ln -s "$(command -v mktemp)" "$nounzip/mktemp"
+          set +e
+          out=$(PATH="$nounzip" REQUIRED=999.0.0 INSTALL_NAMESPACE=t "$nounzip/bash" "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "unzip is required"; then
+            echo "::error::expected unzip-missing guard to fire on the macOS zip path; status=$status out=$out"; exit 1
+          fi
+          echo "✅ macos-missing-unzip: guarded before download as expected"
+
+          rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch" "$oldskill" "$nounzip"
 
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
