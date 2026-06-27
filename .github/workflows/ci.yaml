@@ -1280,6 +1280,109 @@ jobs:
             exit 1
           fi
 
+  # ── run-dotnet-tests (gate block path) ─────────────────────
+  # run-dotnet-tests is a GATING workflow — its job is to FAIL a PR when a .NET test fails.
+  # Per AGENTS.md § "Failure-mode coverage for gating workflows", a happy-path test alone
+  # cannot catch a gate that silently stopped biting, so it also needs a blocks-on-bad-input
+  # self-test (mirrors the Go gate's test-validate-go-test-blocks). This points the gate's
+  # own `dotnet test` command at a fixture whose only test fails on purpose and asserts the
+  # run is blocked. test-run-dotnet-tests-gate-lockstep keeps the command in sync with the gate.
+  test-run-dotnet-tests-blocks:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    name: "[Test] Run .NET Tests - Gate Blocks"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          # Match run-dotnet-tests/action.yaml's SDK provisioning (previous STS + current LTS).
+          dotnet-version: |
+            9
+            10
+
+      # Mirror run-dotnet-tests/action.yaml's test step (`dotnet test …`) against a fixture
+      # whose only test fails on purpose, so the run exits non-zero — exactly the gate's
+      # "a failing test fails the build" block path. The output is captured so the next step
+      # can confirm a real test failure rather than a build/operational error. The command is
+      # kept in lockstep with the gate by test-run-dotnet-tests-gate-lockstep.
+      - name: 🧪 Test failing fixture (expected to fail)
+        id: dotnettest
+        continue-on-error: true
+        working-directory: .github/fixtures/run-dotnet-tests-failing
+        shell: bash
+        run: |
+          set -uo pipefail
+          dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: ✅ Assert the test gate blocked on the failing test
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.dotnettest.outcome }}
+        run: |
+          set -euo pipefail
+          OUT=.github/fixtures/run-dotnet-tests-failing/dotnet-test-output.txt
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::dotnet test should FAIL on the deliberately-failing test in .github/fixtures/run-dotnet-tests-failing, but its outcome was '$OUTCOME'. run-dotnet-tests' test gate is no longer blocking on failing tests."
+            exit 1
+          fi
+          if ! grep -q "Test Run Failed" "$OUT" 2>/dev/null || ! grep -q "Test_DeliberatelyFails" "$OUT" 2>/dev/null; then
+            echo "::error::dotnet test failed, but its output did not show the deliberately-failing test run (expected 'Test Run Failed' + 'Test_DeliberatelyFails') — the failure was operational (e.g. a build/restore error), not a real test failure. Output:"
+            cat "$OUT" 2>/dev/null || echo "(no output captured)"
+            exit 1
+          fi
+          echo "Test gate correctly blocked on the failing test ✅"
+
+  # ── run-dotnet-tests (gate lockstep) ───────────────────────
+  test-run-dotnet-tests-gate-lockstep:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    name: "[Test] Run .NET Tests - Gate Lockstep"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # test-run-dotnet-tests-blocks hard-codes the gate's `dotnet test` command to exercise
+      # it against a failing fixture. This guard asserts run-dotnet-tests/action.yaml still
+      # runs the SAME command, so the self-test always exercises the real gate. If the gate's
+      # test command changes without updating the self-test, this check goes red and forces
+      # them to move in lockstep (mirrors test-validate-go-gate-lockstep).
+      - name: 🔒 Assert the gate runs the self-tested test command
+        shell: bash
+        env:
+          GATE: run-dotnet-tests/action.yaml
+          # Match the full command, not a bare substring — commands also appear in comments,
+          # so a looser grep could false-pass if the real value changed while a comment did not.
+          EXPECTED_TEST_CMD: 'dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
+        run: |
+          set -euo pipefail
+          if ! grep -qF "$EXPECTED_TEST_CMD" "$GATE"; then
+            echo "::error::$GATE no longer runs '$EXPECTED_TEST_CMD'. If the gate's test command changed intentionally, update test-run-dotnet-tests-blocks and this EXPECTED_TEST_CMD so the self-test keeps exercising the real gate."
+            exit 1
+          fi
+          echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
+
   # ── zizmor ──────────────────────────────────────────────────
   zizmor:
     runs-on: ubuntu-latest
@@ -2128,6 +2231,8 @@ jobs:
       - test-validate-go-lint-blocks
       - test-validate-go-test-blocks
       - test-validate-go-gate-lockstep
+      - test-run-dotnet-tests-blocks
+      - test-run-dotnet-tests-gate-lockstep
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2204,3 +2309,5 @@ jobs:
             ${{ needs.test-validate-go-lint-blocks.result }}
             ${{ needs.test-validate-go-test-blocks.result }}
             ${{ needs.test-validate-go-gate-lockstep.result }}
+            ${{ needs.test-run-dotnet-tests-blocks.result }}
+            ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}

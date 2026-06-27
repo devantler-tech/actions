@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A deliberately-failing .NET test fixture used ONLY by the test-run-dotnet-tests-blocks
+       CI self-test, to prove run-dotnet-tests' gate still fails a PR when a test fails.
+       Mirrors the test dependencies of .github/fixtures/run-dotnet-tests so the gate's
+       `dotnet test` command behaves identically; kept lean (no doc/style enforcement) so
+       the project always builds and the ONLY reason `dotnet test` exits non-zero is the
+       deliberately-failing test. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
