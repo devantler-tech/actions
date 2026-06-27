@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Fake `kubectl` for the diagnose-flux self-test. Lets the composite run
+# hermetically (no real cluster) while still exercising its REAL jq-based
+# failing-pod selection: it returns a fixture pod list with one CrashLoopBackOff
+# pod, one healthy pod, and one Job pod, and records every `logs <pod>` call to
+# $RUNNER_TEMP/logged-pods.txt so the test can assert which pods were dumped.
+set -euo pipefail
+
+record_dir="${RUNNER_TEMP:-/tmp}"
+
+case "${1:-}" in
+  get)
+    if [[ "$*" == *"pods -A -o json"* ]]; then
+      cat <<'JSON'
+{"items":[
+  {"metadata":{"namespace":"demo","name":"crasher"},"status":{"phase":"Running","containerStatuses":[{"restartCount":5,"state":{"waiting":{"reason":"CrashLoopBackOff"}}}]}},
+  {"metadata":{"namespace":"demo","name":"healthy"},"status":{"phase":"Running","containerStatuses":[{"restartCount":0,"state":{"running":{}}}]}}
+]}
+JSON
+    elif [[ "$*" == *"pods -A -l job-name"* ]]; then
+      printf 'demo\tjobpod\n'
+    elif [[ "$*" == *"jobs -A -o json"* ]]; then
+      echo '{"items":[]}'
+    fi
+    # all other `get` reads (nodes, kustomizations, helmreleases, ocirepositories,
+    # events, controller pods) are benign — emit nothing, exit 0.
+    ;;
+  logs)
+    # Args look like: logs -n <ns> <pod> --all-containers [--previous] --tail=N
+    pod=""
+    for a in "$@"; do
+      case "$a" in crasher|healthy|jobpod) pod="$a" ;; esac
+    done
+    if [[ -n "$pod" ]]; then
+      echo "$pod" >> "$record_dir/logged-pods.txt"
+    fi
+    echo "fake log output for ${pod:-unknown}"
+    ;;
+  describe|version|"")
+    : # no-op, exit 0
+    ;;
+esac

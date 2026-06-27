@@ -122,6 +122,45 @@ jobs:
           fi
           echo "Dependency review ran; dependency-changes=${CHANGES}"
 
+  # ── diagnose-flux ───────────────────────────────────────────
+  test-diagnose-flux:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Put the committed fake kubectl on PATH so the composite runs hermetically
+      # (no real cluster). Its REAL jq failing-pod selection then runs against the
+      # fixture pod list, so a regression in that logic fails this test.
+      - name: 🔧 Put fake kubectl on PATH
+        shell: bash
+        run: echo "$GITHUB_WORKSPACE/.github/tests/diagnose-flux/bin" >> "$GITHUB_PATH"
+
+      - name: 🧪 Run diagnose-flux against the fake cluster
+        uses: ./diagnose-flux
+
+      - name: ✅ Assert crash + Job pods were dumped, healthy was not
+        shell: bash
+        run: |
+          logged="$RUNNER_TEMP/logged-pods.txt"
+          if [[ ! -f "$logged" ]]; then
+            echo "::error::diagnose-flux dumped no pod logs — the jq failing-pod selection is broken"
+            exit 1
+          fi
+          for want in crasher jobpod; do
+            if ! grep -qx "$want" "$logged"; then
+              echo "::error::expected pod '$want' to be dumped but it was not"; cat "$logged"; exit 1
+            fi
+          done
+          if grep -qx healthy "$logged"; then
+            echo "::error::healthy pod was dumped — the failing-pod selection is too broad"; cat "$logged"; exit 1
+          fi
+          echo "diagnose-flux dumped crasher + jobpod and skipped healthy — OK"
   # ── enable-auto-merge-on-pr ─────────────────────────────────
   test-enable-auto-merge-on-pr:
     runs-on: ubuntu-latest
@@ -2015,6 +2054,7 @@ jobs:
       - test-cleanup-ghcr-packages
       - test-create-issues-from-todos
       - test-dependency-review
+      - test-diagnose-flux
       - test-enable-auto-merge-on-pr
       - test-free-disk-space
       - test-free-disk-space-keep
@@ -2090,6 +2130,7 @@ jobs:
             ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-dependency-review.result }}
+            ${{ needs.test-diagnose-flux.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
             ${{ needs.test-free-disk-space.result }}
             ${{ needs.test-free-disk-space-keep.result }}
