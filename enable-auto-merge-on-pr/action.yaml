@@ -32,7 +32,15 @@ runs:
         GH_TOKEN: ${{ inputs.token }}
         REPOSITORY: ${{ github.repository }}
       run: |
-        REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
+        # A transient GitHub API blip (5xx/DNS/TLS) must not red this required
+        # auto-merge step on infra noise; bound the network read with retry +
+        # backoff via the shared .scripts/retry.sh helper — see the reliability
+        # pillar of the actions roadmap (devantler-tech/actions#247). A genuine
+        # `allow_auto_merge: false` returns "false" with exit 0, so it is not
+        # retried — only an actual command failure is.
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
+        REPO_INFO=$(retry gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
         echo "auto-merge-enabled=${REPO_INFO}" >> "$GITHUB_OUTPUT"
 
         if [[ "$REPO_INFO" != "true" ]]; then
@@ -53,7 +61,12 @@ runs:
           exit 1
         fi
 
-        gh pr merge "$PR_NUMBER" --auto --"$MERGE_METHOD" --repo "$REPOSITORY"
+        # Arming auto-merge is idempotent (re-arming with the same method is a
+        # no-op), so wrap the network call in retry + backoff so a transient API
+        # blip does not red this required step (#247 reliability pillar).
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
+        retry gh pr merge "$PR_NUMBER" --auto --"$MERGE_METHOD" --repo "$REPOSITORY"
         echo "✅ Auto-merge enabled for PR #${PR_NUMBER} using ${MERGE_METHOD} method"
 
     - name: 🔎 Dry-run notice
