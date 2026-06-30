@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.1.3](https://github.com/devantler-tech/actions/compare/v7.1.2...v7.1.3) (2026-06-30)
+
+
+### Continuous Integration
+
+* skip the suite on the release-commit push to dodge the self-pin tag race ([#412](https://github.com/devantler-tech/actions/issues/412)) ([91efa53](https://github.com/devantler-tech/actions/commit/91efa53fa80d71341e1546510316b18722da79f5))
+
 ## [7.1.2](https://github.com/devantler-tech/actions/compare/v7.1.1...v7.1.2) (2026-06-30)
 
 

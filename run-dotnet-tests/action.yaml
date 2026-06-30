@@ -51,7 +51,7 @@ runs:
     - name: 📊 Upload Code Coverage to GitHub Code Quality
       if: runner.os == 'Linux'
       continue-on-error: true
-      uses: devantler-tech/actions/upload-coverage@v7.1.2 # x-release-please-version
+      uses: devantler-tech/actions/upload-coverage@v7.1.3 # x-release-please-version
       with:
         file: ${{ inputs.working-directory }}/coverage-merged/Cobertura.xml
         language: C#
