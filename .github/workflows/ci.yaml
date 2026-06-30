@@ -13,13 +13,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every job below is guarded so the whole CI suite is skipped on release-please
-  # PRs (head branch `release-please--*`): those PRs only bump versions + the
-  # changelog — already tested in the PRs that introduced each change — and the
-  # x-release-please-version self-pins they rewrite point at a tag that does not
-  # exist until the release merges, so the suite cannot pass there anyway. The
-  # `CI - Required Checks` gate still runs (aggregate-job-checks treats skipped as
-  # success), keeping the required status check green so the release auto-merges.
+  # Every job below is guarded so the whole CI suite is skipped for a release-please
+  # release commit — BOTH the release-please PR (head branch `release-please--*`) AND
+  # the push of the squashed release commit to `main` (`chore(main): release …`, where
+  # `github.head_ref` is empty so the branch-name check alone misses it). Those commits
+  # only bump versions + the changelog — already tested in the PRs that introduced each
+  # change — and the x-release-please-version self-pins they rewrite point at a tag that
+  # release-please does not publish until moments after the merge, so the suite would
+  # race that tag and cannot pass there anyway. The `CI - Required Checks` gate still
+  # runs (aggregate-job-checks treats skipped as success), keeping the required status
+  # check green so the release auto-merges.
   # ── approve-pr ──────────────────────────────────────────────
   test-approve-pr:
     runs-on: ubuntu-latest
@@ -27,7 +30,7 @@ jobs:
       pull-requests: write
       contents: write
     if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
+      !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
       (
         github.event.pull_request.user.login == 'dependabot[bot]' ||
@@ -50,7 +53,7 @@ jobs:
 
   # ── cleanup-ghcr-packages ───────────────────────────────────
   test-cleanup-ghcr-packages:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       packages: read
@@ -70,7 +73,7 @@ jobs:
 
   # ── create-issues-from-todos ────────────────────────────────
   test-create-issues-from-todos:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,7 +97,7 @@ jobs:
     # The underlying action only produces a diff on pull_request events; on push /
     # merge_group there is no PR to review, so the test is PR-gated (skipped
     # otherwise, which aggregate-job-checks tolerates — like test-approve-pr).
-    if: ${{ !startsWith(github.head_ref, 'release-please--') && startsWith(github.event_name, 'pull_request') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && startsWith(github.event_name, 'pull_request') }}"
     permissions:
       contents: read
     steps:
@@ -124,7 +127,7 @@ jobs:
 
   # ── diagnose-flux ───────────────────────────────────────────
   test-diagnose-flux:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -168,7 +171,7 @@ jobs:
       pull-requests: write
       contents: write
     if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
+      !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
       (
         github.event.pull_request.user.login == 'dependabot[bot]' ||
@@ -190,7 +193,7 @@ jobs:
 
   # ── free-disk-space ─────────────────────────────────────────
   test-free-disk-space:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -225,7 +228,7 @@ jobs:
 
   # ── free-disk-space (all categories disabled → clean no-op) ──
   test-free-disk-space-keep:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -271,7 +274,7 @@ jobs:
 
   # ── login-to-ghcr ──────────────────────────────────────────
   test-login-to-ghcr:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       packages: read
@@ -291,7 +294,7 @@ jobs:
 
   # ── aggregate-job-checks ────────────────────────────────────
   test-aggregate-job-checks-empty:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -307,7 +310,7 @@ jobs:
           job-results: ""
 
   test-aggregate-job-checks-success:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -323,7 +326,7 @@ jobs:
           job-results: "success skipped success"
 
   test-aggregate-job-checks-failure:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -351,7 +354,7 @@ jobs:
           fi
 
   test-aggregate-job-checks-unknown:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -380,7 +383,7 @@ jobs:
 
   # ── run-dotnet-tests ────────────────────────────────────────
   test-run-dotnet-tests:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -403,7 +406,7 @@ jobs:
 
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -451,7 +454,7 @@ jobs:
           done
 
   test-setup-agent-skills-pinned:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -491,7 +494,7 @@ jobs:
           fi
 
   test-setup-agent-skills-missing-input:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -519,7 +522,7 @@ jobs:
           fi
 
   test-setup-agent-skills-malformed-line:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -548,7 +551,7 @@ jobs:
           fi
 
   test-setup-agent-skills-multi-agent:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -590,7 +593,7 @@ jobs:
 
   # ── setup-go-toolchain ─────────────────────────────────────
   test-setup-go-toolchain:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -625,7 +628,7 @@ jobs:
           echo "Go version: $GO_VERSION"
 
   test-setup-go-toolchain-private-modules:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -652,7 +655,7 @@ jobs:
 
   # ── setup-ksail-cli ────────────────────────────────────────
   test-setup-ksail-cli:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -674,7 +677,7 @@ jobs:
 
   # ── .scripts/retry.sh (shared reliability helper) ──────────
   test-retry-script:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -765,7 +768,7 @@ jobs:
 
   # ── .scripts/ensure-gh-skill.sh (shared gh-skill bootstrap) ─
   test-ensure-gh-skill-script:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -957,7 +960,7 @@ jobs:
 
   # ── sync-github-labels ─────────────────────────────────────
   test-sync-github-labels:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -975,7 +978,7 @@ jobs:
 
   # ── update-agent-skills ───────────────────────────────────
   test-update-agent-skills-noop:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -1020,7 +1023,7 @@ jobs:
           fi
 
   test-update-agent-skills-dry-run:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1062,7 +1065,7 @@ jobs:
           fi
 
   test-update-agent-skills-missing-dir:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1091,7 +1094,7 @@ jobs:
 
   # ── upload-coverage ─────────────────────────────────────────
   test-upload-coverage:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1115,7 +1118,7 @@ jobs:
 
   # ── upsert-issue ────────────────────────────────────────────
   test-upsert-issue-create:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1148,7 +1151,7 @@ jobs:
           echo "Issue: $ISSUE_URL"
 
   test-upsert-issue-close:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     needs: [test-upsert-issue-create]
     runs-on: ubuntu-latest
     permissions:
@@ -1171,7 +1174,7 @@ jobs:
 
   # ── sync-github-labels (negative path) ─────────────────────
   test-sync-github-labels-missing-config:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -1201,7 +1204,7 @@ jobs:
 
   # ── login-to-ghcr (negative path) ──────────────────────────
   test-login-to-ghcr-empty-token:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1230,7 +1233,7 @@ jobs:
 
   # ── setup-go-toolchain (negative path) ─────────────────────
   test-setup-go-toolchain-invalid-version:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1259,7 +1262,7 @@ jobs:
 
   # ── upsert-issue (negative path) ───────────────────────────
   test-upsert-issue-missing-body:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1287,7 +1290,7 @@ jobs:
           fi
 
   test-upsert-issue-missing-body-file:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1317,7 +1320,7 @@ jobs:
 
   # ── run-dotnet-tests (negative path) ───────────────────────
   test-run-dotnet-tests-missing-working-directory:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1354,7 +1357,7 @@ jobs:
   # own `dotnet test` command at a fixture whose only test fails on purpose and asserts the
   # run is blocked. test-run-dotnet-tests-gate-lockstep keeps the command in sync with the gate.
   test-run-dotnet-tests-blocks:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests - Gate Blocks"
     runs-on: ubuntu-latest
     permissions:
@@ -1413,7 +1416,7 @@ jobs:
 
   # ── run-dotnet-tests (gate lockstep) ───────────────────────
   test-run-dotnet-tests-gate-lockstep:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests - Gate Lockstep"
     runs-on: ubuntu-latest
     permissions:
@@ -1458,7 +1461,7 @@ jobs:
     # Scanning on push to main is essential: without it the default-branch
     # code-scanning baseline never refreshes, leaving stale alerts that the
     # `code_scanning` branch rule treats as a merge blocker on every PR.
-    if: ${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     permissions:
       security-events: write
       contents: read
@@ -1474,7 +1477,7 @@ jobs:
 
   # ── lint-readme-parity ──────────────────────────────────────
   lint-readme-parity:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1563,7 +1566,7 @@ jobs:
           exit "$status"
 
   lint-ci-coverage-parity:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1645,7 +1648,7 @@ jobs:
           exit "$status"
 
   test-zizmor:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Zizmor - Default Settings"
     uses: ./.github/workflows/scan-for-workflow-vulnerabilities.yaml
     permissions:
@@ -1654,14 +1657,14 @@ jobs:
       actions: read
 
   test-dependency-review-workflow:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Dependency Review - Default Settings"
     uses: ./.github/workflows/dependency-review.yaml
     permissions:
       contents: read
 
   test-delete-workflow-runs-all:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Delete Workflow Runs - All Workflows"
     uses: ./.github/workflows/delete-workflow-runs.yaml
     with:
@@ -1675,7 +1678,7 @@ jobs:
       contents: read
 
   test-delete-workflow-runs-specific:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Delete Workflow Runs - Specific Pattern"
     uses: ./.github/workflows/delete-workflow-runs.yaml
     with:
@@ -1689,7 +1692,7 @@ jobs:
       contents: read
 
   test-delete-workflow-runs-minimal:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Delete Workflow Runs - Minimal Parameters"
     uses: ./.github/workflows/delete-workflow-runs.yaml
     with:
@@ -1699,7 +1702,7 @@ jobs:
       contents: read
 
   test-validate-go-project:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Go Project"
     uses: ./.github/workflows/validate-go-project.yaml
     # Fixture-targeted: validate the known-good Go fixture (this repo is not itself a Go module).
@@ -1712,7 +1715,7 @@ jobs:
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
   test-run-dotnet-tests-workflow:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests"
     uses: ./.github/workflows/run-dotnet-tests.yaml
     # Fixture-targeted: exercise the workflow against the known-good .NET fixture
@@ -1725,7 +1728,7 @@ jobs:
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
   test-enable-auto-merge:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge"
     uses: ./.github/workflows/enable-auto-merge.yaml
     permissions:
@@ -1735,7 +1738,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   test-create-release:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Create Release - Dry Run"
     uses: ./.github/workflows/create-release.yaml
     with:
@@ -1744,7 +1747,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   test-deploy-github-pages:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Deploy GitHub Pages - Dry Run"
     uses: ./.github/workflows/deploy-github-pages.yaml
     permissions:
@@ -1755,7 +1758,7 @@ jobs:
       dry-run: true
 
   test-publish-dotnet-library:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish .NET Library - Dry Run"
     uses: ./.github/workflows/publish-dotnet-library.yaml
     permissions:
@@ -1765,7 +1768,7 @@ jobs:
       dry-run: true
 
   test-publish-app:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish App - Dry Run"
     uses: ./.github/workflows/publish-app.yaml
     permissions:
@@ -1777,7 +1780,7 @@ jobs:
       dry-run: true
 
   test-publish-manifests:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish Manifests - Dry Run"
     uses: ./.github/workflows/publish-manifests.yaml
     permissions:
@@ -1788,7 +1791,7 @@ jobs:
       dry-run: true
 
   test-scan-for-todo-comments:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Scan for TODO Comments - Dry Run"
     uses: ./.github/workflows/scan-for-todo-comments.yaml
     permissions:
@@ -1800,7 +1803,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   test-sync-cluster-policies:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Sync Cluster Policies - Dry Run"
     uses: ./.github/workflows/sync-cluster-policies.yaml
     with:
@@ -1810,7 +1813,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   test-update-agent-skills:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Update Agent Skills - Dry Run"
     uses: ./.github/workflows/update-agent-skills.yaml
     permissions:
@@ -1820,7 +1823,7 @@ jobs:
       dry-run: true
 
   test-template-sync:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Template Sync - Dry Run"
     uses: ./.github/workflows/template-sync.yaml
     permissions:
@@ -1842,7 +1845,7 @@ jobs:
   # The govulncheck job in validate-go-project.yaml is skipped on this repo, so it
   # cannot self-test itself — hence a dedicated, faithful replica here.
   test-govulncheck-allowlist-honored:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck Allowlist - Allowlisted Advisory Passes"
     runs-on: ubuntu-latest
     permissions:
@@ -1872,7 +1875,7 @@ jobs:
           allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt
 
   test-govulncheck-strict-blocks:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck Allowlist - Strict Path Blocks"
     runs-on: ubuntu-latest
     permissions:
@@ -1925,7 +1928,7 @@ jobs:
           echo "Strict scan correctly blocked on the reachable advisory ✅"
 
   test-govulncheck-action-lockstep:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck Allowlist - Gate Pins Self-Tested Action"
     runs-on: ubuntu-latest
     permissions:
@@ -1977,7 +1980,7 @@ jobs:
   # path, audits it. Keep the action SHA in lockstep with the gate
   # (enforced by test-zizmor-action-lockstep).
   test-zizmor-blocks:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Zizmor - Blocks On Vulnerable Fixture"
     runs-on: ubuntu-latest
     permissions:
@@ -2030,7 +2033,7 @@ jobs:
           echo "Zizmor gate correctly blocked on the vulnerable fixture ✅"
 
   test-zizmor-action-lockstep:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Zizmor - Gate Pins Self-Tested Action"
     runs-on: ubuntu-latest
     permissions:
@@ -2074,7 +2077,7 @@ jobs:
   # "the gate silently stopped blocking" into a red check. test-validate-go-gate-lockstep
   # keeps the tool pins hard-coded here in step with the gate.
   test-validate-go-lint-blocks:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Go Project - Lint Gate Blocks"
     runs-on: ubuntu-latest
     permissions:
@@ -2130,7 +2133,7 @@ jobs:
           echo "Lint gate correctly blocked on the errcheck violation ✅"
 
   test-validate-go-test-blocks:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Go Project - Test Gate Blocks"
     runs-on: ubuntu-latest
     permissions:
@@ -2185,7 +2188,7 @@ jobs:
           echo "Test gate correctly blocked on the failing test ✅"
 
   test-validate-go-gate-lockstep:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Go Project - Gate Lockstep"
     runs-on: ubuntu-latest
     permissions:
