@@ -44,7 +44,14 @@ runs:
         PR_NUMBER: ${{ inputs.pr-number }}
         REPOSITORY: ${{ github.repository }}
       run: |
-        gh pr review "$PR_NUMBER" --approve --repo "$REPOSITORY"
+        # A transient GitHub API blip (5xx/secondary-rate-limit/DNS-TLS) must not
+        # red this required approval step on infra noise. Submitting the review is
+        # idempotent-in-effect (the PR stays approved), so bound the network call
+        # with retry + backoff via the shared .scripts/retry.sh helper — see the
+        # reliability pillar of the actions roadmap (devantler-tech/actions#247).
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
+        retry gh pr review "$PR_NUMBER" --approve --repo "$REPOSITORY"
         echo "✅ PR #${PR_NUMBER} approved"
 
     - name: 🔎 Dry-run notice
