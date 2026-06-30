@@ -1,5 +1,13 @@
 # Changelog
 
+## [7.1.2](https://github.com/devantler-tech/actions/compare/v7.1.1...v7.1.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* **approve-pr,upsert-issue:** retry-harden unguarded gh network calls ([#405](https://github.com/devantler-tech/actions/issues/405)) ([7fe5fad](https://github.com/devantler-tech/actions/commit/7fe5fad50cfbf15b3c62f05aa73964d3022fb155))
+* **enable-auto-merge-on-pr:** retry-harden the gh API/merge network calls ([#402](https://github.com/devantler-tech/actions/issues/402)) ([b0e24b5](https://github.com/devantler-tech/actions/commit/b0e24b53dfef88cbd1a2a22c7451454191bc4559)), closes [#401](https://github.com/devantler-tech/actions/issues/401)
+
 ## [7.1.1](https://github.com/devantler-tech/actions/compare/v7.1.0...v7.1.1) (2026-06-27)
 
 

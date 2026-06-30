@@ -719,7 +719,7 @@ jobs:
       # Uploads coverage to GitHub Code Quality (native PR coverage). best-effort: never blocks CI.
       - name: 📊 Upload coverage
         continue-on-error: true
-        uses: devantler-tech/actions/upload-coverage@v7.1.1 # x-release-please-version
+        uses: devantler-tech/actions/upload-coverage@v7.1.2 # x-release-please-version
         with:
           file: ${{ inputs.working-directory || '.' }}/coverage.cobertura.xml
           language: Go
