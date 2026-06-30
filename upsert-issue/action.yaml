@@ -57,6 +57,16 @@ runs:
       run: |
         set -euo pipefail
 
+        # A transient GitHub API blip (5xx/secondary-rate-limit/DNS-TLS) must not
+        # red this step on infra noise — the title search hits the rate-limit-prone
+        # Search API. Bound the retry-SAFE network calls with retry + backoff via
+        # the shared .scripts/retry.sh helper (reliability pillar
+        # devantler-tech/actions#247). NOTE: `gh issue create` is deliberately NOT
+        # wrapped — it is not idempotent, so retrying a partially-succeeded create
+        # would open duplicate issues. Idempotent reads/edits (list/edit/view/close)
+        # are safe; `gh issue reopen` keeps its existing `|| true` best-effort guard.
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
         # Resolve body content
         if [ -n "$BODY_FILE" ]; then
           if [ ! -f "$BODY_FILE" ]; then
@@ -74,7 +84,7 @@ runs:
         # Search for existing issue by exact title (any state).
         # Prefer an open issue; fall back to the most recent closed one.
         ISSUE_NUMBER=$(
-          gh issue list \
+          retry gh issue list \
             --repo "$REPO" \
             --state all \
             --search "in:title \"${TITLE}\"" \
@@ -91,9 +101,9 @@ runs:
         if [ "$OPEN" = "true" ]; then
           if [ -n "$ISSUE_NUMBER" ]; then
             echo "Updating issue #${ISSUE_NUMBER} and ensuring it is open"
-            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
+            retry gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$BODY"
             if [ -n "$LABELS" ]; then
-              gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "$LABELS"
+              retry gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "$LABELS"
             fi
             gh issue reopen "$ISSUE_NUMBER" --repo "$REPO" 2>/dev/null || true
           else
@@ -108,11 +118,11 @@ runs:
         else
           if [ -n "$ISSUE_NUMBER" ]; then
             ISSUE_STATE=$(
-              gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state --jq .state
+              retry gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state --jq .state
             )
             if [ "$ISSUE_STATE" = "OPEN" ]; then
               echo "Closing issue #${ISSUE_NUMBER}"
-              gh issue close "$ISSUE_NUMBER" --repo "$REPO" --comment "$CLOSE_COMMENT"
+              retry gh issue close "$ISSUE_NUMBER" --repo "$REPO" --comment "$CLOSE_COMMENT"
             else
               echo "Issue #${ISSUE_NUMBER} is already closed — nothing to do"
             fi
