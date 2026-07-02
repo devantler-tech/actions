@@ -958,24 +958,6 @@ jobs:
 
           rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch" "$oldskill" "$nounzip"
 
-  # ── sync-github-labels ─────────────────────────────────────
-  test-sync-github-labels:
-    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: 🧪 Run sync-github-labels
-        uses: ./sync-github-labels
-        with:
-          config-file: .github/labels.yaml
-          delete-other-labels: "false"
-
   # ── update-agent-skills ───────────────────────────────────
   test-update-agent-skills-noop:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -1171,36 +1153,6 @@ jobs:
           open: "false"
           close-comment: "🧪 Closed by test workflow."
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── sync-github-labels (negative path) ─────────────────────
-  test-sync-github-labels-missing-config:
-    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: 🧪 Run sync-github-labels with a missing config file (expected to fail)
-        id: sync
-        continue-on-error: true
-        uses: ./sync-github-labels
-        with:
-          config-file: .github/this-config-does-not-exist.yaml
-          delete-other-labels: "false"
-
-      - name: ✅ Verify step failed as expected
-        shell: bash
-        env:
-          OUTCOME: ${{ steps.sync.outcome }}
-        run: |
-          if [[ "$OUTCOME" != "failure" ]]; then
-            echo "::error::Expected the action to fail on a missing config file, got: $OUTCOME"
-            exit 1
-          fi
 
   # ── login-to-ghcr (negative path) ──────────────────────────
   test-login-to-ghcr-empty-token:
@@ -2260,14 +2212,12 @@ jobs:
       - test-setup-ksail-cli
       - test-retry-script
       - test-ensure-gh-skill-script
-      - test-sync-github-labels
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
       - test-update-agent-skills-missing-dir
       - test-upload-coverage
       - test-upsert-issue-create
       - test-upsert-issue-close
-      - test-sync-github-labels-missing-config
       - test-login-to-ghcr-empty-token
       - test-setup-go-toolchain-invalid-version
       - test-upsert-issue-missing-body
@@ -2339,14 +2289,12 @@ jobs:
             ${{ needs.test-setup-ksail-cli.result }}
             ${{ needs.test-retry-script.result }}
             ${{ needs.test-ensure-gh-skill-script.result }}
-            ${{ needs.test-sync-github-labels.result }}
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
             ${{ needs.test-update-agent-skills-missing-dir.result }}
             ${{ needs.test-upload-coverage.result }}
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}
-            ${{ needs.test-sync-github-labels-missing-config.result }}
             ${{ needs.test-login-to-ghcr-empty-token.result }}
             ${{ needs.test-setup-go-toolchain-invalid-version.result }}
             ${{ needs.test-upsert-issue-missing-body.result }}
