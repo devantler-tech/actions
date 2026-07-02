@@ -16,7 +16,6 @@ This file is the single canonical instructions file for the repository. It is re
 │   │                             #   repo-owned = `ci.yaml` + `active-*.yaml`;  reusable products = every other name.
 │   ├── ci.yaml                   # repo-owned: one `test-<action>` job per action + one `[Test]` job per reusable workflow
 │   ├── active-release.yaml       # repo-owned: release-please driver (release PR → tag)
-│   ├── active-sync-github-labels.yaml  # repo-owned: label-sync caller
 │   ├── create-release.yaml       # reusable product (workflow_call): semantic-release automation for consumer repos
 │   └── <name>.yaml               # the other reusable `workflow_call` products (dependency-review, validate-go-project, …)
 ├── fixtures/                     # fixtures for the action `test-<action>` jobs
