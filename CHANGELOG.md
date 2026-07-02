@@ -1,5 +1,16 @@
 # Changelog
 
+## [8.0.0](https://github.com/devantler-tech/actions/compare/v7.1.3...v8.0.0) (2026-07-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the sync-github-labels composite action (superseded by declarative IssueLabels) ([#418](https://github.com/devantler-tech/actions/issues/418))
+
+### Features
+
+* remove the sync-github-labels composite action (superseded by declarative IssueLabels) ([#418](https://github.com/devantler-tech/actions/issues/418)) ([0d7ff03](https://github.com/devantler-tech/actions/commit/0d7ff030438799e3bb423a8649115ad2b36ee78f))
+
 ## [7.1.3](https://github.com/devantler-tech/actions/compare/v7.1.2...v7.1.3) (2026-06-30)
 
 
