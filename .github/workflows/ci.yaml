@@ -1433,13 +1433,17 @@ jobs:
         run: |
           set -euo pipefail
           # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
-          wrapper_uses="$(yq -r '.runs.steps[0].uses' "$WRAPPER")"
+          # Select the upload step by content on BOTH sides (never positionally), so an
+          # unrelated step added to either action cannot silently divert the comparison.
+          wrapper_uses="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].uses' "$WRAPPER")"
           inline_uses="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].uses' "$INLINE")"
           if [[ "$inline_uses" != "$wrapper_uses" ]]; then
             echo "::error file=$INLINE::the inlined coverage-upload step pins '$inline_uses' but $WRAPPER pins '$wrapper_uses'. Update the inline step to match — $WRAPPER is the source of truth."
             exit 1
           fi
-          wrapper_inputs="$(yq -r '.runs.steps[0].with | keys | .[]' "$WRAPPER" | sort)"
+          # Input SET only, not values: the wrapper passes generic `inputs.*` expressions while
+          # the inline step passes their .NET-specialized instantiations, so values differ by design.
+          wrapper_inputs="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].with | keys | .[]' "$WRAPPER" | sort)"
           inline_inputs="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].with | keys | .[]' "$INLINE" | sort)"
           if [[ "$inline_inputs" != "$wrapper_inputs" ]]; then
             echo "::error file=$INLINE::the inlined coverage-upload step passes inputs [$(tr '\n' ' ' <<<"$inline_inputs")] but $WRAPPER's step passes [$(tr '\n' ' ' <<<"$wrapper_inputs")]. Keep the input set in lockstep — $WRAPPER is the source of truth."
