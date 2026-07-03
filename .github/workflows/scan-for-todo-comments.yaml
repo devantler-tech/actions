@@ -53,3 +53,18 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
+
+      # The sibling composite runs its own actions/checkout, whose git clean deletes this
+      # untracked self-checkout mid-job. That is intended (it hides the actions sources from
+      # the todo scan above), but the runner re-reads the composite's action.yaml from disk to
+      # run its post-cleanup steps — which then fails with "Can't find action.yml". Re-materialise
+      # the directory AFTER the scan so the post phase can reload it; the scanner has already run,
+      # so it still never sees the actions repo's own sources.
+      - name: 📥 Restore devantler-tech/actions for post-cleanup
+        if: ${{ always() }}
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
