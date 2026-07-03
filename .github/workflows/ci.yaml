@@ -18,9 +18,7 @@ jobs:
   # the push of the squashed release commit to `main` (`chore(main): release …`, where
   # `github.head_ref` is empty so the branch-name check alone misses it). Those commits
   # only bump versions + the changelog — already tested in the PRs that introduced each
-  # change — and the x-release-please-version self-pins they rewrite point at a tag that
-  # release-please does not publish until moments after the merge, so the suite would
-  # race that tag and cannot pass there anyway. The `CI - Required Checks` gate still
+  # change — so there is nothing new to test. The `CI - Required Checks` gate still
   # runs (aggregate-job-checks treats skipped as success), keeping the required status
   # check green so the release auto-merges.
   # ── approve-pr ──────────────────────────────────────────────

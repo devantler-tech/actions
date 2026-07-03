@@ -24,7 +24,7 @@ This file is the single canonical instructions file for the repository. It is re
 
 # The repo root holds ONLY composite-action folders (each is <action>/action.yaml) + dotfiles/dotfolders —
 # no other folders, so nothing is mistaken for an action.
-release-please-config.json        # release-please config (incl. extra-files: self-reference pin rewrites)
+release-please-config.json        # release-please config
 .release-please-manifest.json     # release-please version cursor
 .releaserc                        # semantic-release config — ONLY for the create-release self-test dry-run, NOT this repo's releases
 zizmor.yml                        # Action/workflow pinning policy
@@ -36,7 +36,7 @@ See [README.md](README.md) for the full catalogue of actions and reusable workfl
 
 | File | Purpose |
 |---|---|
-| `release-please-config.json` / `.release-please-manifest.json` | release-please — this repo's release driver + self-reference pin rewrites |
+| `release-please-config.json` / `.release-please-manifest.json` | release-please — this repo's release driver |
 | `.releaserc` | semantic-release config — retained ONLY for the `create-release` reusable-workflow self-test's dry-run |
 | `.mega-linter.yml` | MegaLinter config (disables SPELL_CSPELL) |
 | `.yamllint.yml` | YAML linting rules |
@@ -61,11 +61,11 @@ Because composite actions and reusable workflows now live together, one componen
 - **CI job → local action** (e.g. a `test-<action>` job): `uses: ./<action>` after `actions/checkout`. Works (the repo is checked out).
 - **Reusable workflow → co-located reusable workflow:** `uses: ./.github/workflows/<x>.yaml`. Works (same repo, same commit).
 - **Composite action → shared script:** invoke via `${{ github.action_path }}/…` (resolves at the calling ref, no pin). See `setup-agent-skills` / `update-agent-skills`.
-- **Reusable workflow → an action, OR composite action → a sibling composite action:** `./` does **NOT** work (a reusable workflow resolves `./` against the *caller's* checkout; a composite action cannot `uses:` a sibling by relative path). Use a full **tag pin** `devantler-tech/actions/<x>@vX.Y.Z` annotated with `# x-release-please-version`. **release-please rewrites that pin to the version being released** (`extra-files` in `release-please-config.json`), so each release tag references itself. **Never** hand-edit the version, **never** use `@main`/a floating major, and **never** put a SHA pin on a self-reference (release-please rewrites the semver, not a SHA).
+- **Reusable workflow → an action, OR composite action → a sibling composite action:** `./` does **NOT** work (a reusable workflow resolves `./` against the *caller's* checkout; a composite action cannot `uses:` a sibling by relative path). Use a full **commit-SHA pin** `devantler-tech/actions/<x>@<sha> # vX.Y.Z` — the same shape as a third-party action — and let Dependabot bump it after each release. A SHA self-reference cannot be zero-lag (a commit cannot embed its own SHA), so a freshly-released workflow references the *previous* release's composite SHA until the post-release Dependabot bump lands; that **one-release lag is the accepted trade-off**. **Why not tag pins:** a consumer repo with the `sha_pinning_required` Actions policy rejects every non-SHA ref resolved in its runs — *including these transitive self-references* (proven live 2026-07-03: platform's `Update Agent Skills`/`TODOs` scheduled runs failed on `devantler-tech/actions/<x>@v8.0.0`), and the org direction is SHA-pinning everywhere (.github#67). **Never** use `@main`/a floating major; when one release changes a reusable workflow AND a composite it calls in a coordinated way, call out in the PR that the composite side ships one release later.
 
-> **Repo policy exception (required for the above):** this repo has the `sha_pinning_required` Actions policy **disabled** so first-party **tag-pin** self-references are permitted. The org default *requires* SHA pins, which would forbid these tags — and a SHA self-reference cannot be zero-lag, because a commit cannot embed its own SHA (so a SHA self-ref could only ever name a *prior* release). Third-party actions remain SHA-pinned by convention and `zizmor`. If this exception is ever reverted, the self-references must move back to SHA pins + Dependabot bumping (accepting a one-release lag).
+> **Repo policy note (legacy of the retired tag pins):** this repo's `sha_pinning_required` Actions policy was **disabled** while self-references were tag-pinned. With self-references now SHA-pinned that exception is obsolete — re-enabling the policy is tracked in [#426](https://github.com/devantler-tech/actions/issues/426). Third-party actions remain SHA-pinned by convention and `zizmor`.
 >
-> **CodeQL must use advanced setup (same root cause):** CodeQL's `actions/unpinned-tag` query also flags the intentional first-party tag pins, and — unlike `zizmor` — it has **no by-owner allow**. So this repo runs CodeQL via **advanced setup** ([`.github/workflows/active-codeql.yaml`](.github/workflows/active-codeql.yaml) + [`.github/codeql/codeql-config.yml`](.github/codeql/codeql-config.yml)) whose config **excludes only `actions/unpinned-tag`** (every other CodeQL Actions security query still runs); `zizmor`'s by-owner `unpinned-uses` stays the action-pinning gate, so nothing is lost. **CodeQL default setup must stay disabled** — default and advanced setup are mutually exclusive, and default setup cannot drop a single query.
+> **CodeQL advanced setup (legacy of the retired tag pins):** CodeQL's `actions/unpinned-tag` query flagged the old first-party tag pins (and — unlike `zizmor` — has no by-owner allow), so this repo runs CodeQL via **advanced setup** ([`.github/workflows/active-codeql.yaml`](.github/workflows/active-codeql.yaml) + [`.github/codeql/codeql-config.yml`](.github/codeql/codeql-config.yml)) excluding only that query. With self-references SHA-pinned the exclusion is obsolete — reverting it is tracked in [#426](https://github.com/devantler-tech/actions/issues/426). Until that lands, keep default setup disabled (default and advanced setup are mutually exclusive).
 
 ### Releases & autonomy
 
@@ -84,7 +84,7 @@ Because composite actions and reusable workflows now live together, one componen
 ### All reusable workflows must
 
 1. **Use the `workflow_call` trigger** — this is what makes them reusable.
-2. **Pin all external actions to commit SHAs** — `uses: owner/repo@<sha> # <version>`; first-party self-references use the tag-pin + `# x-release-please-version` rule above.
+2. **Pin ALL actions to commit SHAs** — `uses: owner/repo@<sha> # <version>`; first-party self-references are SHA-pinned the same way (Dependabot bumps them one release behind — see the self-reference rule above).
 3. **Include `step-security/harden-runner`** as the first step of every job (`egress-policy: audit`).
 4. **Set `permissions: {}` at the workflow top level** — grant per-job.
 5. **Set `persist-credentials: false`** on `actions/checkout` unless the job pushes.
@@ -148,7 +148,7 @@ These conventions guide the autonomous **Daily AI Assistant** — and any agenti
 
 **Blast radius first:** a change to a composite action / reusable workflow affects **every consumer repo**. Prefer additive, backward-compatible changes; call out any breaking input/output change prominently and treat it as a deliberate decision the maintainer promotes (keep an alias where feasible).
 
-**Validate before any PR:** `actionlint` on every changed workflow/action (else a thorough YAML parse); confirm `uses:` refs resolve and are pinned/aligned; check `inputs`/`outputs`/`shell:` are declared; for reusable workflows keep `on: workflow_call` inputs/secrets backward-compatible. No app build here — YAML correctness + pinning is the gate. Keep third-party actions pinned to full-length commit SHAs; first-party self-references use the tag-pin rule above. Never weaken a security control to pass a check.
+**Validate before any PR:** `actionlint` on every changed workflow/action (else a thorough YAML parse); confirm `uses:` refs resolve and are pinned/aligned; check `inputs`/`outputs`/`shell:` are declared; for reusable workflows keep `on: workflow_call` inputs/secrets backward-compatible. No app build here — YAML correctness + pinning is the gate. Keep ALL actions — third-party AND first-party self-references — pinned to full-length commit SHAs (self-references trail by one release; see the self-reference rule above). Never weaken a security control to pass a check.
 
 **Tested invariants (don't silently regress):** some behaviours of a workflow are a *contract* consumers depend on, not an implementation detail — `validate-go-project.yaml`'s vuln-scan honoring a `.govulncheck-allow.txt` allowlist is the canonical one (it was silently lost across `v5.4.1`–`v5.4.4` when the gate swapped to an action with no `allow-file` input, wedging every consumer that had risk-accepted an advisory). These contracts are guarded by self-tests in `ci.yaml` (`test-govulncheck-allowlist-honored` / `test-govulncheck-strict-blocks` / `test-govulncheck-action-lockstep`, against the `.github/tests/govulncheck-allowlist/` fixture). **Any swap of the vuln-scan implementation — including back to the official `golang/govulncheck-action` once it gains an `allow-file`-equivalent input — must keep that guard green**; update the self-test in lockstep, never delete it to make a swap pass.
 
@@ -157,7 +157,7 @@ These conventions guide the autonomous **Daily AI Assistant** — and any agenti
 **Task menu** (1–2 items/run; high care):
 
 - **Triage** new issues/PRs; one insightful comment on the oldest un-commented item.
-- **Action/version hygiene:** keep third-party actions pinned & aligned; bundle Dependabot `github_actions` PRs; flag majors. (First-party self-reference pins are owned by release-please — do not hand-bump them.)
+- **Action/version hygiene:** keep third-party actions pinned & aligned; bundle Dependabot `github_actions` PRs; flag majors. (First-party self-reference pins are bumped by Dependabot after each release like any other action pin.)
 - **Workflow health & dedup:** consolidate duplicated steps, split overgrown jobs, improve caching, remove dead workflows — backward-compatible, one concern per draft PR, `actionlint`-clean.
 - **Consistency** between actions and reusable workflows and with how consumer repos call them.
 - **Maintain your own PRs:** fix CI you caused, resolve conflicts.

@@ -4,14 +4,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "extra-files": [
-        { "type": "generic", "path": ".github/workflows/dependency-review.yaml" },
-        { "type": "generic", "path": ".github/workflows/validate-go-project.yaml" },
-        { "type": "generic", "path": ".github/workflows/update-agent-skills.yaml" },
-        { "type": "generic", "path": ".github/workflows/run-dotnet-tests.yaml" },
-        { "type": "generic", "path": ".github/workflows/scan-for-todo-comments.yaml" },
-        { "type": "generic", "path": "run-dotnet-tests/action.yaml" }
-      ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },
