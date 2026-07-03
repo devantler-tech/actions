@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.0.1](https://github.com/devantler-tech/actions/compare/v8.0.0...v8.0.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* resolve first-party self-references at the same commit ([#427](https://github.com/devantler-tech/actions/issues/427)) ([96b8f82](https://github.com/devantler-tech/actions/commit/96b8f82c71f7837eed166f65b173019b164676c6))
+
 ## [8.0.0](https://github.com/devantler-tech/actions/compare/v7.1.3...v8.0.0) (2026-07-02)
 
 
