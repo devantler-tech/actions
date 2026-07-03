@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.0.2](https://github.com/devantler-tech/actions/compare/v8.0.1...v8.0.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **scan-for-todo-comments:** restore self-checkout for post-cleanup ([#437](https://github.com/devantler-tech/actions/issues/437)) ([6f07366](https://github.com/devantler-tech/actions/commit/6f07366d6367e420f129bf73b1d9bdc8b54525b3))
+
 ## [8.0.1](https://github.com/devantler-tech/actions/compare/v8.0.0...v8.0.1) (2026-07-03)
 
 
