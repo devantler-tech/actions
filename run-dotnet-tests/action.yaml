@@ -48,11 +48,19 @@ runs:
         reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage-merged -reporttypes:Cobertura
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+    # Inlines the sibling upload-coverage wrapper (one pinned step): a composite action cannot
+    # self-reference its own repo at the same commit (`uses:` takes no expressions, and
+    # github.action_* is unreliable when this action is invoked via a local path), so calling
+    # the third-party action directly is the only zero-lag option. Keep the inputs in sync
+    # with upload-coverage/action.yaml.
     - name: 📊 Upload Code Coverage to GitHub Code Quality
       if: runner.os == 'Linux'
       continue-on-error: true
-      uses: devantler-tech/actions/upload-coverage@v8.0.0 # x-release-please-version
+      uses: actions/upload-code-coverage@b51da2c3c1b23e04d2d6477cfc34350b1f5cd3e9 # v1.2.0
       with:
         file: ${{ inputs.working-directory }}/coverage-merged/Cobertura.xml
         language: C#
         label: code-coverage/dotnet
+        # best-effort during the Code Quality preview — never break .NET CI on upload hiccups.
+        fail-on-error: "false"
+        token: ${{ github.token }}

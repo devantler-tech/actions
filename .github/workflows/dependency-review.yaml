@@ -61,8 +61,7 @@ jobs:
     # supported events and let the job no-op (skipped → green) everywhere else. This keeps the
     # reusable workflow safe to wire into a push-triggered CI without breaking it.
     # Also skip release-please PRs (head branch `release-please--*`): they only bump versions +
-    # the changelog (no dependency changes to review) and rewrite x-release-please-version
-    # self-pins to a tag that does not exist until the release merges. A skipped run still
+    # the changelog (no dependency changes to review). A skipped run still
     # satisfies the required-workflow rule (skipped → green).
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !startsWith(github.head_ref, 'release-please--') }}
     permissions:
@@ -124,8 +123,20 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
+      # Self-reference: check out THIS workflow's own repo at the exact commit it is running
+      # from (job.workflow_repository / job.workflow_sha), then call the sibling action by
+      # local path. Same-commit resolution — no release lag, no tag refs; consumer SHA-pinning
+      # policies see only the pinned actions/checkout plus a local `./` path.
+      - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
       - name: 🛡️ Dependency Review
-        uses: devantler-tech/actions/dependency-review@v8.0.0 # x-release-please-version
+        uses: ./.devantler-tech-actions/dependency-review
         with:
           fail-on-severity: ${{ steps.cfg.outputs.fail-on-severity }}
           fail-on-scopes: ${{ steps.cfg.outputs.fail-on-scopes }}
