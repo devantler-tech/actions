@@ -1402,6 +1402,51 @@ jobs:
           fi
           echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
 
+  # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
+  # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
+  # definitions together. This guard treats upload-coverage/action.yaml as the source of
+  # truth and asserts the inlined step still pins the SAME action SHA and passes the SAME
+  # input set, so a bump or input change to the wrapper cannot silently leave the inline
+  # copy behind (mirrors test-govulncheck-action-lockstep).
+  test-run-dotnet-tests-coverage-inline-lockstep:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Run .NET Tests - Coverage Inline Lockstep"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 🔒 Assert the inlined coverage step matches upload-coverage/action.yaml
+        shell: bash
+        env:
+          WRAPPER: upload-coverage/action.yaml
+          INLINE: run-dotnet-tests/action.yaml
+        run: |
+          set -euo pipefail
+          # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
+          wrapper_uses="$(yq -r '.runs.steps[0].uses' "$WRAPPER")"
+          inline_uses="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].uses' "$INLINE")"
+          if [[ "$inline_uses" != "$wrapper_uses" ]]; then
+            echo "::error file=$INLINE::the inlined coverage-upload step pins '$inline_uses' but $WRAPPER pins '$wrapper_uses'. Update the inline step to match — $WRAPPER is the source of truth."
+            exit 1
+          fi
+          wrapper_inputs="$(yq -r '.runs.steps[0].with | keys | .[]' "$WRAPPER" | sort)"
+          inline_inputs="$(yq -r '[.runs.steps[] | select((.uses // "") | contains("upload-code-coverage"))] | .[0].with | keys | .[]' "$INLINE" | sort)"
+          if [[ "$inline_inputs" != "$wrapper_inputs" ]]; then
+            echo "::error file=$INLINE::the inlined coverage-upload step passes inputs [$(tr '\n' ' ' <<<"$inline_inputs")] but $WRAPPER's step passes [$(tr '\n' ' ' <<<"$wrapper_inputs")]. Keep the input set in lockstep — $WRAPPER is the source of truth."
+            exit 1
+          fi
+          echo "run-dotnet-tests inlined coverage step matches $WRAPPER (uses + input set) ✅"
+
   # ── zizmor ──────────────────────────────────────────────────
   zizmor:
     runs-on: ubuntu-latest
@@ -2251,6 +2296,7 @@ jobs:
       - test-validate-go-gate-lockstep
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
+      - test-run-dotnet-tests-coverage-inline-lockstep
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2328,3 +2374,4 @@ jobs:
             ${{ needs.test-validate-go-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
+            ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
