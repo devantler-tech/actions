@@ -42,8 +42,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # Self-reference: check out THIS workflow's own repo at the exact commit it is running
+      # from (job.workflow_repository / job.workflow_sha), then call the sibling action by
+      # local path. Same-commit resolution — no release lag, no tag refs; consumer SHA-pinning
+      # policies see only the pinned actions/checkout plus a local `./` path.
+      - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
       - name: 🧪 Test .NET solution or project
-        uses: devantler-tech/actions/run-dotnet-tests@061b345a7351b0caf23055caea63ccd08b75e20e # v8.0.0
+        uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: ${{ inputs.working-directory || '.' }}
