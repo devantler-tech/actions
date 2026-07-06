@@ -492,7 +492,7 @@ jobs:
 
       - name: 🧹 Lint
         id: ml
-        uses: oxsecurity/megalinter/flavors/go@0e3ce9b9c8c10effb9b269509cc47ca17cae31c7 # v9.5.0
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
         env:
           DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
