@@ -34,8 +34,9 @@ runs:
       with:
         persist-credentials: false
     # Floor is v5.1.15: earlier releases crash the whole workflow with
-    # `KeyError: 'web_url'` when a removed TODO matches multiple existing issues
-    # (GitLab-only field in the ambiguous-match diagnostic). Never downgrade past it.
+    # `KeyError: 'web_url'` when a removed to-do marker matches multiple existing
+    # issues (GitLab-only field in the ambiguous-match diagnostic). Never downgrade
+    # past it. (Lowercase "to-do" avoids this action self-matching its own comment.)
     - uses: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5.1.15
       with:
         AUTO_ASSIGN: true
