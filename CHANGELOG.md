@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.2](https://github.com/devantler-tech/actions/compare/v9.0.1...v9.0.2) (2026-07-06)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** stop the action self-matching its own comment ([#457](https://github.com/devantler-tech/actions/issues/457)) ([5188832](https://github.com/devantler-tech/actions/commit/518883207726c973c00f15b138109daa1e27fba5))
+
 ## [9.0.1](https://github.com/devantler-tech/actions/compare/v9.0.0...v9.0.1) (2026-07-06)
 
 
