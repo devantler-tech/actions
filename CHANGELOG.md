@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.1](https://github.com/devantler-tech/actions/compare/v9.0.0...v9.0.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** re-pin todo-to-issue-action to v5.1.15 ([#451](https://github.com/devantler-tech/actions/issues/451)) ([6415df0](https://github.com/devantler-tech/actions/commit/6415df0803ed03600ceb77f3725b678254469459)), closes [#222](https://github.com/devantler-tech/actions/issues/222)
+
 ## [9.0.0](https://github.com/devantler-tech/actions/compare/v8.0.2...v9.0.0) (2026-07-03)
 
 
