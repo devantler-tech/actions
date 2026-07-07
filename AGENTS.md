@@ -110,6 +110,20 @@ on:
 
 Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/workflows/ci.yaml): `test-<action>` jobs call the action via `uses: ./<action>`; `[Test] <Workflow> - <Scenario>` jobs call the workflow via `uses: ./.github/workflows/<x>.yaml` with safe parameters (dry-run, fixtures from `.github/tests/` or `.github/fixtures/` — never destructive). Every new action/workflow gets a job, wired into the `ci-required-checks` job (display `CI - Required Checks`) in **two** places: the `needs:` list **and** `${{ needs.<job-id>.result }}` in the `job-results` input of its `./aggregate-job-checks` step. `ci-required-checks` runs `if: ${{ always() }}` and fails if any listed result is not `success`, so it is the single required status check — a job added to `needs:` but omitted from `job-results` would have its failure silently ignored. The `lint-ci-coverage-parity` job **guards this**: it fails the PR if any composite action lacks a `uses: ./<action>` test job, if any reusable workflow (`workflow_call`) lacks a `uses: ./.github/workflows/<x>.yaml` test job, or if `ci-required-checks.needs` and the `job-results` input ever name different sets of jobs (so the silent-ignore footgun can't recur). When a reusable-workflow test-job id would collide with an action's (`test-dependency-review`, `test-run-dotnet-tests`), the workflow job carries a `-workflow` suffix.
 
+### Shipping a new capability behind an opt-in flag (feature-flag-first)
+
+A new job/step/behaviour must not go live for every consumer the moment it merges. Ship it as the CI analog of a release flag — an **opt-in input, default-off, backward-compatible** — so it can be validated on a few callers before broad rollout (the portfolio-wide **feature-flag-first delivery** contract in the monorepo `AGENTS.md`; [monorepo#2059](https://github.com/devantler-tech/monorepo/issues/2059)):
+
+1. **Declare the gate** on the reusable workflow / composite action: `inputs.<enable-x>: { type: boolean, default: false }` (composite-action inputs are always strings, so use `default: 'false'`).
+2. **Guard the new job/step** with `if: ${{ inputs.<enable-x> }}`. Existing callers that omit the input get `false` → **zero behaviour change**; only callers that pass `true` opt in.
+3. **Roll out caller-by-caller**, then **flip the default to `true`** once proven, then **remove the input** when the capability is unconditional. A release flag is short-lived — no permanent dead inputs (file the removal when the flag is born; long-lived is only for kill-switch/permissioning gates).
+
+**Gotchas:**
+
+- `workflow_dispatch` passes booleans as **strings** while `workflow_call` passes real **booleans** — a workflow triggered by both must normalize before comparing: `if: ${{ inputs.<enable-x> == true || inputs.<enable-x> == 'true' }}`.
+- You **cannot** wrap `if:` around an individual `with:` input — gate the whole **step** (or **job**), or select the value with a ternary in the `with:` value (`${{ inputs.<enable-x> && 'a' || 'b' }}`).
+- **Test both states.** Per the feature-flag-first "test both states" rule, cover the flag **off** (default) and **on** with `[Test]` jobs (see *Test jobs* above) — a flag whose off-path is untested can regress silently.
+
 ## Authentication Patterns
 
 GitHub App tokens (not `GITHUB_TOKEN`) are used for operations that must trigger other workflows or bypass branch protection:
