@@ -64,7 +64,7 @@ jobs:
           labels: dependencies,automation
 ```
 
-For a batteries-included version of the above, use the reusable workflow [`devantler-tech/reusable-workflows/.github/workflows/update-agent-skills.yaml`](https://github.com/devantler-tech/reusable-workflows/blob/main/.github/workflows/update-agent-skills.yaml).
+For a batteries-included version of the above, use the reusable workflow [`devantler-tech/actions/.github/workflows/update-agent-skills.yaml`](https://github.com/devantler-tech/actions/blob/main/.github/workflows/update-agent-skills.yaml).
 
 ### Plugin directory layout
 
