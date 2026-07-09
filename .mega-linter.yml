@@ -1,2 +1,7 @@
 DISABLE_LINTERS:
+  # Dedicated validate-go-project jobs already run golangci-lint and govulncheck
+  # after actions/setup-go honors the module's go.mod. MegaLinter's container can
+  # lag patched Go releases, turning valid patched modules into operational failures.
+  - GO_GOLANGCI_LINT
+  - REPOSITORY_GRYPE
   - SPELL_CSPELL
