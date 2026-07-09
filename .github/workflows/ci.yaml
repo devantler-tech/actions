@@ -82,6 +82,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 🔒 Assert TODO action retries locally
+        shell: bash
+        run: |
+          action_file="$GITHUB_WORKSPACE/create-issues-from-todos/action.yaml"
+          if grep -qF "Wandalen/wretry.action" "$action_file"; then
+            echo "::error::create-issues-from-todos must not depend on the external retry wrapper; it expands to an unpinned nested action ref in consumers with full-SHA policies."
+            exit 1
+          fi
+          grep -qF ".scripts/retry.sh" "$action_file" || {
+            echo "::error::create-issues-from-todos must use the bundled retry helper."
+            exit 1
+          }
+          grep -qF "ghcr.io/alstr/todo-to-issue-action:v5.1.15" "$action_file" || {
+            echo "::error::create-issues-from-todos must keep the pinned todo-to-issue container image floor."
+            exit 1
+          }
+
       - name: 🧪 Run create-issues-from-todos
         uses: ./create-issues-from-todos
         with:

@@ -40,14 +40,55 @@ runs:
     # Wrapped in a retry: alstr/todo-to-issue-action does an UNAUTHENTICATED fetch of
     # github/linguist's languages.yml/syntax.json from raw.githubusercontent.com on
     # every run and aborts the whole step on any non-200 (devantler-tech/actions#483)
-    # — a transient CDN 429/5xx must not fail the job outright.
-    - uses: Wandalen/wretry.action@e68c23e6309f2871ca8ae4763e7629b9c258e1ea # v3.8.0
-      with:
-        action: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5.1.15
-        attempt_limit: 3
-        attempt_delay: 5000
-        with: |
-          AUTO_ASSIGN: true
-          CLOSE_ISSUES: true
-          PROJECT: ${{ inputs.project }}
-          PROJECTS_SECRET: ${{ steps.app-token.outputs.token }}
+    # — a transient CDN 429/5xx must not fail the job outright. Keep the retry
+    # local instead of wrapping a docker action with another marketplace action:
+    # some consumers reject the wrapper's unpinned nested implementation ref at
+    # job setup under full-SHA policies.
+    - name: 📝 Create issues from TODOs
+      shell: bash
+      env:
+        INPUT_REPO: ${{ github.repository }}
+        INPUT_BEFORE: ${{ github.event.before || github.base_ref }}
+        INPUT_COMMITS: ${{ toJSON(github.event.commits) }}
+        INPUT_DIFF_URL: ${{ github.event.pull_request.diff_url }}
+        INPUT_SHA: ${{ github.sha }}
+        INPUT_TOKEN: ${{ github.token }}
+        INPUT_CLOSE_ISSUES: "true"
+        INPUT_AUTO_P: "true"
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_PROJECTS_SECRET: ${{ steps.app-token.outputs.token }}
+        INPUT_AUTO_ASSIGN: "true"
+        INPUT_ACTOR: ${{ github.actor }}
+        INPUT_GITHUB_URL: ${{ github.api_url }}
+        INPUT_GITHUB_SERVER_URL: ${{ github.server_url }}
+        INPUT_ESCAPE: "true"
+        INPUT_NO_STANDARD: "false"
+        INPUT_INSERT_ISSUE_URLS: "false"
+        TODO_TO_ISSUE_IMAGE: ghcr.io/alstr/todo-to-issue-action:v5.1.15
+      run: |
+        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+
+        retry docker run --rm \
+          --workdir /github/workspace \
+          --volume "$GITHUB_WORKSPACE:/github/workspace" \
+          --env GITHUB_ACTIONS=true \
+          --env GITHUB_WORKSPACE=/github/workspace \
+          --env CI=true \
+          --env INPUT_REPO \
+          --env INPUT_BEFORE \
+          --env INPUT_COMMITS \
+          --env INPUT_DIFF_URL \
+          --env INPUT_SHA \
+          --env INPUT_TOKEN \
+          --env INPUT_CLOSE_ISSUES \
+          --env INPUT_AUTO_P \
+          --env INPUT_PROJECT \
+          --env INPUT_PROJECTS_SECRET \
+          --env INPUT_AUTO_ASSIGN \
+          --env INPUT_ACTOR \
+          --env INPUT_GITHUB_URL \
+          --env INPUT_GITHUB_SERVER_URL \
+          --env INPUT_ESCAPE \
+          --env INPUT_NO_STANDARD \
+          --env INPUT_INSERT_ISSUE_URLS \
+          "$TODO_TO_ISSUE_IMAGE"
