@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.4](https://github.com/devantler-tech/actions/compare/v9.0.3...v9.0.4) (2026-07-09)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** retry-harden raw.githubusercontent.com fetches ([#484](https://github.com/devantler-tech/actions/issues/484)) ([9a04d1a](https://github.com/devantler-tech/actions/commit/9a04d1aa581c6698bf4fb81ecdf0efe37102a49a)), closes [#483](https://github.com/devantler-tech/actions/issues/483)
+
 ## [9.0.3](https://github.com/devantler-tech/actions/compare/v9.0.2...v9.0.3) (2026-07-09)
 
 
