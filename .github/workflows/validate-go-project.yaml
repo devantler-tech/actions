@@ -669,7 +669,7 @@ jobs:
           go test ./...
 
       - name: 📤 Save kubeconform schema cache
-        if: always() && steps.kubeconform-cache.outputs.cache-hit != 'true'
+        if: "!cancelled() && steps.kubeconform-cache.outputs.cache-hit != 'true'"
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
@@ -751,7 +751,7 @@ jobs:
           go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: 📤 Save kubeconform schema cache
-        if: always() && steps.kubeconform-cache.outputs.cache-hit != 'true'
+        if: "!cancelled() && steps.kubeconform-cache.outputs.cache-hit != 'true'"
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
