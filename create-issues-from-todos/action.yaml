@@ -37,9 +37,17 @@ runs:
     # `KeyError: 'web_url'` when a removed to-do marker matches multiple existing
     # issues (GitLab-only field in the ambiguous-match diagnostic). Never downgrade
     # past it. (Lowercase "to-do" avoids this action self-matching its own comment.)
-    - uses: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5.1.15
+    # Wrapped in a retry: alstr/todo-to-issue-action does an UNAUTHENTICATED fetch of
+    # github/linguist's languages.yml/syntax.json from raw.githubusercontent.com on
+    # every run and aborts the whole step on any non-200 (devantler-tech/actions#483)
+    # — a transient CDN 429/5xx must not fail the job outright.
+    - uses: Wandalen/wretry.action@e68c23e6309f2871ca8ae4763e7629b9c258e1ea # v3.8.0
       with:
-        AUTO_ASSIGN: true
-        CLOSE_ISSUES: true
-        PROJECT: ${{ inputs.project }}
-        PROJECTS_SECRET: ${{ steps.app-token.outputs.token }}
+        action: alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5.1.15
+        attempt_limit: 3
+        attempt_delay: 5000
+        with: |
+          AUTO_ASSIGN: true
+          CLOSE_ISSUES: true
+          PROJECT: ${{ inputs.project }}
+          PROJECTS_SECRET: ${{ steps.app-token.outputs.token }}
