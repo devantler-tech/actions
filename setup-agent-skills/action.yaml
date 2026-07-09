@@ -62,6 +62,7 @@ runs:
         # check (reliability pillar, #247). Same shared helper + path resolution as
         # the gh bootstrap above.
         retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+        install_script="${GITHUB_ACTION_PATH}/../.scripts/gh-skill-install.sh"
 
         if [ -z "${INPUT_SKILLS//[[:space:]]/}" ]; then
           echo "::error::'skills' input is empty. Provide a newline-separated list of '<owner/repo> <skill>[@pin]' entries."
@@ -106,10 +107,10 @@ runs:
           for agent in "${agents[@]}"; do
             if [ -n "$pin" ]; then
               echo "Installing ${src}/${name}@${pin} (agent=${agent}, scope=${INPUT_SCOPE})..."
-              retry gh skill install "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE" --pin "$pin"
+              retry bash "$install_script" "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE" --pin "$pin"
             else
               echo "Installing ${src}/${name} (agent=${agent}, scope=${INPUT_SCOPE})..."
-              retry gh skill install "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE"
+              retry bash "$install_script" "$src" "$name" --agent "$agent" --scope "$INPUT_SCOPE"
             fi
           done
           # Record each skill once, regardless of how many agents it was installed for.
