@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.5](https://github.com/devantler-tech/actions/compare/v9.0.4...v9.0.5) (2026-07-09)
+
+
+### Bug Fixes
+
+* **setup-agent-skills:** recover already-installed retries ([#513](https://github.com/devantler-tech/actions/issues/513)) ([290ff61](https://github.com/devantler-tech/actions/commit/290ff61ed7c929ddb744871810142210ba4428cc))
+
 ## [9.0.4](https://github.com/devantler-tech/actions/compare/v9.0.3...v9.0.4) (2026-07-09)
 
 
