@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.3](https://github.com/devantler-tech/actions/compare/v9.0.2...v9.0.3) (2026-07-09)
+
+
+### Bug Fixes
+
+* **ci:** cache kubeconform schemas across Test/Coverage jobs ([#476](https://github.com/devantler-tech/actions/issues/476)) ([ee2354d](https://github.com/devantler-tech/actions/commit/ee2354d9a1bad3c2fe593d1282e177be9091a3be))
+
 ## [9.0.2](https://github.com/devantler-tech/actions/compare/v9.0.1...v9.0.2) (2026-07-06)
 
 
