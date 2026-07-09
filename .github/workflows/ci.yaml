@@ -956,6 +956,22 @@ jobs:
 
           rm -rf "$okbin" "$badver" "$noskill" "$win" "$badarch" "$oldskill" "$nounzip"
 
+  # ── .scripts/gh-skill-install.sh (shared idempotent install helper) ─
+  test-gh-skill-install-script:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Exercise gh-skill-install.sh (already-installed recovery)
+        shell: bash
+        run: bash .github/tests/gh-skill-install-script.sh
+
   # ── update-agent-skills ───────────────────────────────────
   test-update-agent-skills-noop:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -2259,6 +2275,7 @@ jobs:
       - test-setup-ksail-cli
       - test-retry-script
       - test-ensure-gh-skill-script
+      - test-gh-skill-install-script
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
       - test-update-agent-skills-missing-dir
@@ -2337,6 +2354,7 @@ jobs:
             ${{ needs.test-setup-ksail-cli.result }}
             ${{ needs.test-retry-script.result }}
             ${{ needs.test-ensure-gh-skill-script.result }}
+            ${{ needs.test-gh-skill-install-script.result }}
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
             ${{ needs.test-update-agent-skills-missing-dir.result }}
