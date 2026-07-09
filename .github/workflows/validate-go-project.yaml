@@ -655,9 +655,9 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
-          key: kubeconform-schema-cache-v1-${{ github.run_id }}
+          key: kubeconform-schema-cache-v1-${{ github.job }}-${{ github.run_id }}
           restore-keys: |
-            kubeconform-schema-cache-v1-
+            kubeconform-schema-cache-v1-${{ github.job }}-
 
       - name: 🧪 Test
         run: |
@@ -725,9 +725,9 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
-          key: kubeconform-schema-cache-v1-${{ github.run_id }}
+          key: kubeconform-schema-cache-v1-${{ github.job }}-${{ github.run_id }}
           restore-keys: |
-            kubeconform-schema-cache-v1-
+            kubeconform-schema-cache-v1-${{ github.job }}-
 
       - name: 👨🏻‍🔧 Enable covdata (temp) see https://github.com/golang/go/issues/75031
         run: go env -w GOTOOLCHAIN=go1.26.0+auto
