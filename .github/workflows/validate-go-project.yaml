@@ -648,11 +648,16 @@ jobs:
         # raw.githubusercontent.com/yannh/kubernetes-json-schema on every cold run —
         # with no persistent cache across CI jobs, every job re-fetched every schema,
         # which is what tripped upstream 429 rate-limiting across the whole matrix
-        # (portfolio-wide 2026-07-09 incident). This restores (and, at job end,
-        # re-saves) the local cache dir ksail's own kubeconform client already builds
-        # via `validator.Opts.Cache` — no consumer-side change needed. Harmless no-op
-        # for repos that never populate this path.
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        # (portfolio-wide 2026-07-09 incident). This restores the local cache dir
+        # ksail's own kubeconform client already builds via `validator.Opts.Cache` —
+        # no consumer-side change needed; harmless no-op for repos that never
+        # populate this path. Restore/save are split (rather than a single
+        # `actions/cache` step) so the save below can run with `if: always()` — the
+        # Test step below is exactly what can fail on an uncached/rate-limited
+        # fetch, and a save gated on job success would then never persist the
+        # schemas it did fetch before failing.
+        id: kubeconform-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
           key: kubeconform-schema-cache-v1-${{ github.job }}-${{ github.run_id }}
@@ -662,6 +667,13 @@ jobs:
       - name: 🧪 Test
         run: |
           go test ./...
+
+      - name: 📤 Save kubeconform schema cache
+        if: always() && steps.kubeconform-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/ksail/kubeconform
+          key: ${{ steps.kubeconform-cache.outputs.cache-primary-key }}
 
   coverage:
     name: 📊 Code Coverage
@@ -721,8 +733,10 @@ jobs:
 
       - name: 📥 Restore kubeconform schema cache
         # See the identical step in the Test job above for the full rationale
-        # (raw.githubusercontent.com 429 rate-limiting, portfolio-wide 2026-07-09).
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        # (raw.githubusercontent.com 429 rate-limiting, portfolio-wide 2026-07-09;
+        # restore/save split so the save can run with if: always()).
+        id: kubeconform-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: ~/.cache/ksail/kubeconform
           key: kubeconform-schema-cache-v1-${{ github.job }}-${{ github.run_id }}
@@ -735,6 +749,13 @@ jobs:
       - name: 📄 Generate coverage
         run: |
           go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: 📤 Save kubeconform schema cache
+        if: always() && steps.kubeconform-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/ksail/kubeconform
+          key: ${{ steps.kubeconform-cache.outputs.cache-primary-key }}
 
       # best-effort: coverage reporting is a preview feature and must never block a Go PR. This job
       # runs on every Go PR org-wide via the required-workflow ruleset (pinned to this repo's main).
