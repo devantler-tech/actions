@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.6](https://github.com/devantler-tech/actions/compare/v9.0.5...v9.0.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** avoid unpinned retry wrapper ([#518](https://github.com/devantler-tech/actions/issues/518)) ([9a54ed8](https://github.com/devantler-tech/actions/commit/9a54ed88f293d370ba22a3451965a206a176a845))
+
 ## [9.0.5](https://github.com/devantler-tech/actions/compare/v9.0.4...v9.0.5) (2026-07-09)
 
 
