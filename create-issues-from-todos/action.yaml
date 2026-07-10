@@ -30,6 +30,16 @@ runs:
         # to organization projects instead of inheriting the App installation's
         # blanket permissions (zizmor github-app).
         permission-organization-projects: write
+    # The checkout below re-syncs the workspace, and its git clean deletes the
+    # untracked self-checkout dir the caller placed at ${GITHUB_ACTION_PATH}/..
+    # (that deletion is intended — it hides the actions sources from the scan), but
+    # it also removes the shared .scripts/retry.sh the scan step sources. Copy the
+    # helper OUT of the workspace first (RUNNER_TEMP is never git-cleaned nor mounted
+    # into the scan container) so the retry wrapper still resolves after the checkout
+    # (devantler-tech/actions#526).
+    - name: 🧰 Stash retry helper before the checkout below wipes it
+      shell: bash
+      run: cp "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "${RUNNER_TEMP}/create-issues-retry.sh"
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
@@ -66,7 +76,7 @@ runs:
         INPUT_INSERT_ISSUE_URLS: "false"
         TODO_TO_ISSUE_IMAGE: ghcr.io/alstr/todo-to-issue-action:v5.1.15
       run: |
-        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+        retry() { bash "${RUNNER_TEMP}/create-issues-retry.sh" "$@"; }
 
         retry docker run --rm \
           --workdir /github/workspace \
