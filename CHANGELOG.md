@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.7](https://github.com/devantler-tech/actions/compare/v9.0.6...v9.0.7) (2026-07-10)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** preserve retry helper before checkout ([#523](https://github.com/devantler-tech/actions/issues/523)) ([be0a6cd](https://github.com/devantler-tech/actions/commit/be0a6cda17eabab73a2bf26a6519cf71bf358bb5))
+
 ## [9.0.6](https://github.com/devantler-tech/actions/compare/v9.0.5...v9.0.6) (2026-07-09)
 
 
