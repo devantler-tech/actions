@@ -30,6 +30,12 @@ runs:
         # to organization projects instead of inheriting the App installation's
         # blanket permissions (zizmor github-app).
         permission-organization-projects: write
+    - name: 🧰 Preserve retry helper
+      shell: bash
+      run: |
+        retry_helper="${RUNNER_TEMP}/devantler-actions-retry.sh"
+        cp "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$retry_helper"
+        chmod +x "$retry_helper"
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
@@ -66,7 +72,7 @@ runs:
         INPUT_INSERT_ISSUE_URLS: "false"
         TODO_TO_ISSUE_IMAGE: ghcr.io/alstr/todo-to-issue-action:v5.1.15
       run: |
-        retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
+        retry() { bash "${RUNNER_TEMP}/devantler-actions-retry.sh" "$@"; }
 
         retry docker run --rm \
           --workdir /github/workspace \
