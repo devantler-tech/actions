@@ -94,6 +94,14 @@ jobs:
             echo "::error::create-issues-from-todos must use the bundled retry helper."
             exit 1
           }
+          grep -qF "retry_helper=\"\${RUNNER_TEMP}/devantler-actions-retry.sh\"" "$action_file" || {
+            echo "::error::create-issues-from-todos must preserve retry.sh outside the action checkout."
+            exit 1
+          }
+          grep -qF "retry() { bash \"\${RUNNER_TEMP}/devantler-actions-retry.sh\" \"\$@\"; }" "$action_file" || {
+            echo "::error::create-issues-from-todos must invoke the preserved retry helper."
+            exit 1
+          }
           grep -qF "ghcr.io/alstr/todo-to-issue-action:v5.1.15" "$action_file" || {
             echo "::error::create-issues-from-todos must keep the pinned todo-to-issue container image floor."
             exit 1
