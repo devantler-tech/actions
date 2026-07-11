@@ -203,7 +203,7 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from trusted bots and maintainers.
+[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on non-draft pull requests authored by trusted single-author bots (dependabot, renovate, github-actions, ksail-bot). Human-authored PRs are excluded by design — they are merged directly after review instead, so the App approval can never satisfy a human PR's required-review gate.
 
 #### Usage
 

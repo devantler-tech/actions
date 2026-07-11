@@ -20,7 +20,17 @@ jobs:
       pull-requests: write
       contents: write
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    # Auto-merge is reserved for trusted single-author bots: an App approval
+    # plus --auto on a human-authored PR would satisfy the required-review
+    # gate and merge it on green CI, bypassing the review a human PR must
+    # get first. Human-authored promoted PRs are merged directly instead
+    # (exact-login match; a skipped job satisfies the required workflow the
+    # same way the draft/merge_group skips already do).
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+          !github.event.pull_request.draft &&
+          contains(fromJSON('["dependabot[bot]", "renovate[bot]", "github-actions[bot]", "ksail-bot[bot]"]'),
+                   github.event.pull_request.user.login) }}
 
     steps:
       - name: 🛡️ Harden runner
