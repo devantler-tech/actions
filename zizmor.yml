@@ -2,9 +2,11 @@ rules:
   unpinned-uses:
     config:
       policies:
-        actions/*: any
-        github/*: any
-        devantler-tech/*: any
+        # Every remote action — first-party included — must be pinned to a
+        # full-length commit SHA. The by-owner `any` allowances (actions/*,
+        # github/*, devantler-tech/*) existed for the retired first-party tag
+        # pins; self-references now resolve by local path after the same-commit
+        # self-checkout, and every remote ref is already hash-pinned (#426).
         "*": hash-pin
   # excessive-permissions: kept disabled. The workflows already follow least
   # privilege: ci.yaml and the release/label-sync callers set a top-level
