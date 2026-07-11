@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.9](https://github.com/devantler-tech/actions/compare/v9.0.8...v9.0.9) (2026-07-11)
+
+
+### Bug Fixes
+
+* **auto-merge:** restrict privileged workflow to trusted bots ([#546](https://github.com/devantler-tech/actions/issues/546)) ([5a647d9](https://github.com/devantler-tech/actions/commit/5a647d98319fce3ee7abb7c9d9ed9e2870fccb52))
+
 ## [9.0.8](https://github.com/devantler-tech/actions/compare/v9.0.7...v9.0.8) (2026-07-11)
 
 
