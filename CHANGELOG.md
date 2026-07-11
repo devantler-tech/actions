@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.8](https://github.com/devantler-tech/actions/compare/v9.0.7...v9.0.8) (2026-07-11)
+
+
+### Continuous Integration
+
+* revert tag-pin accommodations in CodeQL and zizmor configs ([#541](https://github.com/devantler-tech/actions/issues/541)) ([43773f2](https://github.com/devantler-tech/actions/commit/43773f23b3c7e84228ba2f440f24456f1217c2a8))
+
 ## [9.0.7](https://github.com/devantler-tech/actions/compare/v9.0.6...v9.0.7) (2026-07-10)
 
 
