@@ -1797,6 +1797,26 @@ jobs:
       - name: 🧪 Verify privileged author gate
         run: bash .github/tests/test-enable-auto-merge-author-gate.sh
 
+  test-enable-auto-merge-pentad-gate:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Enable Auto-Merge - Pentad Gate"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Verify fail-closed review/pre-merge gate
+        run: bash .github/tests/test-enable-auto-merge-pentad-gate.sh
+
   test-create-release:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Create Release - Dry Run"
@@ -2344,6 +2364,7 @@ jobs:
       - test-run-dotnet-tests-workflow
       - test-enable-auto-merge
       - test-enable-auto-merge-author-gate
+      - test-enable-auto-merge-pentad-gate
       - test-create-release
       - test-deploy-github-pages
       - test-publish-dotnet-library
@@ -2424,6 +2445,7 @@ jobs:
             ${{ needs.test-run-dotnet-tests-workflow.result }}
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
+            ${{ needs.test-enable-auto-merge-pentad-gate.result }}
             ${{ needs.test-create-release.result }}
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}

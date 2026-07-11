@@ -203,7 +203,7 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from trusted bots and maintainers.
+[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from an exact-match allowlist of trusted single-author bots — and only once a fail-closed gate proves, at the PR's **current head**, both a green review (a CodeRabbit `APPROVED` review or a Codex clean pass) and a green CodeRabbit pre-merge result (`.scripts/check-merge-gates.sh`). Missing, stale, mixed, or unparseable review/pre-merge state skips arming (the portfolio's maintenance agent arms such PRs after its own live checks).
 
 #### Usage
 

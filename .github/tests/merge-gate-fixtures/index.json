@@ -1,0 +1,54 @@
+[
+ {
+  "name": "green-cr-at-head-premerge-compact",
+  "expect_green": true
+ },
+ {
+  "name": "green-codex-at-head-premerge-full",
+  "expect_green": true
+ },
+ {
+  "name": "stale-cr-approval",
+  "expect_green": false
+ },
+ {
+  "name": "stale-codex-clean",
+  "expect_green": false
+ },
+ {
+  "name": "codex-findings-at-head",
+  "expect_green": false
+ },
+ {
+  "name": "codex-clean-superseded-by-findings",
+  "expect_green": false
+ },
+ {
+  "name": "no-review-at-all",
+  "expect_green": false
+ },
+ {
+  "name": "premerge-not-posted",
+  "expect_green": false
+ },
+ {
+  "name": "premerge-mixed-compact",
+  "expect_green": false
+ },
+ {
+  "name": "premerge-failed-full",
+  "expect_green": false
+ },
+ {
+  "name": "premerge-marker-missing",
+  "expect_green": false
+ },
+ {
+  "name": "newest-summary-wins",
+  "expect_green": false
+ },
+ {
+  "name": "changes-requested-not-approval",
+  "expect_green": false
+ }
+]

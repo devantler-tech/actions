@@ -46,7 +46,37 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
+      - name: 📑 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Fail-closed pentad gate (actions#548): approving and arming are only
+      # allowed once a CURRENT-HEAD green review (CodeRabbit APPROVED or Codex
+      # clean pass) AND a green CodeRabbit pre-merge result are both proven.
+      # Missing, stale, mixed, or unparseable state is NOT green — the step
+      # then skips arming and the maintenance agent arms after its own live
+      # pentad check. Never weaken this gate to warn-only.
+      - name: 🛂 Verify review and pre-merge gates
+        id: gates
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
+          gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
+
+          if bash .scripts/check-merge-gates.sh "$HEAD_SHA" /tmp/reviews.json /tmp/comments.json; then
+            echo "armable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "armable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR #${PR_NUMBER} not armed: current-head review/pre-merge gates are not green (fail-closed). The maintenance agent arms it after its live pentad check."
+          fi
+
       - name: ✅ Approve PR
+        if: steps.gates.outputs.armable == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -68,6 +98,7 @@ jobs:
           fi
 
       - name: 🔀 Enable Auto-Merge
+        if: steps.gates.outputs.armable == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
