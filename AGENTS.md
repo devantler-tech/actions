@@ -53,6 +53,7 @@ Full detail in [CONTRIBUTING.md](CONTRIBUTING.md). Key rules:
 - **Action type:** Prefer **composite** over JavaScript/Docker
 - **External action pinning:** Pin third-party actions (non-`actions/*`, non-`github/*`, non-`devantler-tech/*`) to commit SHAs with a `# v<version>` comment — enforced by `zizmor.yml`. For a main-tracked dep with no releases, use `# <branch> (no upstream releases)`.
 - **`action.yaml`:** Always set `author: devantler-tech`
+- **Distribution / Marketplace:** Keep this portfolio-first catalogue directly reusable but intentionally unlisted in GitHub Marketplace while it contains multiple subdirectory actions and reusable workflows. Marketplace does not automatically list nested action metadata, so do not add `branding:` blocks as a proxy for publication. Revisit only when an action is extracted into its own single-action repository with an independent release lifecycle.
 
 ## Self-references within this repo (read before referencing one part of the repo from another)
 

@@ -56,6 +56,19 @@ steps:
 
 Prefer **composite actions** over JavaScript or Docker actions unless complexity demands otherwise.
 
+## Distribution and Marketplace
+
+The action suite is portfolio-first and publicly reusable by direct path, but it
+is intentionally not published as a family of GitHub Marketplace listings in its
+current multi-action repository layout. Marketplace publishing requires a root
+`action.yml` or `action.yaml`; metadata in subdirectories is not automatically
+listed. Do not add `branding:` to nested action metadata as a proxy for
+publication.
+
+If an action develops enough independent demand to justify its own repository,
+extract it deliberately and give that single-action repository its own branding,
+release lifecycle, and Marketplace listing.
+
 ## Testing
 
 Every action must have a corresponding test workflow at `.github/workflows/test-<action-name>.yaml` that:

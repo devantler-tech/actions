@@ -42,6 +42,23 @@ flowchart TD
 | [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
 
+### Distribution
+
+This repository is a portfolio-first, publicly reusable catalogue. Consumers call
+an action directly as `devantler-tech/actions/<action-name>@<ref>`; the suite is
+intentionally not published as a family of GitHub Marketplace listings in its
+current multi-action layout.
+
+[GitHub Marketplace publishing requires a root action metadata file](https://docs.github.com/en/actions/how-tos/create-and-publish-actions/publish-in-github-marketplace),
+and action metadata in subdirectories is not automatically listed. This repository
+instead contains multiple subdirectory actions and reusable workflows under one
+release stream, so adding `branding:` to the nested `action.yaml` files would not
+make them independently discoverable and is deliberately omitted.
+
+Revisit Marketplace publication only when an action has enough independent demand
+to justify extraction into its own single-action repository. That repository should
+then carry its own branding and Marketplace release lifecycle.
+
 ## Reusable Workflows
 
 [Reusable workflows](https://docs.github.com/en/actions/how-tos/sharing-automations/reuse-workflows#creating-a-reusable-workflow) are designed to encapsulate common CI/CD patterns that can be shared across multiple repositories. They allow you to define a workflow once and reuse it in the job-scope of other workflows. This reduces duplication and enables building generic workflows for common tasks.
