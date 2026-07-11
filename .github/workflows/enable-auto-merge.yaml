@@ -20,7 +20,15 @@ jobs:
       pull-requests: write
       contents: write
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        !github.event.pull_request.draft &&
+        contains(
+          fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+          github.event.pull_request.user.login
+        )
+      }}
 
     steps:
       - name: 🛡️ Harden runner

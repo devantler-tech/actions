@@ -1,0 +1,72 @@
+[
+  {
+    "name": "human maintainer",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "devantler",
+    "eligible": false
+  },
+  {
+    "name": "Dependabot",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "eligible": true
+  },
+  {
+    "name": "Renovate",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "renovate[bot]",
+    "eligible": true
+  },
+  {
+    "name": "GitHub Actions",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "github-actions[bot]",
+    "eligible": true
+  },
+  {
+    "name": "KSail bot",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "ksail-bot[bot]",
+    "eligible": true
+  },
+  {
+    "name": "CodeRabbit",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "coderabbitai[bot]",
+    "eligible": true
+  },
+  {
+    "name": "unknown bot",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "unknown-automation[bot]",
+    "eligible": false
+  },
+  {
+    "name": "external human",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "octocat",
+    "eligible": false
+  },
+  {
+    "name": "draft trusted bot",
+    "event_name": "pull_request",
+    "draft": true,
+    "login": "dependabot[bot]",
+    "eligible": false
+  },
+  {
+    "name": "merge group",
+    "event_name": "merge_group",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "eligible": false
+  }
+]
