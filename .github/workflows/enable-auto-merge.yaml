@@ -6,15 +6,29 @@ on:
       APP_PRIVATE_KEY:
         required: true
         description: "The private key for the GitHub App"
+    inputs:
+      enforce-review-gates:
+        type: boolean
+        required: false
+        default: false
+        description: >-
+          Opt-in (default-off) enforcement of the fail-closed review/pre-merge
+          gate before approving and arming. Callers that enable it should also
+          trigger their caller workflow on pull_request_review and
+          issue_comment so review results that land after the pull_request
+          events still re-evaluate the gate (a reusable workflow cannot
+          schedule its callers).
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   ##################################
   # Review results land AFTER the pull_request events above have run, so the
-  # gate re-evaluates when a reviewer bot posts or edits its result: a
-  # CodeRabbit approval arrives as a review, a Codex clean pass as an issue
-  # comment, and CodeRabbit edits its pre-merge summary comment in place.
+  # gate re-evaluates when a reviewer bot posts or edits its result: any
+  # CodeRabbit review verdict (approval OR changes-requested — the latter must
+  # be able to DISARM), a Codex result comment, and CodeRabbit's in-place
+  # pre-merge summary edits. These triggers only fire where this workflow file
+  # lives; workflow_call consumers add them to their caller (see the input).
   pull_request_review:
     types: [submitted]
   issue_comment:
@@ -41,7 +55,6 @@ jobs:
         (
           github.event_name == 'pull_request_review' &&
           github.event.review.user.login == 'coderabbitai[bot]' &&
-          github.event.review.state == 'approved' &&
           !github.event.pull_request.draft &&
           contains(
             fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
@@ -79,24 +92,17 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      # The gate script must come from the repository that DEFINES this
-      # workflow: in required-workflow / workflow_call consumers the default
-      # checkout resolves to the CALLER's workspace, which does not carry
-      # .scripts/check-merge-gates.sh. github.workflow_ref names the defining
-      # repository and ref, so the checkout follows it in every context.
-      - name: 🧭 Resolve workflow source
-        id: workflow-source
-        env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: |
-          echo "repository=${WORKFLOW_REF%%/.github/*}" >> "$GITHUB_OUTPUT"
-          echo "ref=${WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
-
-      - name: 📑 Checkout gate script from the workflow repository
+      # Self-reference: check out THIS workflow's own repo at the exact commit
+      # it is running from (job.workflow_repository / job.workflow_sha) — never
+      # the caller's workspace (which does not carry the gate script) and never
+      # a PR-controlled ref. Same idiom as the repo's other same-commit
+      # self-checkouts (dependency-review.yaml).
+      - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: ${{ steps.workflow-source.outputs.repository }}
-          ref: ${{ steps.workflow-source.outputs.ref }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
           persist-credentials: false
 
       # The issue_comment shape cannot prove the PR is open and non-draft from
@@ -123,6 +129,15 @@ jobs:
       # Missing, stale, mixed, or unparseable state is NOT green — the step
       # then skips arming and the maintenance agent arms after its own live
       # pentad check. Never weaken this gate to warn-only.
+      #
+      # Feature-flag-first rollout: enforcement is DEFAULT-OFF (the
+      # enforce-review-gates input for workflow_call callers, or the
+      # ENFORCE_MERGE_GATES repository/organization variable for the direct
+      # and required-workflow paths). With enforcement off, the pre-gate
+      # behavior is preserved (allowlisted trusted bots are armed) so
+      # consumers without CodeRabbit pre-merge summaries or agent-requested
+      # reviews do not silently lose bot auto-merge before the flag is
+      # flipped per repo/org after validation.
       - name: 🛂 Verify review and pre-merge gates
         id: gates
         if: steps.pr.outputs.eligible == 'true'
@@ -130,21 +145,46 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
+          ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
         run: |
           HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
-          HEAD_COMMITTED_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
-          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
-          gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
           # The proven head is exported so the privileged steps below bind to
           # it: a push racing this gate must invalidate the arming, not ride it.
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "enforced=$ENFORCE" >> "$GITHUB_OUTPUT"
 
-          if bash .scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_COMMITTED_AT" /tmp/reviews.json /tmp/comments.json; then
+          if [[ "$ENFORCE" != "true" ]]; then
+            echo "armable=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Review/pre-merge gate enforcement is off (default) — arming PR #${PR_NUMBER} on the trusted-author allowlist alone. Enable via the enforce-review-gates input or the ENFORCE_MERGE_GATES variable."
+            exit 0
+          fi
+
+          HEAD_COMMITTED_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
+          gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
+
+          if bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_COMMITTED_AT" /tmp/reviews.json /tmp/comments.json; then
             echo "armable=true" >> "$GITHUB_OUTPUT"
           else
             echo "armable=false" >> "$GITHUB_OUTPUT"
             echo "::notice::PR #${PR_NUMBER} not armed: current-head review/pre-merge gates are not green (fail-closed). The maintenance agent arms it after its live pentad check."
+          fi
+
+      # A gate that turned red AFTER an earlier run armed the PR (e.g. a
+      # CodeRabbit changes-requested landing behind a Codex clean pass) must
+      # actively revoke the arming, not just decline to re-arm.
+      - name: 🔒 Disarm auto-merge on failed gates
+        if: steps.gates.outputs.enforced == 'true' && steps.gates.outputs.armable == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          armed=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
+          if [[ "$armed" == "true" ]]; then
+            gh pr merge "$PR_NUMBER" --disable-auto --repo "$REPOSITORY"
+            echo "::warning::Auto-merge DISARMED for PR #${PR_NUMBER}: review/pre-merge gates are no longer green at the current head."
           fi
 
       - name: ✅ Approve PR

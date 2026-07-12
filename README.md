@@ -203,23 +203,36 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from an exact-match allowlist of trusted single-author bots — and only once a fail-closed gate proves, at the PR's **current head**, both a green review (CodeRabbit's **latest** head verdict `APPROVED`, or a Codex clean pass when CodeRabbit has no head verdict) and a green, **fresh** CodeRabbit pre-merge result (`.scripts/check-merge-gates.sh`; the summary's last update must not predate the head commit, and a `⚠️`/`❌`/`❓` mark in either summary shape fails it). Missing, stale, mixed, or unparseable review/pre-merge state skips arming (the portfolio's maintenance agent arms such PRs after its own live checks). Because review results land after the `pull_request` events, the gate also re-evaluates on `pull_request_review`/`issue_comment` activity from the reviewer bots, checks out the gate script from the **workflow-defining** repository (so required-workflow consumers work without vendoring it), and binds both the approval (`commit_id`) and the arming (`--match-head-commit`) to the gate-proven head so a racing push invalidates them.
+[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from an exact-match allowlist of trusted single-author bots. It carries an **opt-in, default-off** fail-closed review/pre-merge gate (`.scripts/check-merge-gates.sh`, enabled via the `enforce-review-gates` input or the `ENFORCE_MERGE_GATES` repository/organization variable): when enforced, approval and arming require, at the PR's **current head**, a green review (CodeRabbit's **latest** head verdict `APPROVED`, or a Codex clean pass when CodeRabbit has no head verdict) and a green, **fresh** CodeRabbit pre-merge result (the summary's last update must not predate the head commit; a `⚠️`/`❌`/`❓` mark in either summary shape fails it) — and a gate that turns red later actively **disarms** a previously armed PR. Missing, stale, mixed, or unparseable state skips arming (the portfolio's maintenance agent arms such PRs after its own live checks). The gate script is checked out from the **workflow-defining** repository at the running commit (`job.workflow_repository`/`job.workflow_sha`), and both the approval (`commit_id`) and the arming (`--match-head-commit`) bind to the gate-proven head so a racing push invalidates them. Because review results land after the `pull_request` events, the workflow also triggers on `pull_request_review`/`issue_comment` where it lives; `workflow_call` consumers that enable enforcement must add those triggers to their **caller** workflow (a reusable workflow cannot schedule its callers).
 
 #### Usage
 
 ```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Required when enforce-review-gates is true: review results land after
+  # the pull_request events, so the caller must re-invoke the gate on them.
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created, edited]
+
 jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
+    with:
+      enforce-review-gates: false # default; flip after the repo's review lanes are validated
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
 #### Secrets and Inputs
 
-| Key               | Type   | Default | Required | Description            |
-|-------------------|--------|---------|----------|------------------------|
-| `APP_PRIVATE_KEY` | Secret | -       | Yes      | GitHub App private key |
+| Key                    | Type   | Default | Required | Description                                                        |
+|------------------------|--------|---------|----------|--------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                             |
+| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed review/pre-merge gate before approving/arming   |
 
 </details>
 
