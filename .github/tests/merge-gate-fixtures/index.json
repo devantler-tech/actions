@@ -12,6 +12,10 @@
     "expect_green": true
   },
   {
+    "name": "codex-abbreviated-head-unresolvable",
+    "expect_green": false
+  },
+  {
     "name": "stale-cr-approval",
     "expect_green": false
   },

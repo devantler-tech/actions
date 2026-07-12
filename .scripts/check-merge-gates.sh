@@ -118,6 +118,8 @@ fi
 # not an edit timestamp, so allowing a comment to supersede it could miss an
 # older review edited red later. This conservative result can only withhold the
 # workflow's approval; the maintenance agent still evaluates the live pentad.
+# An abbreviated clean SHA is accepted only when GitHub's commit endpoint
+# resolves it uniquely to the exact head; raw prefix matching is not proof.
 codex_findings_at_head="$(jq -r --arg sha "$head_sha" '
   [.[]
    | select(.user.login == "chatgpt-codex-connector[bot]")
@@ -134,19 +136,37 @@ latest_codex_comment_probe="$(jq -r --arg sha "$head_sha" '
          | capture("\\*\\*Reviewed commit:\\*\\*[[:space:]]*`?(?<sha>[0-9a-fA-F]{7,40})")
          | .sha | ascii_downcase) catch "") as $reviewed
      | select($reviewed != "" and ($head | startswith($reviewed)))
-     | {at: (.updated_at // .created_at), body: $body}]
+     | {at: (.updated_at // .created_at), reviewed: $reviewed, body: $body}]
   | sort_by(.at) | last
-  | if . == null then "absent" else "present\n" + .body end' "$comments_json")"
+  | if . == null then "absent"
+    else "present\n" + .reviewed + "\n" + .body
+    end' "$comments_json")"
 
 if [[ "$codex_findings_at_head" -gt 0 ]]; then
   review_state="needs-fix"
 elif [[ "$latest_codex_comment_probe" == present* ]]; then
-  latest_codex_body="${latest_codex_comment_probe#*$'\n'}"
-  if [[ "$latest_codex_body" == *"Didn't find any major issues"* ]]; then
+  latest_codex_payload="${latest_codex_comment_probe#*$'\n'}"
+  latest_codex_reviewed="${latest_codex_payload%%$'\n'*}"
+  latest_codex_body="${latest_codex_payload#*$'\n'}"
+  codex_comment_matches_head=false
+
+  if [[ ${#latest_codex_reviewed} -eq 40 && "$latest_codex_reviewed" == "$head_sha" ]]; then
+    codex_comment_matches_head=true
+  elif [[ ${#latest_codex_reviewed} -lt 40 && -n "${REPOSITORY:-}" ]]; then
+    resolved_codex_sha=""
+    if resolved_codex_sha=$(gh api \
+      "repos/$REPOSITORY/commits/$latest_codex_reviewed" --jq .sha 2>/dev/null) &&
+      [[ "$resolved_codex_sha" == "$head_sha" ]]; then
+      codex_comment_matches_head=true
+    fi
+  fi
+
+  if [[ "$codex_comment_matches_head" == "true" &&
+    "$latest_codex_body" == *"Didn't find any major issues"* ]]; then
     if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then
       review_state="green"
     fi
-  else
+  elif [[ "$codex_comment_matches_head" == "true" ]]; then
     review_state="needs-fix"
   fi
 fi

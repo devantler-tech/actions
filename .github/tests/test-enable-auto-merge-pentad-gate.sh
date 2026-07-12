@@ -39,6 +39,16 @@ if [[ "$job_permissions" != "contents,pull-requests" ]]; then
   status=1
 fi
 
+gate_contents_permission="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "gate-token")
+   | .with."permission-contents" // ""]
+  | join("\n")' "$workflow")"
+if [[ "$gate_contents_permission" != "read" ]]; then
+  echo "::error file=$workflow::the enforced gate token needs Contents: read to resolve abbreviated Codex commit IDs uniquely"
+  status=1
+fi
+
 armable_conditions="$(yq -r '
   [.jobs."auto-merge".steps[]
    | select(.name == "✅ Approve PR" or .name == "🔀 Enable Auto-Merge")
@@ -232,6 +242,13 @@ JSON
   repos/test/repo/issues/42/timeline)
     printf '[]\n'
     ;;
+  repos/test/repo/commits/aaaaaaaaaa)
+    if [[ "${MOCK_UNRESOLVABLE_PREFIX:-false}" == "true" ]]; then
+      echo "ambiguous commit prefix" >&2
+      exit 1
+    fi
+    printf '%s\n' "$(printf 'a%.0s' {1..40})"
+    ;;
   *)
     echo "unexpected gh invocation: $*" >&2
     exit 1
@@ -251,7 +268,12 @@ while IFS= read -r fixture; do
   expect_green="$(jq -r '.expect_green' <<<"$fixture")"
 
   actual_green=false
-  if bash "$script" "$head_sha" "$head_seen_at" \
+  mock_unresolvable_prefix=false
+  if [[ "$name" == "codex-abbreviated-head-unresolvable" ]]; then
+    mock_unresolvable_prefix=true
+  fi
+  if REPOSITORY=test/repo MOCK_UNRESOLVABLE_PREFIX="$mock_unresolvable_prefix" \
+    PATH="$floor_test_dir/bin:$PATH" bash "$script" "$head_sha" "$head_seen_at" \
     "$fixtures_dir/$name/reviews.json" \
     "$fixtures_dir/$name/comments.json" >/dev/null; then
     actual_green=true

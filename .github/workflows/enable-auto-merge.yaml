@@ -167,6 +167,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-checks: read
           permission-actions: read
+          permission-contents: read
           permission-pull-requests: read
 
       # Fail-closed pentad gate (actions#548): approval is only allowed once a
