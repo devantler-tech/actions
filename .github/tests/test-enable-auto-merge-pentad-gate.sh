@@ -12,6 +12,9 @@ fixtures_dir="${2:-.github/tests/merge-gate-fixtures}"
 workflow="${3:-.github/workflows/enable-auto-merge.yaml}"
 
 head_sha="$(printf 'a%.0s' {1..40})"
+# The freshness floor the workflow derives from the head commit's committer
+# date: fixture summaries dated on/after it are fresh, earlier ones stale.
+head_committed_at="2026-07-11T09:00:00Z"
 status=0
 
 # The workflow must actually consume the gate: the gates step runs the script
@@ -36,7 +39,7 @@ while IFS= read -r fixture; do
   expect_green="$(jq -r '.expect_green' <<<"$fixture")"
 
   actual_green=false
-  if bash "$script" "$head_sha" \
+  if bash "$script" "$head_sha" "$head_committed_at" \
     "$fixtures_dir/$name/reviews.json" \
     "$fixtures_dir/$name/comments.json" >/dev/null; then
     actual_green=true

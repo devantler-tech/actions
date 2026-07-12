@@ -11,6 +11,14 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   ##################################
+  # Review results land AFTER the pull_request events above have run, so the
+  # gate re-evaluates when a reviewer bot posts or edits its result: a
+  # CodeRabbit approval arrives as a review, a Codex clean pass as an issue
+  # comment, and CodeRabbit edits its pre-merge summary comment in place.
+  pull_request_review:
+    types: [submitted]
+  issue_comment:
+    types: [created, edited]
 
 permissions: {}
 
@@ -22,11 +30,36 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       ${{
-        github.event_name == 'pull_request' &&
-        !github.event.pull_request.draft &&
-        contains(
-          fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-          github.event.pull_request.user.login
+        (
+          github.event_name == 'pull_request' &&
+          !github.event.pull_request.draft &&
+          contains(
+            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+            github.event.pull_request.user.login
+          )
+        ) ||
+        (
+          github.event_name == 'pull_request_review' &&
+          github.event.review.user.login == 'coderabbitai[bot]' &&
+          github.event.review.state == 'approved' &&
+          !github.event.pull_request.draft &&
+          contains(
+            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+            github.event.pull_request.user.login
+          )
+        ) ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          github.event.issue.state == 'open' &&
+          contains(
+            fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+            github.event.comment.user.login
+          ) &&
+          contains(
+            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+            github.event.issue.user.login
+          )
         )
       }}
 
@@ -46,10 +79,43 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: 📑 Checkout
+      # The gate script must come from the repository that DEFINES this
+      # workflow: in required-workflow / workflow_call consumers the default
+      # checkout resolves to the CALLER's workspace, which does not carry
+      # .scripts/check-merge-gates.sh. github.workflow_ref names the defining
+      # repository and ref, so the checkout follows it in every context.
+      - name: 🧭 Resolve workflow source
+        id: workflow-source
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          echo "repository=${WORKFLOW_REF%%/.github/*}" >> "$GITHUB_OUTPUT"
+          echo "ref=${WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+
+      - name: 📑 Checkout gate script from the workflow repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          repository: ${{ steps.workflow-source.outputs.repository }}
+          ref: ${{ steps.workflow-source.outputs.ref }}
           persist-credentials: false
+
+      # The issue_comment shape cannot prove the PR is open and non-draft from
+      # its payload alone, so eligibility is re-proven against live state for
+      # every event shape (fail-closed: an ineligible PR is never gated on).
+      - name: 🔎 Resolve target pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          eligible=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json isDraft,state \
+            --jq 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end')
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          if [[ "$eligible" != "true" ]]; then
+            echo "::notice::PR #${PR_NUMBER} is draft or not open; skipping the auto-merge gate."
+          fi
 
       # Fail-closed pentad gate (actions#548): approving and arming are only
       # allowed once a CURRENT-HEAD green review (CodeRabbit APPROVED or Codex
@@ -59,16 +125,22 @@ jobs:
       # pentad check. Never weaken this gate to warn-only.
       - name: 🛂 Verify review and pre-merge gates
         id: gates
+        if: steps.pr.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
+          HEAD_COMMITTED_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
-          if bash .scripts/check-merge-gates.sh "$HEAD_SHA" /tmp/reviews.json /tmp/comments.json; then
+          # The proven head is exported so the privileged steps below bind to
+          # it: a push racing this gate must invalidate the arming, not ride it.
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+          if bash .scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_COMMITTED_AT" /tmp/reviews.json /tmp/comments.json; then
             echo "armable=true" >> "$GITHUB_OUTPUT"
           else
             echo "armable=false" >> "$GITHUB_OUTPUT"
@@ -79,16 +151,20 @@ jobs:
         if: steps.gates.outputs.armable == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
         run: |
           set +e
-          REVIEW_OUTPUT=$(gh pr review "$PR_NUMBER" --approve --repo "$REPOSITORY" 2>&1)
+          # commit_id pins the approval to the gate-proven head: a commit
+          # pushed after the gate ran gets no approval from this run.
+          REVIEW_OUTPUT=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            -f event=APPROVE -f commit_id="$HEAD_SHA" 2>&1)
           REVIEW_EXIT_CODE=$?
           set -e
 
           if [[ $REVIEW_EXIT_CODE -eq 0 ]]; then
-            echo "✅ PR #${PR_NUMBER} approved"
+            echo "✅ PR #${PR_NUMBER} approved at ${HEAD_SHA}"
           elif [[ "$REVIEW_OUTPUT" == *"Can not approve your own pull request"* ]]; then
             echo "::warning::Could not approve PR #${PR_NUMBER} because GitHub does not allow self-approval. Skipping approval."
           else
@@ -101,13 +177,17 @@ jobs:
         if: steps.gates.outputs.armable == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
         run: |
           REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
           if [[ "$REPO_INFO" != "true" ]]; then
             echo "::warning::Auto-merge is not enabled on this repository. Contact a repository admin to enable it in Settings > Pull Requests > Allow auto-merge."
             exit 0
           fi
-          gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY"
-          echo "✅ Auto-merge enabled for PR #${PR_NUMBER} using squash method"
+          # --match-head-commit binds the arming to the gate-proven head: a
+          # push racing this workflow makes the merge call fail instead of
+          # arming an unreviewed commit.
+          gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY" --match-head-commit "$HEAD_SHA"
+          echo "✅ Auto-merge enabled for PR #${PR_NUMBER} at ${HEAD_SHA} using squash method"

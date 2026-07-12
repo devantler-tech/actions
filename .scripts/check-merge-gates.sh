@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
 # Fail-closed review/pre-merge gate for the privileged auto-merge workflow.
 #
-# Usage: check-merge-gates.sh <head-sha> <reviews-json> <comments-json>
-#   head-sha      the pull request's current head commit SHA
-#   reviews-json  file holding the FULL paginated `pulls/<n>/reviews` array
-#   comments-json file holding the FULL paginated `issues/<n>/comments` array
+# Usage: check-merge-gates.sh <head-sha> <head-committed-at> <reviews-json> <comments-json>
+#   head-sha           the pull request's current head commit SHA
+#   head-committed-at  the head commit's ISO8601 committer date (used as the
+#                      freshness floor for the pre-merge summary, which CodeRabbit
+#                      edits in place and which carries no commit SHA of its own)
+#   reviews-json       file holding the FULL paginated `pulls/<n>/reviews` array
+#   comments-json      file holding the FULL paginated `issues/<n>/comments` array
 #
 # Exits 0 only when BOTH gates are proven at the current head:
-#   1. a green review — a CodeRabbit APPROVED review whose commit_id equals
-#      the head, or a Codex clean pass ("Didn't find any major issues") whose
+#   1. a green review — CodeRabbit's LATEST review verdict at the head is
+#      APPROVED (an earlier approval superseded by CHANGES_REQUESTED or a
+#      dismissal is NOT green), or — when CodeRabbit has no verdict at the
+#      head — a Codex clean pass ("Didn't find any major issues") whose
 #      "Reviewed commit" equals the head and is Codex's LATEST result for it;
-#   2. a green CodeRabbit pre-merge result — the newest auto-generated summary
-#      (stable marker required) whose pre-merge section is unambiguously
-#      green: a positive check-mark count and no error/inconclusive/warning
-#      marks. When walkthrough boundary markers exist, only the bounded
-#      region is parsed so echoed marker text elsewhere cannot spoof it.
+#   2. a green CodeRabbit pre-merge result — the most recently UPDATED
+#      auto-generated summary (stable marker required; CodeRabbit edits the
+#      summary in place, so created_at alone selects a stale revision) whose
+#      pre-merge section is unambiguously green: a positive check-mark count
+#      and no error/inconclusive/warning marks in either shape, and whose
+#      update time is not older than the head commit (a summary last touched
+#      before the head was committed can only describe an earlier state).
+#      When walkthrough boundary markers exist, only the bounded region is
+#      parsed so echoed marker text elsewhere cannot spoof it.
 #
 # Everything else — missing, stale, mixed, unparseable, or absent state — is
 # NOT green and exits 1 (the workflow then skips arming; the maintenance
@@ -22,35 +31,46 @@
 
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "usage: $0 <head-sha> <reviews-json> <comments-json>" >&2
+if [[ $# -ne 4 ]]; then
+  echo "usage: $0 <head-sha> <head-committed-at> <reviews-json> <comments-json>" >&2
   exit 2
 fi
 
 head_sha="$1"
-reviews_json="$2"
-comments_json="$3"
+head_committed_at="$2"
+reviews_json="$3"
+comments_json="$4"
 
 review_state="missing"
 premerge_state="not-posted"
 
 # --- Gate 1: green review at the current head -------------------------------
 
-cr_approved_at_head="$(jq -r --arg sha "$head_sha" '
-  [.[] | select(.user.login == "coderabbitai[bot]" and .state == "APPROVED")]
-  | map(select(.commit_id == $sha)) | length' "$reviews_json")"
+# CodeRabbit's verdict at the head is its LATEST verdict-bearing review there:
+# an APPROVED superseded by CHANGES_REQUESTED (or dismissed) must not count.
+cr_latest_verdict_at_head="$(jq -r --arg sha "$head_sha" '
+  [.[]
+   | select(.user.login == "coderabbitai[bot]")
+   | select(.commit_id == $sha)
+   | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
+            or .state == "DISMISSED")]
+  | sort_by(.submitted_at) | last | .state // empty' "$reviews_json")"
 
 cr_approved_anywhere="$(jq -r '
   [.[] | select(.user.login == "coderabbitai[bot]" and .state == "APPROVED")]
   | length' "$reviews_json")"
 
-if [[ "$cr_approved_at_head" -gt 0 ]]; then
+if [[ "$cr_latest_verdict_at_head" == "APPROVED" ]]; then
   review_state="green"
+elif [[ -n "$cr_latest_verdict_at_head" ]]; then
+  # An explicit non-approval verdict at the head blocks arming outright — a
+  # Codex clean pass must not override CodeRabbit's CHANGES_REQUESTED.
+  review_state="needs-fix"
 elif [[ "$cr_approved_anywhere" -gt 0 ]]; then
   review_state="stale"
 fi
 
-if [[ "$review_state" != "green" ]]; then
+if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then
   # Codex lane: its result is an ISSUE COMMENT carrying "**Reviewed commit:**
   # <sha>". Only the LATEST Codex result for the current head counts — an
   # older clean pass superseded by a findings run must not read as green.
@@ -73,42 +93,59 @@ fi
 
 summary_marker='<!-- This is an auto-generated comment: summarize by coderabbit.ai -->'
 
-premerge_body="$(jq -r --arg marker "$summary_marker" '
+# CodeRabbit EDITS its auto-generated summary in place across review cycles,
+# so the newest revision is the one with the greatest updated_at (falling back
+# to created_at), never the newest created_at alone. One call returns the
+# selected summary's touch time on the first line and its body after it.
+premerge_selected="$(jq -r --arg marker "$summary_marker" '
   [.[]
    | select(.user.login == "coderabbitai[bot]")
    | select(.body | contains($marker))
    | select((.body | contains("## Pre-merge checks"))
             or (.body | contains("<summary>🚥 Pre-merge checks |")))]
-  | sort_by(.created_at) | last | .body // empty' "$comments_json")"
+  | sort_by(.updated_at // .created_at) | last
+  | if . == null then empty
+    else ((.updated_at // .created_at) // "") + "\n" + .body end' "$comments_json")"
+
+premerge_touched_at="${premerge_selected%%$'\n'*}"
+premerge_body="${premerge_selected#*$'\n'}"
 
 if [[ -n "$premerge_body" ]]; then
-  region="$premerge_body"
-  if [[ "$premerge_body" == *'<!-- pre_merge_checks_walkthrough_start -->'* &&
-    "$premerge_body" == *'<!-- pre_merge_checks_walkthrough_end -->'* ]]; then
-    region="${premerge_body#*<!-- pre_merge_checks_walkthrough_start -->}"
-    region="${region%%<!-- pre_merge_checks_walkthrough_end -->*}"
-  fi
-
-  compact_line="$(grep -oE '🚥 Pre-merge checks \|[^<]*' <<<"$region" | head -n 1 || true)"
-  if [[ -n "$compact_line" ]]; then
-    # Compact shape: green only with a positive ✅ count and no positive
-    # ❌ / ❓ / ⚠️ counter anywhere in the summary line.
-    if grep -qE '✅ [1-9][0-9]*' <<<"$compact_line" &&
-      ! grep -qE '(❌|❓|⚠️) *[1-9][0-9]*' <<<"$compact_line"; then
-      premerge_state="green"
-    else
-      premerge_state="failed"
-    fi
-  elif [[ "$region" == *"## Pre-merge checks"* ]]; then
-    # Full shape: green only when at least one explicit pass exists and the
-    # bounded region carries no error/inconclusive mark at all.
-    if [[ "$region" == *"✅"* && "$region" != *"❌"* && "$region" != *"❓"* ]]; then
-      premerge_state="green"
-    else
-      premerge_state="failed"
-    fi
+  # The summary carries no commit SHA, so freshness is the proxy tie to the
+  # head: a summary last updated before the head commit existed can only
+  # describe an earlier state. ISO8601 Zulu timestamps compare lexically.
+  if [[ -n "$head_committed_at" && "$premerge_touched_at" < "$head_committed_at" ]]; then
+    premerge_state="stale"
   else
-    premerge_state="inconclusive"
+    region="$premerge_body"
+    if [[ "$premerge_body" == *'<!-- pre_merge_checks_walkthrough_start -->'* &&
+      "$premerge_body" == *'<!-- pre_merge_checks_walkthrough_end -->'* ]]; then
+      region="${premerge_body#*<!-- pre_merge_checks_walkthrough_start -->}"
+      region="${region%%<!-- pre_merge_checks_walkthrough_end -->*}"
+    fi
+
+    compact_line="$(grep -oE '🚥 Pre-merge checks \|[^<]*' <<<"$region" | head -n 1 || true)"
+    if [[ -n "$compact_line" ]]; then
+      # Compact shape: green only with a positive ✅ count and no positive
+      # ❌ / ❓ / ⚠️ counter anywhere in the summary line.
+      if grep -qE '✅ [1-9][0-9]*' <<<"$compact_line" &&
+        ! grep -qE '(❌|❓|⚠️) *[1-9][0-9]*' <<<"$compact_line"; then
+        premerge_state="green"
+      else
+        premerge_state="failed"
+      fi
+    elif [[ "$region" == *"## Pre-merge checks"* ]]; then
+      # Full shape: green only when at least one explicit pass exists and the
+      # bounded region carries no error/inconclusive/warning mark at all.
+      if [[ "$region" == *"✅"* && "$region" != *"❌"* &&
+        "$region" != *"❓"* && "$region" != *"⚠️"* ]]; then
+        premerge_state="green"
+      else
+        premerge_state="failed"
+      fi
+    else
+      premerge_state="inconclusive"
+    fi
   fi
 fi
 
