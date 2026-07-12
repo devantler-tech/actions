@@ -158,6 +158,10 @@ jobs:
           permission-checks: read
           permission-actions: read
           permission-pull-requests: read
+          # The committer-date freshness fallback reads
+          # GET /repos/<repo>/commits/<sha>, which App tokens need Contents
+          # read for.
+          permission-contents: read
 
       # Fail-closed pentad gate (actions#548): approving and arming are only
       # allowed once a CURRENT-HEAD green review (CodeRabbit APPROVED or Codex
