@@ -89,9 +89,11 @@ jobs:
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # Least-privilege token scope: approving and enabling auto-merge on PRs.
+          # Least-privilege token scope: approving and enabling auto-merge on
+          # PRs, plus reading check suites for the gate's freshness floor.
           permission-contents: write
           permission-pull-requests: write
+          permission-checks: read
 
       # Self-reference: check out THIS workflow's own repo at the exact commit
       # it is running from (job.workflow_repository / job.workflow_sha) — never
@@ -147,6 +149,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
 
@@ -156,8 +159,18 @@ jobs:
           echo "enforced=$ENFORCE" >> "$GITHUB_OUTPUT"
 
           if [[ "$ENFORCE" != "true" ]]; then
-            echo "armable=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Review/pre-merge gate enforcement is off (default) — arming PR #${PR_NUMBER} on the trusted-author allowlist alone. Enable via the enforce-review-gates input or the ENFORCE_MERGE_GATES variable."
+            # Default-off preserves the PRE-GATE behavior exactly: only the
+            # pull_request events armed before this gate existed, so the new
+            # review/comment retrigger paths must not arm while the flag is
+            # off (a changes-requested review or a findings comment must
+            # never be what re-arms a PR).
+            if [[ "$EVENT_NAME" == "pull_request" ]]; then
+              echo "armable=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::Review/pre-merge gate enforcement is off (default) — arming PR #${PR_NUMBER} on the trusted-author allowlist alone. Enable via the enforce-review-gates input or the ENFORCE_MERGE_GATES variable."
+            else
+              echo "armable=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Review/pre-merge gate enforcement is off (default) — ${EVENT_NAME} runs do not arm PR #${PR_NUMBER} (pre-gate behavior preserved)."
+            fi
             exit 0
           fi
 
@@ -168,8 +181,13 @@ jobs:
           # summary pass as fresh. Committer date remains only as a fallback
           # floor when no check suite exists yet (never an empty, fail-open
           # floor).
+          # This run's own check suite is created by the triggering event
+          # itself — often AFTER the summary edit that triggered it — so as
+          # the only suite for a head it would poison the floor and wedge
+          # arming; exclude it before taking the minimum.
+          OWN_SUITE_ID=$(gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.check_suite_id // empty')
           HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA/check-suites" --paginate |
-            jq -rs '[.[].check_suites[]?.created_at | select(. != null)] | min // empty')
+            jq -rs --arg own "$OWN_SUITE_ID" '[.[].check_suites[]? | select((.id | tostring) != $own) | .created_at | select(. != null)] | min // empty')
           if [[ -z "$HEAD_SEEN_AT" ]]; then
             HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
           fi

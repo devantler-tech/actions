@@ -212,9 +212,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   # Required when enforce-review-gates is true: review results land after
-  # the pull_request events, so the caller must re-invoke the gate on them.
+  # the pull_request events, so the caller must re-invoke the gate on them
+  # — including dismissals, which are non-green and must be able to DISARM.
   pull_request_review:
-    types: [submitted]
+    types: [submitted, dismissed]
   issue_comment:
     types: [created, edited]
 
