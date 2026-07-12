@@ -213,11 +213,13 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   # Required when enforce-review-gates is true: review results land after
   # the pull_request events, so the caller must re-invoke the gate on them
-  # — including dismissals, which are non-green and must be able to DISARM.
+  # — including dismissals, which are non-green and must be able to DISARM,
+  # and deleted comments, since removing a pre-merge summary or Codex clean
+  # pass is evidence deletion the gate must re-evaluate (and disarm on).
   pull_request_review:
     types: [submitted, dismissed]
   issue_comment:
-    types: [created, edited]
+    types: [created, edited, deleted]
 
 jobs:
   auto-merge:

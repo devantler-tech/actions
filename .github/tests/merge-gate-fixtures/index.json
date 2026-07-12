@@ -68,6 +68,18 @@
     "expect_green": true
   },
   {
+    "name": "cr-commented-blank-supersedes-approval",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-findings-blocks-codex-fallback",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-clean-allows-codex-fallback",
+    "expect_green": true
+  },
+  {
     "name": "premerge-warning-full",
     "expect_green": false
   },

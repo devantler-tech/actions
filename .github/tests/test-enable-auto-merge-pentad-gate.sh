@@ -55,8 +55,9 @@ disarm_condition="$(yq -r '
    | .if // ""]
   | join("\n")' "$workflow")"
 if [[ "$disarm_condition" != *"!cancelled()"* ||
-  "$disarm_condition" != *"steps.gates.outcome == 'failure'"* ]]; then
-  echo "::error file=$workflow::the disarm step must run on gate-step failure (!cancelled() + steps.gates.outcome == 'failure'), not only on armable == 'false'"
+  "$disarm_condition" != *"steps.gates.outcome == 'failure'"* ||
+  "$disarm_condition" != *"steps.gate-token.outcome == 'failure'"* ]]; then
+  echo "::error file=$workflow::the disarm step must run on gate-step AND gate-token-mint failure (!cancelled() + both outcome == 'failure' branches), not only on armable == 'false'"
   status=1
 fi
 
@@ -71,8 +72,16 @@ fi
 # A branch returning to an earlier SHA re-uses that SHA's original check
 # suites, so the freshness floor must also consider the newest force-push
 # time — otherwise a summary written for an intervening head passes as fresh.
-if ! grep -q 'head_ref_force_pushed' "$workflow"; then
-  echo "::error file=$workflow::the head-seen freshness floor must be raised by the newest head_ref_force_pushed timeline event"
+# The floor lives in the shared compute-head-seen-floor.sh, and the workflow
+# must consume it BOTH in the gate step and in the pre-arm re-check (reusing
+# the gate step's floor would miss a force-push between gate and arm).
+floor_script="${4:-.scripts/compute-head-seen-floor.sh}"
+if ! grep -q 'head_ref_force_pushed' "$floor_script"; then
+  echo "::error file=$floor_script::the head-seen freshness floor must be raised by the newest head_ref_force_pushed timeline event"
+  status=1
+fi
+if [[ "$(grep -c 'compute-head-seen-floor.sh' "$workflow")" -lt 2 ]]; then
+  echo "::error file=$workflow::the workflow must compute the freshness floor via compute-head-seen-floor.sh in the gate step AND recompute it in the pre-arm re-check"
   status=1
 fi
 

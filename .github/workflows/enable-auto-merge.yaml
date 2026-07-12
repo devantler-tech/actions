@@ -221,37 +221,18 @@ jobs:
             exit 0
           fi
 
-          # Freshness floor for the pre-merge summary: when GitHub first SAW
-          # this head (earliest check-suite created_at for the SHA), not the
-          # commit's own committer date — pushing a previously-created commit
-          # object carries an old committer date that would let a stale
-          # summary pass as fresh. Committer date remains only as a fallback
-          # floor when no check suite exists yet (never an empty, fail-open
-          # floor).
-          # This run's own check suite is created by the triggering event
-          # itself — often AFTER the summary edit that triggered it — so as
-          # the only suite for a head it would poison the floor and wedge
-          # arming; exclude it before taking the minimum.
-          OWN_SUITE_ID=$(gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.check_suite_id // empty')
-          HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA/check-suites" --paginate |
-            jq -rs --arg own "$OWN_SUITE_ID" '[.[].check_suites[]? | select((.id | tostring) != $own) | .created_at | select(. != null)] | min // empty')
-          if [[ -z "$HEAD_SEEN_AT" ]]; then
-            HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
-          fi
-          # A branch that moves away and later RETURNS to this same SHA
-          # re-uses the SHA's original check suites, so the earliest-suite
-          # floor would date from the FIRST time GitHub saw it — letting a
-          # summary written for an intervening head pass as fresh. Returning
-          # to an earlier SHA requires a force-push, so raise the floor to the
-          # newest force-push time when one exists (normal pushes create
-          # never-seen SHAs, where the earliest-suite floor already holds).
-          LAST_FORCE_PUSH_AT=$(gh api "repos/$REPOSITORY/issues/$PR_NUMBER/timeline" --paginate |
-            jq -rs '[.[][] | select(.event == "head_ref_force_pushed") | .created_at | select(. != null)] | max // empty')
-          if [[ -n "$LAST_FORCE_PUSH_AT" && "$LAST_FORCE_PUSH_AT" > "$HEAD_SEEN_AT" ]]; then
-            HEAD_SEEN_AT="$LAST_FORCE_PUSH_AT"
-          fi
-          # Exported for the pre-arm re-check (head-bound, so stable per SHA).
-          echo "head_seen_at=$HEAD_SEEN_AT" >> "$GITHUB_OUTPUT"
+          # Freshness floor for the pre-merge summary — the shared
+          # .scripts/compute-head-seen-floor.sh: earliest check-suite time for
+          # the SHA (excluding this run's own suite, which would poison the
+          # floor), committer-date fallback, raised to the newest force-push
+          # time (a branch returning to an earlier SHA re-uses its original
+          # suites). Rationale for each part lives in the script header. The
+          # pre-arm re-check RECOMPUTES it with the same script instead of
+          # reusing this value — a force-push away and back to the same SHA
+          # between gate and arm must raise the floor, not ride the old one.
+          HEAD_SEEN_AT=$(bash .devantler-tech-actions/.scripts/compute-head-seen-floor.sh \
+            "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID")
+
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
@@ -271,14 +252,19 @@ jobs:
       # success() the plain outputs-based condition would inherit. Enforcement
       # is re-derived from the input/var because a failed gate step may have
       # died before exporting its `enforced` output (with the flag off this
-      # whole condition stays false — pre-gate behavior never disarms).
+      # whole condition stays false — pre-gate behavior never disarms). A
+      # FAILED gate-token mint is the same condition again: requesting a
+      # permission the consumer's App installation has not granted errors the
+      # mint step itself, so `steps.gates` never runs — unreadable gates, and
+      # an already-armed PR must still be revoked.
       - name: 🔒 Disarm auto-merge on failed gates
         if: >-
           ${{
             !cancelled() &&
             steps.pr.outputs.eligible == 'true' &&
             (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') &&
-            (steps.gates.outcome == 'failure' ||
+            (steps.gate-token.outcome == 'failure' ||
+             steps.gates.outcome == 'failure' ||
              (steps.gates.outcome == 'success' && steps.gates.outputs.armable == 'false'))
           }}
         env:
@@ -341,7 +327,6 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
-          HEAD_SEEN_AT: ${{ steps.gates.outputs.head_seen_at }}
           ENFORCED: ${{ steps.gates.outputs.enforced }}
         run: |
           set -euo pipefail
@@ -356,7 +341,13 @@ jobs:
           # concurrency serializes whole runs; this re-check closes the
           # remaining in-run window. Fail-closed: a red or unreadable re-check
           # skips arming (the later red event's own run also disarms).
+          # The freshness floor is RECOMPUTED here, not reused from the gate
+          # step: a branch force-pushed away and back to the same SHA between
+          # gate and arm keeps --match-head-commit satisfied while the old
+          # floor would let an intervening head's summary pass as fresh.
           if [[ "$ENFORCED" == "true" ]]; then
+            HEAD_SEEN_AT=$(GH_TOKEN="$GATE_TOKEN" bash .devantler-tech-actions/.scripts/compute-head-seen-floor.sh \
+              "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID")
             GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews-arm.json
             GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments-arm.json
             if ! bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_SEEN_AT" /tmp/reviews-arm.json /tmp/comments-arm.json; then

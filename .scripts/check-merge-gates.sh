@@ -18,8 +18,9 @@
 # Exits 0 only when BOTH gates are proven at the current head:
 #   1. a green review — CodeRabbit's LATEST review verdict at the head is
 #      APPROVED (an earlier approval superseded by CHANGES_REQUESTED or a
-#      dismissal is NOT green, and a later COMMENTED review at the head
-#      carrying actionable findings supersedes the approval too), or — when
+#      dismissal is NOT green, and a COMMENTED review at the head that is not
+#      explicitly clean supersedes an approval and blocks the Codex
+#      fallback), or — when
 #      CodeRabbit has no verdict at the head — a Codex clean pass ("Didn't
 #      find any major issues") whose "Reviewed commit" equals the head and is
 #      Codex's LATEST result for it;
@@ -78,30 +79,33 @@ elif [[ "$cr_approved_anywhere" -gt 0 ]]; then
   review_state="stale"
 fi
 
-# CodeRabbit posts incremental findings as a COMMENTED review WITHOUT revoking
-# its earlier approval, so a COMMENTED review at the head that lands after the
-# approval and carries actionable findings must supersede it. A clean
-# incremental pass ("Actionable comments posted: 0") keeps the approval; a
-# body that cannot be proven clean is treated as findings (fail-closed).
-if [[ "$review_state" == "green" ]]; then
-  cr_commented_after_verdict="$(jq -r --arg sha "$head_sha" '
-    ([.[]
-      | select(.user.login == "coderabbitai[bot]")
-      | select(.commit_id == $sha)
-      | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
-               or .state == "DISMISSED")]
-     | sort_by(.submitted_at) | last | .submitted_at // "") as $verdict_at
-    | [.[]
-       | select(.user.login == "coderabbitai[bot]")
-       | select(.commit_id == $sha)
-       | select(.state == "COMMENTED")
-       | select(.submitted_at > $verdict_at)]
-    | sort_by(.submitted_at) | last | .body // empty' "$reviews_json")"
+# CodeRabbit posts incremental findings as a COMMENTED review WITHOUT issuing
+# a verdict, so a COMMENTED review at the head that lands after the latest
+# verdict (or with no verdict at all) must block a green outcome — it
+# supersedes an earlier approval AND pre-empts the Codex fallback below. Only
+# a body that explicitly proves clean ("Actionable comments posted: 0")
+# preserves the state; a blank or unparseable body counts as findings
+# (fail-closed — a bodyless COMMENTED review can still carry inline review
+# comments). The EXISTENCE marker line distinguishes "no such review" from
+# "review with an empty body".
+cr_commented_probe="$(jq -r --arg sha "$head_sha" '
+  ([.[]
+    | select(.user.login == "coderabbitai[bot]")
+    | select(.commit_id == $sha)
+    | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
+             or .state == "DISMISSED")]
+   | sort_by(.submitted_at) | last | .submitted_at // "") as $verdict_at
+  | [.[]
+     | select(.user.login == "coderabbitai[bot]")
+     | select(.commit_id == $sha)
+     | select(.state == "COMMENTED")
+     | select(.submitted_at > $verdict_at)]
+  | sort_by(.submitted_at) | last
+  | if . == null then "absent" else "present\n" + (.body // "") end' "$reviews_json")"
 
-  if [[ -n "$cr_commented_after_verdict" &&
-    "$cr_commented_after_verdict" != *"Actionable comments posted: 0"* ]]; then
-    review_state="needs-fix"
-  fi
+if [[ "$cr_commented_probe" == present* &&
+  "$cr_commented_probe" != *"Actionable comments posted: 0"* ]]; then
+  review_state="needs-fix"
 fi
 
 if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then
