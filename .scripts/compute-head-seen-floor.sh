@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Freshness floor for CodeRabbit's pre-merge summary: the time GitHub last saw
-# the given SHA BECOME the PR head. Shared by the gate step and the pre-arm
-# re-check of the privileged auto-merge workflow (the re-check must recompute
-# it — a branch force-pushed away and back to the same SHA between gate and
-# arm would otherwise be compared against a stale floor).
+# the given SHA BECOME the PR head. Used by the fail-closed gate step before
+# it trusts a CodeRabbit pre-merge summary.
 #
 # Usage: compute-head-seen-floor.sh <repository> <pr-number> <head-sha> [own-run-id] [event-name]
 #   repository   owner/name
@@ -18,11 +16,13 @@
 #                it is a safe floor when no other suite exists (part 2).
 #
 # Floor construction (each part raises, never lowers — fail-closed):
-#   1. earliest check-suite created_at for the SHA (excluding this run's own
-#      suite) — when GitHub first saw the commit; commit metadata alone is NOT
-#      a safe floor (pushing a previously-created commit object carries an old
-#      committer date, and a pre-existing summary from the PREVIOUS head can
-#      postdate it — a committer-date floor would let that stale summary pass);
+#   1. earliest check-suite created_at for the SHA that is associated with THIS
+#      pull request (excluding this run's own suite) — when GitHub first saw the
+#      commit as this PR's head; an older suite for another branch/PR must not
+#      lower the floor. Commit metadata alone is NOT a safe floor (pushing a
+#      previously-created commit object carries an old committer date, and a
+#      pre-existing summary from the PREVIOUS head can postdate it — a
+#      committer-date floor would let that stale summary pass);
 #   2. when no other suite exists yet: on a pull_request-event run the own
 #      suite's created_at IS push time and is used; on comment/review-driven
 #      runs there is NO provable head-seen time, so the script FAILS (exit 1)
@@ -51,9 +51,21 @@ if [[ -n "$own_run_id" ]]; then
 fi
 
 suites_json=$(gh api "repos/$repository/commits/$head_sha/check-suites" --paginate | jq -s '[.[].check_suites[]?]')
-floor=$(jq -r --arg own "$own_suite_id"   '[.[] | select((.id | tostring) != $own) | .created_at | select(. != null)] | min // empty' <<<"$suites_json")
+floor=$(jq -r --arg own "$own_suite_id" --argjson pr "$pr_number" '
+  [.[]
+   | select((.id | tostring) != $own)
+   | select(any(.pull_requests[]?; .number == $pr))
+   | .created_at
+   | select(. != null)]
+  | min // empty' <<<"$suites_json")
 if [[ -z "$floor" && "$event_name" == "pull_request" && -n "$own_suite_id" ]]; then
-  floor=$(jq -r --arg own "$own_suite_id"     '[.[] | select((.id | tostring) == $own) | .created_at | select(. != null)] | min // empty' <<<"$suites_json")
+  floor=$(jq -r --arg own "$own_suite_id" --argjson pr "$pr_number" '
+    [.[]
+     | select((.id | tostring) == $own)
+     | select(any(.pull_requests[]?; .number == $pr))
+     | .created_at
+     | select(. != null)]
+    | min // empty' <<<"$suites_json")
 fi
 if [[ -z "$floor" ]]; then
   echo "::error::cannot prove when $head_sha became the PR head (no usable check suite on a ${event_name:-non-pull_request} run) — failing closed." >&2

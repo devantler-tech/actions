@@ -4,9 +4,10 @@
 #   - a merge-queue entry (on merge-queue repos `--auto` ENQUEUES once
 #     requirements are met and autoMergeRequest reads null, so a red gate
 #     must DEQUEUE the entry or it merges from the queue regardless).
-# Shared by the disarm step and the pre-arm re-check of the privileged
-# auto-merge workflow. Prints what it revoked; exits 0 when nothing was
-# pending. Fail-closed callers treat any error as a failed disarm.
+# Shared by the red-gate disarm step and the enforced-mode approval/handoff
+# cleanup in the privileged auto-merge workflow. Prints what it revoked;
+# exits 0 when nothing was pending. Fail-closed callers treat any error as a
+# failed disarm.
 #
 # Usage: disarm-auto-merge.sh <repository> <pr-number>
 
@@ -31,7 +32,7 @@ read -r pr_id armed queued <<<"$state"
 
 if [[ "$armed" == "true" ]]; then
   gh pr merge "$pr_number" --disable-auto --repo "$repository"
-  echo "::warning::Auto-merge DISARMED for PR #${pr_number}: review/pre-merge gates are not green at the current head."
+  echo "::warning::Auto-merge DISARMED for PR #${pr_number}: fail-closed review-gate policy requires live maintenance-agent arming."
 fi
 
 if [[ "$queued" == "true" ]]; then
@@ -39,7 +40,7 @@ if [[ "$queued" == "true" ]]; then
   gh api graphql \
     -f query='mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}' \
     -f id="$pr_id" >/dev/null
-  echo "::warning::PR #${pr_number} DEQUEUED from the merge queue: review/pre-merge gates are not green at the current head."
+  echo "::warning::PR #${pr_number} DEQUEUED from the merge queue: fail-closed review-gate policy requires live maintenance-agent arming."
 fi
 
 if [[ "$armed" != "true" && "$queued" != "true" ]]; then

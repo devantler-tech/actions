@@ -6,12 +6,12 @@
 #   head-seen-at       ISO8601 time GitHub last saw the head BECOME the head
 #                      (the caller passes the earliest check-suite created_at
 #                      for the SHA — raised to the newest force-push time when
-#                      the branch later returned to an earlier SHA — falling
-#                      back to the committer date) — the freshness floor for the
-#                      pre-merge summary, which CodeRabbit edits in place and
-#                      which carries no commit SHA of its own. Commit metadata
-#                      alone is NOT a safe floor: pushing a previously-created
-#                      commit object carries an old committer date.
+#                      the branch later returned to an earlier SHA). This is
+#                      the freshness floor for the pre-merge summary, which
+#                      CodeRabbit edits in place and which carries no commit
+#                      SHA of its own. Commit metadata alone is NOT a safe
+#                      floor: pushing a previously-created commit object
+#                      carries an old committer date.
 #   reviews-json       file holding the FULL paginated `pulls/<n>/reviews` array
 #   comments-json      file holding the FULL paginated `issues/<n>/comments` array
 #
@@ -20,23 +20,26 @@
 #      APPROVED (an earlier approval superseded by CHANGES_REQUESTED or a
 #      dismissal is NOT green, and a COMMENTED review at the head that is not
 #      explicitly clean supersedes an approval and blocks the Codex
-#      fallback), or — when
-#      CodeRabbit has no verdict at the head — a Codex clean pass ("Didn't
-#      find any major issues") whose "Reviewed commit" equals the head and is
-#      Codex's LATEST result for it;
+#      fallback), or — when CodeRabbit has no blocking verdict at the head and
+#      no current-head Codex findings review exists — the latest Codex result
+#      comment is a clean pass ("Didn't find any major issues") whose
+#      "Reviewed commit" equals the head;
 #   2. a green CodeRabbit pre-merge result — the most recently UPDATED
 #      auto-generated summary (stable marker required; CodeRabbit edits the
-#      summary in place, so created_at alone selects a stale revision) whose
-#      pre-merge section is unambiguously green: a positive check-mark count
-#      and no error/inconclusive/warning marks in either shape, and whose
-#      update time is not older than the head-seen floor (a summary last
-#      touched before GitHub saw the head can only describe an earlier state).
+#      summary in place, so created_at alone selects a stale revision). That
+#      newest summary itself must carry an unambiguously green pre-merge
+#      section: a positive check-mark count and no error/inconclusive/warning
+#      marks in either shape, and its update time must not be older than the
+#      head-seen floor (a summary last touched before GitHub saw the head can
+#      only describe an earlier state). A newer summary with no pre-merge
+#      section supersedes an older green one and fails closed.
 #      When walkthrough boundary markers exist, only the bounded region is
 #      parsed so echoed marker text elsewhere cannot spoof it.
 #
 # Everything else — missing, stale, mixed, unparseable, or absent state — is
-# NOT green and exits 1 (the workflow then skips arming; the maintenance
-# agent arms after its own live pentad check). Never weaken this to warn-only.
+# NOT green and exits 1 (the workflow declines approval and revokes stale
+# arming; the maintenance agent acts after its own live pentad check). Never
+# weaken this to warn-only.
 
 set -euo pipefail
 
@@ -108,22 +111,43 @@ if [[ "$cr_commented_probe" == present* &&
   review_state="needs-fix"
 fi
 
-if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then
-  # Codex lane: its result is an ISSUE COMMENT carrying "**Reviewed commit:**
-  # <sha>". Only the LATEST Codex result for the current head counts — an
-  # older clean pass superseded by a findings run must not read as green.
-  latest_codex_at_head="$(jq -r --arg sha "$head_sha" '
-    [.[]
-     | select(.user.login == "chatgpt-codex-connector[bot]")
-     | select(.body | contains($sha))]
-    | sort_by(.created_at) | last | .body // empty' "$comments_json")"
+# Codex lane: clean results are ISSUE COMMENTS carrying "**Reviewed commit:**
+# <sha>" (often abbreviated), while findings arrive as review objects at the
+# exact head. Any current-head findings review is red evidence even when a
+# later clean comment exists: the REST review snapshot exposes submitted_at but
+# not an edit timestamp, so allowing a comment to supersede it could miss an
+# older review edited red later. This conservative result can only withhold the
+# workflow's approval; the maintenance agent still evaluates the live pentad.
+codex_findings_at_head="$(jq -r --arg sha "$head_sha" '
+  [.[]
+   | select(.user.login == "chatgpt-codex-connector[bot]")
+   | select((.commit_id // "" | ascii_downcase) == ($sha | ascii_downcase))
+   | select(.state == "COMMENTED" or .state == "CHANGES_REQUESTED")]
+  | length' "$reviews_json")"
 
-  if [[ -n "$latest_codex_at_head" ]]; then
-    if [[ "$latest_codex_at_head" == *"Didn't find any major issues"* ]]; then
+latest_codex_comment_probe="$(jq -r --arg sha "$head_sha" '
+  ($sha | ascii_downcase) as $head
+  | [.[]
+     | select(.user.login == "chatgpt-codex-connector[bot]")
+     | (.body // "") as $body
+     | (try ($body
+         | capture("\\*\\*Reviewed commit:\\*\\*[[:space:]]*`?(?<sha>[0-9a-fA-F]{7,40})")
+         | .sha | ascii_downcase) catch "") as $reviewed
+     | select($reviewed != "" and ($head | startswith($reviewed)))
+     | {at: (.updated_at // .created_at), body: $body}]
+  | sort_by(.at) | last
+  | if . == null then "absent" else "present\n" + .body end' "$comments_json")"
+
+if [[ "$codex_findings_at_head" -gt 0 ]]; then
+  review_state="needs-fix"
+elif [[ "$latest_codex_comment_probe" == present* ]]; then
+  latest_codex_body="${latest_codex_comment_probe#*$'\n'}"
+  if [[ "$latest_codex_body" == *"Didn't find any major issues"* ]]; then
+    if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then
       review_state="green"
-    else
-      review_state="needs-fix"
     fi
+  else
+    review_state="needs-fix"
   fi
 fi
 
@@ -138,9 +162,7 @@ summary_marker='<!-- This is an auto-generated comment: summarize by coderabbit.
 premerge_selected="$(jq -r --arg marker "$summary_marker" '
   [.[]
    | select(.user.login == "coderabbitai[bot]")
-   | select(.body | contains($marker))
-   | select((.body | contains("## Pre-merge checks"))
-            or (.body | contains("<summary>🚥 Pre-merge checks |")))]
+   | select(.body | contains($marker))]
   | sort_by(.updated_at // .created_at) | last
   | if . == null then empty
     else ((.updated_at // .created_at) // "") + "\n" + .body end' "$comments_json")"
@@ -173,10 +195,22 @@ if [[ -n "$premerge_body" ]]; then
         premerge_state="failed"
       fi
     elif [[ "$region" == *"## Pre-merge checks"* ]]; then
-      # Full shape: green only when at least one explicit pass exists and the
-      # bounded region carries no error/inconclusive/warning mark at all.
-      if [[ "$region" == *"✅"* && "$region" != *"❌"* &&
-        "$region" != *"❓"* && "$region" != *"⚠️"* ]]; then
+      # Full shape: every Markdown check row must explicitly be `✅ Passed`.
+      # Header/separator rows are ignored; an unknown/pending data row is red
+      # even when another row passed. Requiring at least one data row keeps an
+      # unrecognized future shape fail-closed.
+      full_check_rows="$(awk '
+        /^## Pre-merge checks[[:space:]]*$/ { in_section = 1; next }
+        in_section && /^##[[:space:]]/ { exit }
+        in_section && /^\|/ {
+          if ($0 ~ /^\|[-[:space:]:|]+\|[[:space:]]*$/) next
+          if ($0 ~ /\|[[:space:]]*(Status|Result)[[:space:]]*\|/) next
+          print
+        }
+      ' <<<"$region")"
+      if [[ -n "$full_check_rows" && "$region" != *"❌"* &&
+        "$region" != *"❓"* && "$region" != *"⚠️"* ]] &&
+        ! grep -qvF '✅ Passed' <<<"$full_check_rows"; then
         premerge_state="green"
       else
         premerge_state="failed"

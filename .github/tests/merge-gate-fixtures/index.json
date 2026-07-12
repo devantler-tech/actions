@@ -8,6 +8,10 @@
     "expect_green": true
   },
   {
+    "name": "green-codex-abbreviated-head",
+    "expect_green": true
+  },
+  {
     "name": "stale-cr-approval",
     "expect_green": false
   },
@@ -21,6 +25,22 @@
   },
   {
     "name": "codex-clean-superseded-by-findings",
+    "expect_green": false
+  },
+  {
+    "name": "codex-clean-superseded-by-review-findings",
+    "expect_green": false
+  },
+  {
+    "name": "codex-review-findings-superseded-by-clean",
+    "expect_green": false
+  },
+  {
+    "name": "codex-comment-edited-after-clean",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-with-codex-review-findings",
     "expect_green": false
   },
   {
@@ -40,11 +60,19 @@
     "expect_green": false
   },
   {
+    "name": "premerge-full-unknown-row",
+    "expect_green": false
+  },
+  {
     "name": "premerge-marker-missing",
     "expect_green": false
   },
   {
     "name": "newest-summary-wins",
+    "expect_green": false
+  },
+  {
+    "name": "newest-summary-omits-premerge",
     "expect_green": false
   },
   {
