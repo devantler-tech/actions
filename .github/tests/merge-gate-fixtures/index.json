@@ -44,6 +44,10 @@
     "expect_green": false
   },
   {
+    "name": "codex-newest-malformed-supersedes-clean",
+    "expect_green": false
+  },
+  {
     "name": "cr-approval-with-codex-review-findings",
     "expect_green": false
   },
@@ -102,6 +106,18 @@
   {
     "name": "cr-approval-then-commented-clean",
     "expect_green": true
+  },
+  {
+    "name": "cr-commented-findings-then-approval",
+    "expect_green": true
+  },
+  {
+    "name": "cr-commented-edited-after-approval",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-edited-before-submit",
+    "expect_green": false
   },
   {
     "name": "cr-commented-blank-supersedes-approval",

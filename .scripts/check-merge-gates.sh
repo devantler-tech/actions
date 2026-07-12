@@ -12,7 +12,8 @@
 #                      SHA of its own. Commit metadata alone is NOT a safe
 #                      floor: pushing a previously-created commit object
 #                      carries an old committer date.
-#   reviews-json       file holding the FULL paginated `pulls/<n>/reviews` array
+#   reviews-json       file holding the FULL paginated GraphQL review array,
+#                      normalized to REST-style keys plus last_edited_at
 #   comments-json      file holding the FULL paginated `issues/<n>/comments` array
 #
 # Exits 0 only when BOTH gates are proven at the current head:
@@ -62,12 +63,14 @@ premerge_state="not-posted"
 # CodeRabbit's verdict at the head is its LATEST verdict-bearing review there:
 # an APPROVED superseded by CHANGES_REQUESTED (or dismissed) must not count.
 cr_latest_verdict_at_head="$(jq -r --arg sha "$head_sha" '
+  def effective_at:
+    [.submitted_at, .last_edited_at] | map(select(. != null)) | max // "";
   [.[]
    | select(.user.login == "coderabbitai[bot]")
    | select(.commit_id == $sha)
    | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
             or .state == "DISMISSED")]
-  | sort_by(.submitted_at) | last | .state // empty' "$reviews_json")"
+  | sort_by(effective_at) | last | .state // empty' "$reviews_json")"
 
 cr_approved_anywhere="$(jq -r '
   [.[] | select(.user.login == "coderabbitai[bot]" and .state == "APPROVED")]
@@ -90,21 +93,24 @@ fi
 # a body that explicitly proves clean ("Actionable comments posted: 0")
 # preserves the state; a blank or unparseable body counts as findings
 # (fail-closed — a bodyless COMMENTED review can still carry inline review
-# comments). The EXISTENCE marker line distinguishes "no such review" from
-# "review with an empty body".
+# comments). GraphQL lastEditedAt makes an edited older review supersede a
+# later-submitted approval durably. The EXISTENCE marker line distinguishes
+# "no such review" from "review with an empty body".
 cr_commented_probe="$(jq -r --arg sha "$head_sha" '
+  def effective_at:
+    [.submitted_at, .last_edited_at] | map(select(. != null)) | max // "";
   ([.[]
     | select(.user.login == "coderabbitai[bot]")
     | select(.commit_id == $sha)
     | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
              or .state == "DISMISSED")]
-   | sort_by(.submitted_at) | last | .submitted_at // "") as $verdict_at
+   | sort_by(effective_at) | last | effective_at) as $verdict_at
   | [.[]
      | select(.user.login == "coderabbitai[bot]")
      | select(.commit_id == $sha)
      | select(.state == "COMMENTED")
-     | select(.submitted_at > $verdict_at)]
-  | sort_by(.submitted_at) | last
+     | select(effective_at >= $verdict_at)]
+  | sort_by(effective_at) | last
   | if . == null then "absent" else "present\n" + (.body // "") end' "$reviews_json")"
 
 if [[ "$cr_commented_probe" == present* &&
@@ -115,9 +121,7 @@ fi
 # Codex lane: clean results are ISSUE COMMENTS carrying "**Reviewed commit:**
 # <sha>" (often abbreviated), while findings arrive as review objects at the
 # exact head. Any current-head findings review is red evidence even when a
-# later clean comment exists: the REST review snapshot exposes submitted_at but
-# not an edit timestamp, so allowing a comment to supersede it could miss an
-# older review edited red later. This conservative result can only withhold the
+# later clean comment exists. This conservative result can only withhold the
 # workflow's approval; the maintenance agent still evaluates the live pentad.
 # An abbreviated clean SHA is accepted only when GitHub's commit endpoint
 # resolves it uniquely to the exact head; raw prefix matching is not proof.
@@ -128,15 +132,15 @@ codex_findings_at_head="$(jq -r --arg sha "$head_sha" '
    | select(.state == "COMMENTED" or .state == "CHANGES_REQUESTED")]
   | length' "$reviews_json")"
 
-latest_codex_comment_probe="$(jq -r --arg sha "$head_sha" '
-  ($sha | ascii_downcase) as $head
-  | [.[]
+latest_codex_comment_probe="$(jq -r '
+  [.[]
      | select(.user.login == "chatgpt-codex-connector[bot]")
      | (.body // "") as $body
-     | (try ($body
-         | capture("\\*\\*Reviewed commit:\\*\\*[[:space:]]*`?(?<sha>[0-9a-fA-F]{7,40})")
-         | .sha | ascii_downcase) catch "") as $reviewed
-     | select($reviewed != "" and ($head | startswith($reviewed)))
+     | select($body | contains("Codex Review:"))
+     | ([try ($body
+          | capture("\\*\\*Reviewed commit:\\*\\*[[:space:]]*`?(?<sha>[0-9a-fA-F]{7,40})")
+          | .sha) catch ""]
+        | first // "" | ascii_downcase) as $reviewed
      | {at: (.updated_at // .created_at), reviewed: $reviewed, body: $body}]
   | sort_by(.at) | last
   | if . == null then "absent"

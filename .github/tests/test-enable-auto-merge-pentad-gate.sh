@@ -88,6 +88,16 @@ if [[ "$pull_request_review_types" != *"edited"* ]]; then
   status=1
 fi
 
+if ! grep -q 'lastEditedAt' "$workflow" || ! grep -q 'last_edited_at' "$script"; then
+  echo "::error file=$workflow::review snapshots must preserve GraphQL lastEditedAt so edited CodeRabbit bodies are ordered by their durable edit time"
+  status=1
+fi
+if ! grep -q 'author{login __typename}' "$workflow" ||
+  ! grep -q 'author.__typename == "Bot"' "$workflow"; then
+  echo "::error file=$workflow::GraphQL Bot logins must be normalized to the REST-style [bot] names consumed by the gate parser"
+  status=1
+fi
+
 # Reusable workflows cannot schedule their callers. The caller-facing Usage
 # block must therefore carry the same edited-review disarm trigger as the
 # workflow itself; consumers copy this example when opting into enforcement.

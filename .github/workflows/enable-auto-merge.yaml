@@ -238,7 +238,36 @@ jobs:
           HEAD_SEEN_AT=$(bash .devantler-tech-actions/.scripts/compute-head-seen-floor.sh \
             "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID" "$EVENT_NAME")
 
-          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
+          OWNER="${REPOSITORY%%/*}"
+          NAME="${REPOSITORY#*/}"
+          # REST exposes only submitted_at, so an edited review can look older
+          # than an approval it actually superseded. GraphQL's lastEditedAt is
+          # durable across later event shapes and keeps fail-closed ordering.
+          # shellcheck disable=SC2016 # GraphQL $variables, not shell expansion.
+          gh api graphql --paginate \
+            -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
+              repository(owner:$owner,name:$name){pullRequest(number:$number){
+                reviews(first:100,after:$endCursor){
+                  nodes{author{login __typename} body state commit{oid} submittedAt lastEditedAt}
+                  pageInfo{hasNextPage endCursor}
+                }
+              }}
+            }' \
+            -f owner="$OWNER" -f name="$NAME" -F number="$PR_NUMBER" \
+            | jq -s '[.[].data.repository.pullRequest.reviews.nodes[]? | {
+                user: {login: (
+                  if .author.__typename == "Bot" and
+                    ((.author.login // "") | endswith("[bot]") | not)
+                  then ((.author.login // "") + "[bot]")
+                  else (.author.login // "")
+                  end
+                )},
+                body: (.body // ""),
+                state: .state,
+                commit_id: (.commit.oid // ""),
+                submitted_at: .submittedAt,
+                last_edited_at: .lastEditedAt
+              }]' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
           if bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_SEEN_AT" /tmp/reviews.json /tmp/comments.json; then
