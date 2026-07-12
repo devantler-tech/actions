@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.10](https://github.com/devantler-tech/actions/compare/v9.0.9...v9.0.10) (2026-07-12)
+
+
+### Bug Fixes
+
+* **auto-merge:** fail closed on trusted-bot review gates ([#553](https://github.com/devantler-tech/actions/issues/553)) ([51ae69c](https://github.com/devantler-tech/actions/commit/51ae69cfa8f41023833719b313d3c21044f4ea60))
+
 ## [9.0.9](https://github.com/devantler-tech/actions/compare/v9.0.8...v9.0.9) (2026-07-11)
 
 
