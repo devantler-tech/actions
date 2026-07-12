@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.11](https://github.com/devantler-tech/actions/compare/v9.0.10...v9.0.11) (2026-07-12)
+
+
+### Bug Fixes
+
+* **auto-merge:** harden mutable review evidence ([#575](https://github.com/devantler-tech/actions/issues/575)) ([9c8b35b](https://github.com/devantler-tech/actions/commit/9c8b35b0b25e661bc6f644b3a485e24eb1b8f25f))
+
 ## [9.0.10](https://github.com/devantler-tech/actions/compare/v9.0.9...v9.0.10) (2026-07-12)
 
 
