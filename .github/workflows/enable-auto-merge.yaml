@@ -26,11 +26,12 @@ on:
   # Review results land AFTER the pull_request events above have run, so the
   # gate re-evaluates when a reviewer bot posts or edits its result: any
   # CodeRabbit review verdict (approval OR changes-requested — the latter must
-  # be able to DISARM), a Codex result comment, and CodeRabbit's in-place
-  # pre-merge summary edits. These triggers only fire where this workflow file
-  # lives; workflow_call consumers add them to their caller (see the input).
+  # be able to DISARM), a DISMISSED approval (dismissal is non-green and must
+  # also disarm), a Codex result comment, and CodeRabbit's in-place pre-merge
+  # summary edits. These triggers only fire where this workflow file lives;
+  # workflow_call consumers add them to their caller (see the input).
   pull_request_review:
-    types: [submitted]
+    types: [submitted, dismissed]
   issue_comment:
     types: [created, edited]
 
@@ -160,11 +161,22 @@ jobs:
             exit 0
           fi
 
-          HEAD_COMMITTED_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
+          # Freshness floor for the pre-merge summary: when GitHub first SAW
+          # this head (earliest check-suite created_at for the SHA), not the
+          # commit's own committer date — pushing a previously-created commit
+          # object carries an old committer date that would let a stale
+          # summary pass as fresh. Committer date remains only as a fallback
+          # floor when no check suite exists yet (never an empty, fail-open
+          # floor).
+          HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA/check-suites" --paginate |
+            jq -rs '[.[].check_suites[]?.created_at | select(. != null)] | min // empty')
+          if [[ -z "$HEAD_SEEN_AT" ]]; then
+            HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
+          fi
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
-          if bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_COMMITTED_AT" /tmp/reviews.json /tmp/comments.json; then
+          if bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_SEEN_AT" /tmp/reviews.json /tmp/comments.json; then
             echo "armable=true" >> "$GITHUB_OUTPUT"
           else
             echo "armable=false" >> "$GITHUB_OUTPUT"

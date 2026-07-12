@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Fail-closed review/pre-merge gate for the privileged auto-merge workflow.
 #
-# Usage: check-merge-gates.sh <head-sha> <head-committed-at> <reviews-json> <comments-json>
+# Usage: check-merge-gates.sh <head-sha> <head-seen-at> <reviews-json> <comments-json>
 #   head-sha           the pull request's current head commit SHA
-#   head-committed-at  the head commit's ISO8601 committer date (used as the
-#                      freshness floor for the pre-merge summary, which CodeRabbit
-#                      edits in place and which carries no commit SHA of its own)
+#   head-seen-at       ISO8601 time GitHub first saw the head (the caller passes
+#                      the earliest check-suite created_at for the SHA, falling
+#                      back to the committer date) — the freshness floor for the
+#                      pre-merge summary, which CodeRabbit edits in place and
+#                      which carries no commit SHA of its own. Commit metadata
+#                      alone is NOT a safe floor: pushing a previously-created
+#                      commit object carries an old committer date.
 #   reviews-json       file holding the FULL paginated `pulls/<n>/reviews` array
 #   comments-json      file holding the FULL paginated `issues/<n>/comments` array
 #
@@ -20,8 +24,8 @@
 #      summary in place, so created_at alone selects a stale revision) whose
 #      pre-merge section is unambiguously green: a positive check-mark count
 #      and no error/inconclusive/warning marks in either shape, and whose
-#      update time is not older than the head commit (a summary last touched
-#      before the head was committed can only describe an earlier state).
+#      update time is not older than the head-seen floor (a summary last
+#      touched before GitHub saw the head can only describe an earlier state).
 #      When walkthrough boundary markers exist, only the bounded region is
 #      parsed so echoed marker text elsewhere cannot spoof it.
 #
@@ -32,12 +36,12 @@
 set -euo pipefail
 
 if [[ $# -ne 4 ]]; then
-  echo "usage: $0 <head-sha> <head-committed-at> <reviews-json> <comments-json>" >&2
+  echo "usage: $0 <head-sha> <head-seen-at> <reviews-json> <comments-json>" >&2
   exit 2
 fi
 
 head_sha="$1"
-head_committed_at="$2"
+head_seen_at="$2"
 reviews_json="$3"
 comments_json="$4"
 
@@ -112,9 +116,9 @@ premerge_body="${premerge_selected#*$'\n'}"
 
 if [[ -n "$premerge_body" ]]; then
   # The summary carries no commit SHA, so freshness is the proxy tie to the
-  # head: a summary last updated before the head commit existed can only
+  # head: a summary last updated before GitHub first saw the head can only
   # describe an earlier state. ISO8601 Zulu timestamps compare lexically.
-  if [[ -n "$head_committed_at" && "$premerge_touched_at" < "$head_committed_at" ]]; then
+  if [[ -n "$head_seen_at" && "$premerge_touched_at" < "$head_seen_at" ]]; then
     premerge_state="stale"
   else
     region="$premerge_body"
