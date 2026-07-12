@@ -60,6 +60,10 @@
     "expect_green": false
   },
   {
+    "name": "premerge-rate-limited-retains-green",
+    "expect_green": false
+  },
+  {
     "name": "premerge-failed-full",
     "expect_green": false
   },

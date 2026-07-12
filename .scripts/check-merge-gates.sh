@@ -32,7 +32,8 @@
 #      marks in either shape, and its update time must not be older than the
 #      head-seen floor (a summary last touched before GitHub saw the head can
 #      only describe an earlier state). A newer summary with no pre-merge
-#      section supersedes an older green one and fails closed.
+#      section — or a rate-limit overlay that retained an older green section —
+#      supersedes the older result and fails closed.
 #      When walkthrough boundary markers exist, only the bounded region is
 #      parsed so echoed marker text elsewhere cannot spoof it.
 #
@@ -196,6 +197,12 @@ if [[ -n "$premerge_body" ]]; then
   # describe an earlier state. ISO8601 Zulu timestamps compare lexically.
   if [[ -n "$head_seen_at" && "$premerge_touched_at" < "$head_seen_at" ]]; then
     premerge_state="stale"
+  elif [[ "$premerge_body" == *'<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->'* ||
+    "$premerge_body" == *"## Review limit reached"* ]]; then
+    # CodeRabbit edits the existing summary when rate-limited and can retain
+    # the previous run's compact `✅ 5` section underneath the warning. That
+    # stale display is not a current evaluation and must never become green.
+    premerge_state="inconclusive"
   else
     region="$premerge_body"
     if [[ "$premerge_body" == *'<!-- pre_merge_checks_walkthrough_start -->'* &&
