@@ -161,10 +161,6 @@ jobs:
           permission-checks: read
           permission-actions: read
           permission-pull-requests: read
-          # The committer-date freshness fallback reads
-          # GET /repos/<repo>/commits/<sha>, which App tokens need Contents
-          # read for.
-          permission-contents: read
 
       # Fail-closed pentad gate (actions#548): approving and arming are only
       # allowed once a CURRENT-HEAD green review (CodeRabbit APPROVED or Codex
@@ -231,7 +227,7 @@ jobs:
           # reusing this value — a force-push away and back to the same SHA
           # between gate and arm must raise the floor, not ride the old one.
           HEAD_SEEN_AT=$(bash .devantler-tech-actions/.scripts/compute-head-seen-floor.sh \
-            "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID")
+            "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID" "$EVENT_NAME")
 
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
@@ -256,20 +252,27 @@ jobs:
       # FAILED gate-token mint is the same condition again: requesting a
       # permission the consumer's App installation has not granted errors the
       # mint step itself, so `steps.gates` never runs — unreadable gates, and
-      # an already-armed PR must still be revoked.
+      # an already-armed PR must still be revoked. So is a FAILED PR lookup
+      # (steps.pr errors before exporting `eligible`): the PR number is then
+      # re-derived from the event payload. Revocation covers BOTH arming
+      # shapes via .scripts/disarm-auto-merge.sh — the classic
+      # autoMergeRequest AND a merge-queue entry (on merge-queue repos
+      # `--auto` ENQUEUES and autoMergeRequest reads null, so a red gate must
+      # dequeue or the queue merges it regardless).
       - name: 🔒 Disarm auto-merge on failed gates
         if: >-
           ${{
             !cancelled() &&
-            steps.pr.outputs.eligible == 'true' &&
+            (steps.pr.outputs.eligible == 'true' || steps.pr.outcome == 'failure') &&
             (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') &&
-            (steps.gate-token.outcome == 'failure' ||
+            (steps.pr.outcome == 'failure' ||
+             steps.gate-token.outcome == 'failure' ||
              steps.gates.outcome == 'failure' ||
              (steps.gates.outcome == 'success' && steps.gates.outputs.armable == 'false'))
           }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_NUMBER: ${{ steps.pr.outputs.number || github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
         run: |
@@ -287,11 +290,7 @@ jobs:
           else
             echo "::warning::PR #${PR_NUMBER}: gate lookups failed before proving a head; disarming without head binding (fail-closed)."
           fi
-          armed=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
-          if [[ "$armed" == "true" ]]; then
-            gh pr merge "$PR_NUMBER" --disable-auto --repo "$REPOSITORY"
-            echo "::warning::Auto-merge DISARMED for PR #${PR_NUMBER}: review/pre-merge gates are no longer green at the current head."
-          fi
+          bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
 
       - name: ✅ Approve PR
         if: steps.gates.outputs.armable == 'true'
@@ -328,6 +327,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
           ENFORCED: ${{ steps.gates.outputs.enforced }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
@@ -347,11 +347,15 @@ jobs:
           # floor would let an intervening head's summary pass as fresh.
           if [[ "$ENFORCED" == "true" ]]; then
             HEAD_SEEN_AT=$(GH_TOKEN="$GATE_TOKEN" bash .devantler-tech-actions/.scripts/compute-head-seen-floor.sh \
-              "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID")
+              "$REPOSITORY" "$PR_NUMBER" "$HEAD_SHA" "$GITHUB_RUN_ID" "$EVENT_NAME")
             GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews-arm.json
             GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments-arm.json
             if ! bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_SEEN_AT" /tmp/reviews-arm.json /tmp/comments-arm.json; then
-              echo "::warning::PR #${PR_NUMBER} NOT armed: the review/pre-merge gates turned red between the gate check and arming (fail-closed pre-arm re-check)."
+              # NOT arming is not enough: an EARLIER green run may already
+              # have armed or enqueued this PR, and a red pre-arm re-check
+              # means the gates are red NOW — actively revoke, then bail.
+              bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
+              echo "::warning::PR #${PR_NUMBER} NOT armed (and any pending auto-merge revoked): the review/pre-merge gates turned red between the gate check and arming (fail-closed pre-arm re-check)."
               exit 0
             fi
           fi

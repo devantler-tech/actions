@@ -85,6 +85,27 @@ if [[ "$(grep -c 'compute-head-seen-floor.sh' "$workflow")" -lt 2 ]]; then
   status=1
 fi
 
+# Commit metadata is never a safe floor: pushing a previously-created commit
+# carries an old committer date, and a summary from the PREVIOUS head can
+# postdate it. The floor script must fail closed instead of falling back.
+if grep -q -- '--jq .commit.committer.date' "$floor_script"; then
+  echo "::error file=$floor_script::the freshness floor must never fall back to the commit committer date (fail closed instead)"
+  status=1
+fi
+
+# Revocation must cover BOTH arming shapes (autoMergeRequest + merge-queue
+# entry) and fire from BOTH red paths: the disarm step and the pre-arm
+# re-check (an earlier green run may already have armed/enqueued the PR).
+disarm_script="${5:-.scripts/disarm-auto-merge.sh}"
+if ! grep -q 'dequeuePullRequest' "$disarm_script"; then
+  echo "::error file=$disarm_script::disarm must dequeue merge-queue entries (dequeuePullRequest), not only --disable-auto"
+  status=1
+fi
+if [[ "$(grep -c 'disarm-auto-merge.sh' "$workflow")" -lt 2 ]]; then
+  echo "::error file=$workflow::the workflow must revoke via disarm-auto-merge.sh in the disarm step AND in the red pre-arm re-check"
+  status=1
+fi
+
 while IFS= read -r fixture; do
   name="$(jq -r '.name' <<<"$fixture")"
   expect_green="$(jq -r '.expect_green' <<<"$fixture")"
