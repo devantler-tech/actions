@@ -17,10 +17,22 @@ head_sha="$(printf 'a%.0s' {1..40})"
 head_committed_at="2026-07-11T09:00:00Z"
 status=0
 
-# The workflow must actually consume the gate: the gates step runs the script
-# and both privileged steps are conditioned on its armable output.
-if ! grep -q 'check-merge-gates.sh' "$workflow"; then
-  echo "::error file=$workflow::auto-merge workflow does not run check-merge-gates.sh"
+# The workflow must actually consume the gate: the gates step runs the script,
+# both privileged steps are conditioned on its armable output, and the arming
+# step re-runs the script immediately before `gh pr merge --auto` (an enforced
+# green run must not arm past a review that turned red mid-run).
+if [[ "$(grep -c 'check-merge-gates.sh' "$workflow")" -lt 2 ]]; then
+  echo "::error file=$workflow::auto-merge workflow must run check-merge-gates.sh in the gates step AND re-run it pre-arm in the Enable Auto-Merge step"
+  status=1
+fi
+
+# Backward compatibility for workflow_call consumers: a called workflow's
+# GITHUB_TOKEN permissions can only be downgraded by callers' grants, so the
+# job must never request more than the legacy documented minimum (the
+# enforced path's extra read scopes come from the gate-lookup App token).
+job_permissions="$(yq -r '.jobs."auto-merge".permissions | keys | sort | join(",")' "$workflow")"
+if [[ "$job_permissions" != "contents,pull-requests" ]]; then
+  echo "::error file=$workflow::auto-merge job permissions must stay at the legacy caller minimum (contents, pull-requests); got: $job_permissions"
   status=1
 fi
 

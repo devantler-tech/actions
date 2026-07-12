@@ -225,14 +225,18 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
-      # The gate's read-only lookups run on GITHUB_TOKEN, not the App token:
-      checks: read
-      actions: read
     with:
       enforce-review-gates: false # default; flip after the repo's review lanes are validated
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
+
+> **Note:** The caller grants only the legacy minimum above, with or without
+> enforcement — the enforced gate's read-only lookups run on a separate App
+> token minted only on enforced runs, so opting in requires the GitHub App
+> installation (not the caller's `GITHUB_TOKEN`) to include **Checks: read**
+> and **Actions: read**. If the installation lacks them, the gate fails
+> closed (nothing is armed) rather than open.
 
 #### Secrets and Inputs
 

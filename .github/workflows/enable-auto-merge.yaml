@@ -39,14 +39,22 @@ permissions: {}
 
 jobs:
   auto-merge:
+    # Legacy documented minimum ONLY — a called workflow's GITHUB_TOKEN
+    # permissions must be a subset of what every caller grants (they can only
+    # be downgraded, never elevated), so adding scopes here would fail
+    # validation for existing workflow_call consumers even with enforcement
+    # off. The enforced path's extra read scopes come from a separate App
+    # token minted only on enforced runs (see 🔑 gate-lookup token below).
     permissions:
       pull-requests: write
       contents: write
-      # The gate's same-repo lookups (check suites for the freshness floor,
-      # this run's own suite id) run on GITHUB_TOKEN — the App token stays
-      # scoped to approving and arming only.
-      checks: read
-      actions: read
+    # Serialize runs per PR so an older green gate run cannot interleave with
+    # a newer run that saw the gate turn red (the newer run's disarm always
+    # executes after the older run finishes); the pre-arm re-check in the
+    # 🔀 step closes the remaining in-run window.
+    concurrency:
+      group: enable-auto-merge-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     if: >-
       ${{
@@ -132,6 +140,25 @@ jobs:
             echo "::notice::PR #${PR_NUMBER} is draft or not open; skipping the auto-merge gate."
           fi
 
+      # Enforced-path-only read scopes, minted as a SEPARATE App token so the
+      # default-off path — and therefore every legacy workflow_call consumer's
+      # permissions block — never needs them. If a consumer's App installation
+      # lacks Checks/Actions read, the mint silently intersects them away and
+      # the gate's lookups fail, which fails the gate step CLOSED (no arming),
+      # never open.
+      - name: 🔑 Generate gate-lookup token (enforced runs only)
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: gate-token
+        if: >-
+          steps.pr.outputs.eligible == 'true' &&
+          (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true')
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-checks: read
+          permission-actions: read
+          permission-pull-requests: read
+
       # Fail-closed pentad gate (actions#548): approving and arming are only
       # allowed once a CURRENT-HEAD green review (CodeRabbit APPROVED or Codex
       # clean pass) AND a green CodeRabbit pre-merge result are both proven.
@@ -147,19 +174,23 @@ jobs:
       # consumers without CodeRabbit pre-merge summaries or agent-requested
       # reviews do not silently lose bot auto-merge before the flag is
       # flipped per repo/org after validation.
-      # Read-only: runs on GITHUB_TOKEN (checks: read + actions: read from
-      # the job's permissions), not the App token — consumer App
-      # installations never need Checks/Actions permissions for the gate.
+      # Read-only: enforced lookups run on the gate-lookup App token above,
+      # never the job's GITHUB_TOKEN — legacy callers' permissions blocks
+      # stay valid, and the privileged App token stays scoped to
+      # approving/arming. Fail-closed pipelines: any lookup error aborts the
+      # step (armable never set → nothing arms) instead of continuing on
+      # empty snapshots that could erase a red verdict.
       - name: 🛂 Verify review and pre-merge gates
         id: gates
         if: steps.pr.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token || steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
+          set -euo pipefail
           HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
 
           # The proven head is exported so the privileged steps below bind to
@@ -200,6 +231,8 @@ jobs:
           if [[ -z "$HEAD_SEEN_AT" ]]; then
             HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
           fi
+          # Exported for the pre-arm re-check (head-bound, so stable per SHA).
+          echo "head_seen_at=$HEAD_SEEN_AT" >> "$GITHUB_OUTPUT"
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
           gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments.json
 
@@ -264,14 +297,32 @@ jobs:
         if: steps.gates.outputs.armable == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GATE_TOKEN: ${{ steps.gate-token.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
+          HEAD_SEEN_AT: ${{ steps.gates.outputs.head_seen_at }}
+          ENFORCED: ${{ steps.gates.outputs.enforced }}
         run: |
+          set -euo pipefail
           REPO_INFO=$(gh api "repos/$REPOSITORY" --jq '.allow_auto_merge')
           if [[ "$REPO_INFO" != "true" ]]; then
             echo "::warning::Auto-merge is not enabled on this repository. Contact a repository admin to enable it in Settings > Pull Requests > Allow auto-merge."
             exit 0
+          fi
+          # Re-validate the gates IMMEDIATELY before arming: --match-head-commit
+          # only pins the SHA, so a review that turned red while this green run
+          # was still executing would otherwise be armed past. Per-PR
+          # concurrency serializes whole runs; this re-check closes the
+          # remaining in-run window. Fail-closed: a red or unreadable re-check
+          # skips arming (the later red event's own run also disarms).
+          if [[ "$ENFORCED" == "true" ]]; then
+            GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews-arm.json
+            GH_TOKEN="$GATE_TOKEN" gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" --paginate | jq -s 'add // []' > /tmp/comments-arm.json
+            if ! bash .devantler-tech-actions/.scripts/check-merge-gates.sh "$HEAD_SHA" "$HEAD_SEEN_AT" /tmp/reviews-arm.json /tmp/comments-arm.json; then
+              echo "::warning::PR #${PR_NUMBER} NOT armed: the review/pre-merge gates turned red between the gate check and arming (fail-closed pre-arm re-check)."
+              exit 0
+            fi
           fi
           # --match-head-commit binds the arming to the gate-proven head: a
           # push racing this workflow makes the merge call fail instead of
