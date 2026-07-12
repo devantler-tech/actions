@@ -24,16 +24,19 @@ on:
   merge_group:
   ##################################
   # Review results land AFTER the pull_request events above have run, so the
-  # gate re-evaluates when a reviewer bot posts or edits its result: any
-  # CodeRabbit review verdict (approval OR changes-requested — the latter must
-  # be able to DISARM), a DISMISSED approval (dismissal is non-green and must
-  # also disarm), a Codex result comment, and CodeRabbit's in-place pre-merge
-  # summary edits. These triggers only fire where this workflow file lives;
-  # workflow_call consumers add them to their caller (see the input).
+  # gate re-evaluates when a reviewer bot posts, edits, or deletes its result:
+  # any CodeRabbit review verdict (approval OR changes-requested — the latter
+  # must be able to DISARM), a DISMISSED approval (dismissal is non-green and
+  # must also disarm), a Codex result comment, and CodeRabbit's in-place
+  # pre-merge summary edits. `deleted` is a disarm path: evidence an enforced
+  # run armed on (a pre-merge summary or Codex clean pass) can be removed
+  # afterwards, and the gate must re-evaluate the now-missing state. These
+  # triggers only fire where this workflow file lives; workflow_call consumers
+  # add them to their caller (see the input).
   pull_request_review:
     types: [submitted, dismissed]
   issue_comment:
-    types: [created, edited]
+    types: [created, edited, deleted]
 
 permissions: {}
 
@@ -235,6 +238,18 @@ jobs:
           if [[ -z "$HEAD_SEEN_AT" ]]; then
             HEAD_SEEN_AT=$(gh api "repos/$REPOSITORY/commits/$HEAD_SHA" --jq .commit.committer.date)
           fi
+          # A branch that moves away and later RETURNS to this same SHA
+          # re-uses the SHA's original check suites, so the earliest-suite
+          # floor would date from the FIRST time GitHub saw it — letting a
+          # summary written for an intervening head pass as fresh. Returning
+          # to an earlier SHA requires a force-push, so raise the floor to the
+          # newest force-push time when one exists (normal pushes create
+          # never-seen SHAs, where the earliest-suite floor already holds).
+          LAST_FORCE_PUSH_AT=$(gh api "repos/$REPOSITORY/issues/$PR_NUMBER/timeline" --paginate |
+            jq -rs '[.[][] | select(.event == "head_ref_force_pushed") | .created_at | select(. != null)] | max // empty')
+          if [[ -n "$LAST_FORCE_PUSH_AT" && "$LAST_FORCE_PUSH_AT" > "$HEAD_SEEN_AT" ]]; then
+            HEAD_SEEN_AT="$LAST_FORCE_PUSH_AT"
+          fi
           # Exported for the pre-arm re-check (head-bound, so stable per SHA).
           echo "head_seen_at=$HEAD_SEEN_AT" >> "$GITHUB_OUTPUT"
           gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews" --paginate | jq -s 'add // []' > /tmp/reviews.json
@@ -249,9 +264,23 @@ jobs:
 
       # A gate that turned red AFTER an earlier run armed the PR (e.g. a
       # CodeRabbit changes-requested landing behind a Codex clean pass) must
-      # actively revoke the arming, not just decline to re-arm.
+      # actively revoke the arming, not just decline to re-arm. A gate step
+      # that FAILED outright (a lookup error under set -euo) is the same
+      # disarm condition, not a skip: unreadable gates on an enforced run must
+      # fail closed, so `!cancelled()` + outcome checks override the implicit
+      # success() the plain outputs-based condition would inherit. Enforcement
+      # is re-derived from the input/var because a failed gate step may have
+      # died before exporting its `enforced` output (with the flag off this
+      # whole condition stays false — pre-gate behavior never disarms).
       - name: 🔒 Disarm auto-merge on failed gates
-        if: steps.gates.outputs.enforced == 'true' && steps.gates.outputs.armable == 'false'
+        if: >-
+          ${{
+            !cancelled() &&
+            steps.pr.outputs.eligible == 'true' &&
+            (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') &&
+            (steps.gates.outcome == 'failure' ||
+             (steps.gates.outcome == 'success' && steps.gates.outputs.armable == 'false'))
+          }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -260,10 +289,17 @@ jobs:
         run: |
           # Head-bound like the approve/arm steps: a failed gate for an older
           # head must not revoke arming that a newer, green head just earned.
-          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
-          if [[ "$CURRENT_HEAD" != "$HEAD_SHA" ]]; then
-            echo "::notice::PR #${PR_NUMBER} head moved (${HEAD_SHA} -> ${CURRENT_HEAD}); skipping disarm — the newer head's own gate run decides."
-            exit 0
+          # A gate step that died before proving a head leaves HEAD_SHA empty
+          # — then disarm WITHOUT the head binding (fail-closed: unreadable
+          # gates must revoke arming; a later green run re-arms).
+          if [[ -n "$HEAD_SHA" ]]; then
+            CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
+            if [[ "$CURRENT_HEAD" != "$HEAD_SHA" ]]; then
+              echo "::notice::PR #${PR_NUMBER} head moved (${HEAD_SHA} -> ${CURRENT_HEAD}); skipping disarm — the newer head's own gate run decides."
+              exit 0
+            fi
+          else
+            echo "::warning::PR #${PR_NUMBER}: gate lookups failed before proving a head; disarming without head binding (fail-closed)."
           fi
           armed=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
           if [[ "$armed" == "true" ]]; then

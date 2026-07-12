@@ -1,0 +1,19 @@
+[
+ {
+  "user": {
+   "login": "coderabbitai[bot]"
+  },
+  "state": "APPROVED",
+  "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "submitted_at": "2026-07-11T10:00:00Z"
+ },
+ {
+  "user": {
+   "login": "coderabbitai[bot]"
+  },
+  "state": "COMMENTED",
+  "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "submitted_at": "2026-07-11T11:00:00Z",
+  "body": "**Actionable comments posted: 2**\n\n<details>\n<summary>⚠️ Outside diff range comments (2)</summary>\nfindings here\n</details>"
+ }
+]

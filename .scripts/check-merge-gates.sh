@@ -3,8 +3,10 @@
 #
 # Usage: check-merge-gates.sh <head-sha> <head-seen-at> <reviews-json> <comments-json>
 #   head-sha           the pull request's current head commit SHA
-#   head-seen-at       ISO8601 time GitHub first saw the head (the caller passes
-#                      the earliest check-suite created_at for the SHA, falling
+#   head-seen-at       ISO8601 time GitHub last saw the head BECOME the head
+#                      (the caller passes the earliest check-suite created_at
+#                      for the SHA — raised to the newest force-push time when
+#                      the branch later returned to an earlier SHA — falling
 #                      back to the committer date) — the freshness floor for the
 #                      pre-merge summary, which CodeRabbit edits in place and
 #                      which carries no commit SHA of its own. Commit metadata
@@ -16,9 +18,11 @@
 # Exits 0 only when BOTH gates are proven at the current head:
 #   1. a green review — CodeRabbit's LATEST review verdict at the head is
 #      APPROVED (an earlier approval superseded by CHANGES_REQUESTED or a
-#      dismissal is NOT green), or — when CodeRabbit has no verdict at the
-#      head — a Codex clean pass ("Didn't find any major issues") whose
-#      "Reviewed commit" equals the head and is Codex's LATEST result for it;
+#      dismissal is NOT green, and a later COMMENTED review at the head
+#      carrying actionable findings supersedes the approval too), or — when
+#      CodeRabbit has no verdict at the head — a Codex clean pass ("Didn't
+#      find any major issues") whose "Reviewed commit" equals the head and is
+#      Codex's LATEST result for it;
 #   2. a green CodeRabbit pre-merge result — the most recently UPDATED
 #      auto-generated summary (stable marker required; CodeRabbit edits the
 #      summary in place, so created_at alone selects a stale revision) whose
@@ -72,6 +76,32 @@ elif [[ -n "$cr_latest_verdict_at_head" ]]; then
   review_state="needs-fix"
 elif [[ "$cr_approved_anywhere" -gt 0 ]]; then
   review_state="stale"
+fi
+
+# CodeRabbit posts incremental findings as a COMMENTED review WITHOUT revoking
+# its earlier approval, so a COMMENTED review at the head that lands after the
+# approval and carries actionable findings must supersede it. A clean
+# incremental pass ("Actionable comments posted: 0") keeps the approval; a
+# body that cannot be proven clean is treated as findings (fail-closed).
+if [[ "$review_state" == "green" ]]; then
+  cr_commented_after_verdict="$(jq -r --arg sha "$head_sha" '
+    ([.[]
+      | select(.user.login == "coderabbitai[bot]")
+      | select(.commit_id == $sha)
+      | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
+               or .state == "DISMISSED")]
+     | sort_by(.submitted_at) | last | .submitted_at // "") as $verdict_at
+    | [.[]
+       | select(.user.login == "coderabbitai[bot]")
+       | select(.commit_id == $sha)
+       | select(.state == "COMMENTED")
+       | select(.submitted_at > $verdict_at)]
+    | sort_by(.submitted_at) | last | .body // empty' "$reviews_json")"
+
+  if [[ -n "$cr_commented_after_verdict" &&
+    "$cr_commented_after_verdict" != *"Actionable comments posted: 0"* ]]; then
+    review_state="needs-fix"
+  fi
 fi
 
 if [[ "$review_state" == "missing" || "$review_state" == "stale" ]]; then

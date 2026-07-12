@@ -60,6 +60,14 @@
     "expect_green": false
   },
   {
+    "name": "cr-approval-then-commented-findings",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-then-commented-clean",
+    "expect_green": true
+  },
+  {
     "name": "premerge-warning-full",
     "expect_green": false
   },
