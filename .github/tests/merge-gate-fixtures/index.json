@@ -96,6 +96,18 @@
     "expect_green": false
   },
   {
+    "name": "cr-approval-edited-after-changes-requested",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-edited-after-dismissal",
+    "expect_green": false
+  },
+  {
+    "name": "cr-changes-requested-then-approval",
+    "expect_green": true
+  },
+  {
     "name": "cr-approval-dismissed-at-head",
     "expect_green": false
   },
@@ -133,6 +145,10 @@
   },
   {
     "name": "premerge-warning-full",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-full-pass-only-in-explanation",
     "expect_green": false
   },
   {

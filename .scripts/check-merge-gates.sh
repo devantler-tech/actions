@@ -62,15 +62,15 @@ premerge_state="not-posted"
 
 # CodeRabbit's verdict at the head is its LATEST verdict-bearing review there:
 # an APPROVED superseded by CHANGES_REQUESTED (or dismissed) must not count.
+# Verdict chronology is submission chronology; editing an older review body
+# must not make its verdict supersede a later state transition.
 cr_latest_verdict_at_head="$(jq -r --arg sha "$head_sha" '
-  def effective_at:
-    [.submitted_at, .last_edited_at] | map(select(. != null)) | max // "";
   [.[]
    | select(.user.login == "coderabbitai[bot]")
    | select(.commit_id == $sha)
    | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
             or .state == "DISMISSED")]
-  | sort_by(effective_at) | last | .state // empty' "$reviews_json")"
+  | sort_by(.submitted_at // "") | last | .state // empty' "$reviews_json")"
 
 cr_approved_anywhere="$(jq -r '
   [.[] | select(.user.login == "coderabbitai[bot]" and .state == "APPROVED")]
@@ -100,11 +100,11 @@ cr_commented_probe="$(jq -r --arg sha "$head_sha" '
   def effective_at:
     [.submitted_at, .last_edited_at] | map(select(. != null)) | max // "";
   ([.[]
-    | select(.user.login == "coderabbitai[bot]")
-    | select(.commit_id == $sha)
-    | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
+   | select(.user.login == "coderabbitai[bot]")
+   | select(.commit_id == $sha)
+   | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED"
              or .state == "DISMISSED")]
-   | sort_by(effective_at) | last | effective_at) as $verdict_at
+   | sort_by(.submitted_at // "") | last | (.submitted_at // "")) as $verdict_at
   | [.[]
      | select(.user.login == "coderabbitai[bot]")
      | select(.commit_id == $sha)
@@ -230,18 +230,27 @@ if [[ -n "$premerge_body" ]]; then
       # Header/separator rows are ignored; an unknown/pending data row is red
       # even when another row passed. Requiring at least one data row keeps an
       # unrecognized future shape fail-closed.
-      full_check_rows="$(awk '
+      full_check_rows="$(awk -F'|' '
         /^## Pre-merge checks[[:space:]]*$/ { in_section = 1; next }
         in_section && /^##[[:space:]]/ { exit }
         in_section && /^\|/ {
           if ($0 ~ /^\|[-[:space:]:|]+\|[[:space:]]*$/) next
-          if ($0 ~ /\|[[:space:]]*(Status|Result)[[:space:]]*\|/) next
+          status = $3
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
+          if (status == "Status" || status == "Result") next
           print
         }
       ' <<<"$region")"
       if [[ -n "$full_check_rows" && "$region" != *"❌"* &&
         "$region" != *"❓"* && "$region" != *"⚠️"* ]] &&
-        ! grep -qvF '✅ Passed' <<<"$full_check_rows"; then
+        awk -F'|' '
+          {
+            status = $3
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
+            if (status != "✅ Passed") bad = 1
+          }
+          END { exit bad }
+        ' <<<"$full_check_rows"; then
         premerge_state="green"
       else
         premerge_state="failed"

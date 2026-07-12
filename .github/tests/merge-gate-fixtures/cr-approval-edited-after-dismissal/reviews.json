@@ -1,0 +1,22 @@
+[
+  {
+    "user": {
+      "login": "coderabbitai[bot]"
+    },
+    "state": "APPROVED",
+    "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "submitted_at": "2026-07-11T10:00:00Z",
+    "last_edited_at": "2026-07-11T12:00:00Z",
+    "body": "Approval body edited after the later dismissal."
+  },
+  {
+    "user": {
+      "login": "coderabbitai[bot]"
+    },
+    "state": "DISMISSED",
+    "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "submitted_at": "2026-07-11T11:00:00Z",
+    "last_edited_at": null,
+    "body": "A later dismissal must remain authoritative."
+  }
+]
