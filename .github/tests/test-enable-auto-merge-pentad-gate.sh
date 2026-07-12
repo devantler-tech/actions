@@ -11,6 +11,7 @@ set -euo pipefail
 script="${1:-.scripts/check-merge-gates.sh}"
 fixtures_dir="${2:-.github/tests/merge-gate-fixtures}"
 workflow="${3:-.github/workflows/enable-auto-merge.yaml}"
+readme="${6:-README.md}"
 
 head_sha="$(printf 'a%.0s' {1..40})"
 # The freshness floor supplied by the workflow: fixture summaries dated on or
@@ -74,6 +75,20 @@ fi
 pull_request_review_types="$(yq -r '.on.pull_request_review.types | join(",")' "$workflow")"
 if [[ "$pull_request_review_types" != *"edited"* ]]; then
   echo "::error file=$workflow::pull_request_review trigger must include the edited type so changed reviewer evidence re-evaluates the gate; got: $pull_request_review_types"
+  status=1
+fi
+
+# Reusable workflows cannot schedule their callers. The caller-facing Usage
+# block must therefore carry the same edited-review disarm trigger as the
+# workflow itself; consumers copy this example when opting into enforcement.
+readme_auto_merge="$(awk '
+  /^### .*Enable Auto-Merge/ { in_section = 1 }
+  in_section { print }
+  in_section && /^### .*Publish App/ { exit }
+' "$readme")"
+documented_review_types="$(grep -A1 'pull_request_review:' <<<"$readme_auto_merge" | tail -n 1)"
+if [[ "$documented_review_types" != *"edited"* ]]; then
+  echo "::error file=$readme::the Enable Auto-Merge caller example must include pull_request_review: edited; got: $documented_review_types"
   status=1
 fi
 
