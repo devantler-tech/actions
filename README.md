@@ -222,6 +222,12 @@ on:
 jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
+    permissions:
+      pull-requests: write
+      contents: write
+      # The gate's read-only lookups run on GITHUB_TOKEN, not the App token:
+      checks: read
+      actions: read
     with:
       enforce-review-gates: false # default; flip after the repo's review lanes are validated
     secrets:

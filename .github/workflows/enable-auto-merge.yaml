@@ -42,6 +42,11 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
+      # The gate's same-repo lookups (check suites for the freshness floor,
+      # this run's own suite id) run on GITHUB_TOKEN — the App token stays
+      # scoped to approving and arming only.
+      checks: read
+      actions: read
     runs-on: ubuntu-latest
     if: >-
       ${{
@@ -90,10 +95,11 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           # Least-privilege token scope: approving and enabling auto-merge on
-          # PRs, plus reading check suites for the gate's freshness floor.
+          # PRs. The gate's read-only lookups use GITHUB_TOKEN instead (see
+          # the job's permissions block), so no extra App permission is ever
+          # required of consumer installations.
           permission-contents: write
           permission-pull-requests: write
-          permission-checks: read
 
       # Self-reference: check out THIS workflow's own repo at the exact commit
       # it is running from (job.workflow_repository / job.workflow_sha) — never
@@ -141,11 +147,14 @@ jobs:
       # consumers without CodeRabbit pre-merge summaries or agent-requested
       # reviews do not silently lose bot auto-merge before the flag is
       # flipped per repo/org after validation.
+      # Read-only: runs on GITHUB_TOKEN (checks: read + actions: read from
+      # the job's permissions), not the App token — consumer App
+      # installations never need Checks/Actions permissions for the gate.
       - name: 🛂 Verify review and pre-merge gates
         id: gates
         if: steps.pr.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
@@ -210,7 +219,15 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
         run: |
+          # Head-bound like the approve/arm steps: a failed gate for an older
+          # head must not revoke arming that a newer, green head just earned.
+          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
+          if [[ "$CURRENT_HEAD" != "$HEAD_SHA" ]]; then
+            echo "::notice::PR #${PR_NUMBER} head moved (${HEAD_SHA} -> ${CURRENT_HEAD}); skipping disarm — the newer head's own gate run decides."
+            exit 0
+          fi
           armed=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
           if [[ "$armed" == "true" ]]; then
             gh pr merge "$PR_NUMBER" --disable-auto --repo "$REPOSITORY"
