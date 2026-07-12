@@ -1,0 +1,146 @@
+[
+  {
+    "name": "green-cr-at-head-premerge-compact",
+    "expect_green": true
+  },
+  {
+    "name": "green-codex-at-head-premerge-full",
+    "expect_green": true
+  },
+  {
+    "name": "green-codex-abbreviated-head",
+    "expect_green": true
+  },
+  {
+    "name": "codex-abbreviated-head-unresolvable",
+    "expect_green": false
+  },
+  {
+    "name": "stale-cr-approval",
+    "expect_green": false
+  },
+  {
+    "name": "stale-codex-clean",
+    "expect_green": false
+  },
+  {
+    "name": "codex-findings-at-head",
+    "expect_green": false
+  },
+  {
+    "name": "codex-clean-superseded-by-findings",
+    "expect_green": false
+  },
+  {
+    "name": "codex-clean-superseded-by-review-findings",
+    "expect_green": false
+  },
+  {
+    "name": "codex-review-findings-superseded-by-clean",
+    "expect_green": false
+  },
+  {
+    "name": "codex-comment-edited-after-clean",
+    "expect_green": false
+  },
+  {
+    "name": "codex-newest-malformed-supersedes-clean",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-with-codex-review-findings",
+    "expect_green": false
+  },
+  {
+    "name": "no-review-at-all",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-not-posted",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-mixed-compact",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-rate-limited-retains-green",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-failed-full",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-full-unknown-row",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-marker-missing",
+    "expect_green": false
+  },
+  {
+    "name": "newest-summary-wins",
+    "expect_green": false
+  },
+  {
+    "name": "newest-summary-omits-premerge",
+    "expect_green": false
+  },
+  {
+    "name": "changes-requested-not-approval",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-superseded-at-head",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-dismissed-at-head",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-then-commented-findings",
+    "expect_green": false
+  },
+  {
+    "name": "cr-approval-then-commented-clean",
+    "expect_green": true
+  },
+  {
+    "name": "cr-commented-findings-then-approval",
+    "expect_green": true
+  },
+  {
+    "name": "cr-commented-edited-after-approval",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-edited-before-submit",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-blank-supersedes-approval",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-findings-blocks-codex-fallback",
+    "expect_green": false
+  },
+  {
+    "name": "cr-commented-clean-allows-codex-fallback",
+    "expect_green": true
+  },
+  {
+    "name": "premerge-warning-full",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-stale-before-head",
+    "expect_green": false
+  },
+  {
+    "name": "premerge-edited-newest-updated-wins",
+    "expect_green": true
+  }
+]

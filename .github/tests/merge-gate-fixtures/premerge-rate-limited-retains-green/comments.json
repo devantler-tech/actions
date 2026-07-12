@@ -1,0 +1,17 @@
+[
+  {
+    "user": {
+      "login": "chatgpt-codex-connector[bot]"
+    },
+    "body": "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`",
+    "created_at": "2026-07-11T10:00:00Z"
+  },
+  {
+    "user": {
+      "login": "coderabbitai[bot]"
+    },
+    "body": "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->\n## Review limit reached\n<!-- pre_merge_checks_walkthrough_start -->\n<summary>🚥 Pre-merge checks | ✅ 5</summary>\n<!-- pre_merge_checks_walkthrough_end -->\n<!-- end of auto-generated comment: rate limited by coderabbit.ai -->",
+    "created_at": "2026-07-11T09:00:00Z",
+    "updated_at": "2026-07-11T11:00:00Z"
+  }
+]

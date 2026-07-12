@@ -1,0 +1,11 @@
+[
+  {
+    "user": {
+      "login": "chatgpt-codex-connector[bot]"
+    },
+    "state": "COMMENTED",
+    "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "submitted_at": "2026-07-11T10:00:00Z",
+    "body": "Codex Review: automated suggestions were posted."
+  }
+]

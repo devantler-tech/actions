@@ -203,23 +203,49 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) is a workflow that approves and enables auto-merge on pull requests from trusted bots and maintainers.
+[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) approves pull requests from an exact-match allowlist of trusted single-author bots and, with enforcement off, preserves the legacy head-bound auto-merge behavior. Its **opt-in, default-off** fail-closed review/pre-merge gate (`.scripts/check-merge-gates.sh`, enabled via the `enforce-review-gates` input or the `ENFORCE_MERGE_GATES` repository/organization variable) requires, at the PR's **current head**, a green review (CodeRabbit's latest head verdict `APPROVED`, or a Codex clean pass when CodeRabbit has no blocking head result) and a green, **fresh** CodeRabbit pre-merge result before approval. Missing, stale, edited, mixed, unknown, or unreadable evidence is red and actively revokes both classic auto-merge and merge-queue state. Enforced runs deliberately **never auto-arm**: GitHub cannot atomically bind mutable reviewer evidence to its merge call, so the workflow revokes stale arming before approval, binds approval to the proven head, revokes again after approval, and leaves final arming to the portfolio maintenance agent's live pentad check. The gate script is checked out from the **workflow-defining** repository at the running commit (`job.workflow_repository`/`job.workflow_sha`); the legacy default-off arming remains bound with `--match-head-commit`. Because review results land after the `pull_request` events, the workflow also triggers on `pull_request_review`/`issue_comment` where it lives; `workflow_call` consumers that enable enforcement must add those triggers to their **caller** workflow (a reusable workflow cannot schedule its callers).
 
 #### Usage
 
 ```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Required when enforce-review-gates is true: review results land after
+  # the pull_request events, so the caller must re-invoke the gate on them
+  # — including edits and dismissals, which can turn green evidence red and
+  # must be able to DISARM, and deleted comments, since removing a pre-merge
+  # summary or Codex clean pass is evidence deletion the gate must re-evaluate.
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  issue_comment:
+    types: [created, edited, deleted]
+
 jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
+    permissions:
+      pull-requests: write
+      contents: write
+    with:
+      enforce-review-gates: false # default; flip after the repo's review lanes are validated
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
+> **Note:** The caller grants only the legacy minimum above, with or without
+> enforcement — the enforced gate's read-only lookups run on a separate App
+> token minted only on enforced runs, so opting in requires the GitHub App
+> installation (not the caller's `GITHUB_TOKEN`) to include **Checks: read**,
+> **Actions: read**, and **Contents: read**. If the installation lacks them,
+> the gate fails closed (approval is withheld and stale arming is revoked) rather than open.
+
 #### Secrets and Inputs
 
-| Key               | Type   | Default | Required | Description            |
-|-------------------|--------|---------|----------|------------------------|
-| `APP_PRIVATE_KEY` | Secret | -       | Yes      | GitHub App private key |
+| Key                    | Type   | Default | Required | Description                                                           |
+|------------------------|--------|---------|----------|-----------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                |
+| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad |
 
 </details>
 
