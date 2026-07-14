@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.0.12](https://github.com/devantler-tech/actions/compare/v9.0.11...v9.0.12) (2026-07-14)
+
+
+### Bug Fixes
+
+* **template-sync:** use app token for target pushes ([#585](https://github.com/devantler-tech/actions/issues/585)) ([023b103](https://github.com/devantler-tech/actions/commit/023b1035651486b96773522a7db057394dc49fd0))
+
 ## [9.0.11](https://github.com/devantler-tech/actions/compare/v9.0.10...v9.0.11) (2026-07-12)
 
 
