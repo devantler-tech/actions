@@ -14,7 +14,7 @@ fail() {
 
 step_count="$(
   yq -r \
-    '[.jobs.template-sync.steps[] | select(.uses | contains("AndreasAugustin/actions-template-sync@"))] | length' \
+    '[.jobs.template-sync.steps[] | select((.uses // "") | contains("AndreasAugustin/actions-template-sync@"))] | length' \
     "$workflow"
 )"
 [[ "$step_count" == "1" ]] || fail "expected exactly one actions-template-sync step, found $step_count"
@@ -22,21 +22,21 @@ step_count="$(
 source_token="$(
   yq -r \
     '.jobs.template-sync.steps[]
-      | select(.uses | contains("AndreasAugustin/actions-template-sync@"))
+      | select((.uses // "") | contains("AndreasAugustin/actions-template-sync@"))
       | .with.source_gh_token // ""' \
     "$workflow"
 )"
 target_token="$(
   yq -r \
     '.jobs.template-sync.steps[]
-      | select(.uses | contains("AndreasAugustin/actions-template-sync@"))
+      | select((.uses // "") | contains("AndreasAugustin/actions-template-sync@"))
       | .with.target_gh_token // ""' \
     "$workflow"
 )"
 deprecated_token="$(
   yq -r \
     '.jobs.template-sync.steps[]
-      | select(.uses | contains("AndreasAugustin/actions-template-sync@"))
+      | select((.uses // "") | contains("AndreasAugustin/actions-template-sync@"))
       | .with.github_token // ""' \
     "$workflow"
 )"
