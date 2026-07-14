@@ -127,8 +127,8 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # actions-template-sync needs full history to compute and merge the
-          # template diff. It handles its own git auth via `github_token`, so the
-          # checkout does not need to persist credentials.
+          # template diff. It handles its own source and target authentication,
+          # so the checkout does not need to persist credentials.
           fetch-depth: 0
           persist-credentials: false
           token: ${{ steps.app-token.outputs.token || github.token }}
@@ -138,7 +138,8 @@ jobs:
         with:
           source_repo_path: ${{ inputs.source-repo-path }}
           upstream_branch: ${{ inputs.upstream-branch }}
-          github_token: ${{ steps.app-token.outputs.token || github.token }}
+          source_gh_token: ${{ steps.app-token.outputs.token || github.token }}
+          target_gh_token: ${{ steps.app-token.outputs.token || github.token }}
           pr_title: ${{ inputs.pr-title }}
           pr_commit_msg: ${{ inputs.pr-commit-msg }}
           pr_labels: ${{ inputs.pr-labels }}

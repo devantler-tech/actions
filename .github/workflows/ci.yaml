@@ -1616,6 +1616,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 🔐 Check Template Sync App-token routing
+        shell: bash
+        run: bash .github/tests/test-template-sync-token-routing.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
