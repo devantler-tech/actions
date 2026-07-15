@@ -2492,6 +2492,7 @@ jobs:
             ${{ needs.test-govulncheck-allowlist-honored.result }}
             ${{ needs.test-govulncheck-strict-blocks.result }}
             ${{ needs.test-govulncheck-action-lockstep.result }}
+            ${{ needs.test-govulncheck-timeout.result }}
             ${{ needs.test-zizmor-blocks.result }}
             ${{ needs.test-zizmor-action-lockstep.result }}
             ${{ needs.test-validate-go-lint-blocks.result }}
