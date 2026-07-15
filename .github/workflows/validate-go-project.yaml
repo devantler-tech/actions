@@ -374,7 +374,13 @@ jobs:
     # the Go runtime's heap so the GC reclaims aggressively and stays under the host
     # ceiling instead of OOM-killing; timeout-minutes bounds the worst case to a clear,
     # fast failure rather than a hung runner.
-    timeout-minutes: 15
+    #
+    # 20 (not 15): a cold-cache scan of a large module (no setup-go cache) legitimately
+    # runs ~14 min and a clean run has crossed the old 15-min bound — Actions cancelled
+    # a scan one second after it printed "No blocking vulnerabilities", failing the
+    # required check on a passing result (actions#593). 20 keeps a finite ceiling with
+    # headroom over the observed cold-cache runtime. Guarded by test-govulncheck-timeout.
+    timeout-minutes: 20
     env:
       # ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go toolchain
       # subprocesses and harden-runner.
