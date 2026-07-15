@@ -2059,6 +2059,26 @@ jobs:
           fi
           echo "validate-go-project.yaml pins the self-tested govulncheck action ✅"
 
+  test-govulncheck-timeout:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck - Timeout & Memory Safety Controls"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert govulncheck keeps a cold-cache-safe finite timeout + GOMEMLIMIT
+        run: bash .github/tests/test-govulncheck-timeout.sh
+
   # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
   # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
   # when a workflow has a finding. The happy-path test-zizmor job only proves the gate
@@ -2390,6 +2410,7 @@ jobs:
       - test-govulncheck-allowlist-honored
       - test-govulncheck-strict-blocks
       - test-govulncheck-action-lockstep
+      - test-govulncheck-timeout
       - test-zizmor-blocks
       - test-zizmor-action-lockstep
       - test-validate-go-lint-blocks
