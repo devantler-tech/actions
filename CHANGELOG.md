@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.0.1](https://github.com/devantler-tech/actions/compare/v10.0.0...v10.0.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **validate-go-project:** raise govulncheck timeout to survive cold-cache scans ([#594](https://github.com/devantler-tech/actions/issues/594)) ([1f2a2fb](https://github.com/devantler-tech/actions/commit/1f2a2fba3e94120d6a17f6dea702d123c09af6b8))
+
 ## [10.0.0](https://github.com/devantler-tech/actions/compare/v9.0.12...v10.0.0) (2026-07-14)
 
 
