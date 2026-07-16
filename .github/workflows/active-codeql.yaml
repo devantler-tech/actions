@@ -1,9 +1,14 @@
 name: 🔍 CodeQL
 
-# Advanced setup (replaces CodeQL default setup) so a custom config can exclude
-# the actions/unpinned-tag query that duplicates the zizmor unpinned-uses gate.
-# See .github/codeql/codeql-config.yml. CodeQL default setup must be DISABLED for
-# this to run (the two are mutually exclusive).
+# Advanced setup (replaces CodeQL default setup), running the same extended suite
+# with NO query exclusions — see .github/codeql/codeql-config.yml.
+#
+# The actions/unpinned-tag exclusion that originally justified this setup was
+# reverted in #426, once first-party self-references stopped being tag-pinned.
+# Advanced setup is retained only because default setup is disabled in the repo
+# settings (the two are mutually exclusive); returning to default setup is an
+# equivalent settings-side alternative. CodeQL default setup must stay DISABLED
+# for this to run.
 
 on:
   push:
