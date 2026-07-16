@@ -45,7 +45,71 @@ on:
 permissions: {}
 
 jobs:
+  # Required-workflow rules treat a workflow whose only job is SKIPPED as
+  # unsatisfied. Classify every trigger in an unconditional, unprivileged job
+  # so human, draft, external-author, and merge-group runs complete green as a
+  # deliberate no-op while the privileged path remains bot-only.
+  eligibility:
+    permissions: {}
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.classify.outputs.eligible }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 🔎 Classify privileged auto-merge trigger
+        id: classify
+        if: >-
+          ${{
+            (
+              github.event_name == 'pull_request' &&
+              !github.event.pull_request.draft &&
+              contains(
+                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                github.event.pull_request.user.login
+              )
+            ) ||
+            (
+              github.event_name == 'pull_request_review' &&
+              contains(
+                fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                github.event.review.user.login
+              ) &&
+              !github.event.pull_request.draft &&
+              contains(
+                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                github.event.pull_request.user.login
+              )
+            ) ||
+            (
+              github.event_name == 'issue_comment' &&
+              github.event.issue.pull_request &&
+              github.event.issue.state == 'open' &&
+              contains(
+                fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                github.event.comment.user.login
+              ) &&
+              contains(
+                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                github.event.issue.user.login
+              )
+            )
+          }}
+        run: echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: ✅ Complete ineligible required-workflow run
+        id: ineligible
+        if: steps.classify.outputs.eligible != 'true'
+        run: >-
+          echo "::notice::This event is not eligible for privileged bot auto-merge;
+          completing the required workflow as a safe no-op."
+
   auto-merge:
+    needs: eligibility
+    if: needs.eligibility.outputs.eligible == 'true'
     # Legacy documented minimum ONLY — a called workflow's GITHUB_TOKEN
     # permissions must be a subset of what every caller grants (they can only
     # be downgraded, never elevated), so adding scopes here would fail
@@ -63,42 +127,6 @@ jobs:
       group: enable-auto-merge-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    if: >-
-      ${{
-        (
-          github.event_name == 'pull_request' &&
-          !github.event.pull_request.draft &&
-          contains(
-            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-            github.event.pull_request.user.login
-          )
-        ) ||
-        (
-          github.event_name == 'pull_request_review' &&
-          contains(
-            fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
-            github.event.review.user.login
-          ) &&
-          !github.event.pull_request.draft &&
-          contains(
-            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-            github.event.pull_request.user.login
-          )
-        ) ||
-        (
-          github.event_name == 'issue_comment' &&
-          github.event.issue.pull_request &&
-          github.event.issue.state == 'open' &&
-          contains(
-            fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
-            github.event.comment.user.login
-          ) &&
-          contains(
-            fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-            github.event.issue.user.login
-          )
-        )
-      }}
 
     steps:
       - name: 🛡️ Harden runner

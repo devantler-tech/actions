@@ -4,36 +4,79 @@ set -euo pipefail
 
 workflow="${1:-.github/workflows/enable-auto-merge.yaml}"
 fixtures="${2:-.github/tests/enable-auto-merge-authors.json}"
-condition="$(yq -r '.jobs."auto-merge".if' "$workflow")"
+condition="$(yq -r '
+  [(.jobs.eligibility.steps // [])[]
+   | select(.id == "classify")
+   | .if // ""]
+  | join("\n")' "$workflow")"
 
 status=0
-for required_fragment in \
-  "github.event_name == 'pull_request'" \
-  "!github.event.pull_request.draft" \
-  "github.event.pull_request.user.login"; do
-  if [[ "$condition" != *"$required_fragment"* ]]; then
-    echo "::error file=$workflow::auto-merge job condition is missing: $required_fragment"
-    status=1
-  fi
-done
 
-allowlist_json="$({
-  printf '%s\n' "$condition" |
-    tr -d '[:space:]' |
-    sed -nE "s/.*contains\(fromJSON\('([^']+)'\),github\.event\.pull_request\.user\.login\).*/\1/p"
-} || true)"
-if [[ -z "$allowlist_json" ]] || ! jq -e 'type == "array" and all(.[]; type == "string")' \
-  <<<"$allowlist_json" >/dev/null; then
-  echo "::error file=$workflow::auto-merge job condition must use a JSON trusted-author allowlist"
-  exit 1
+# A required workflow must complete successfully for ineligible events rather
+# than making its only job SKIPPED. Keep classification in an unconditional,
+# zero-permission job and gate the privileged job on its output.
+eligibility_job_condition="$(yq -r '.jobs.eligibility.if // ""' "$workflow")"
+if [[ -n "$eligibility_job_condition" ]]; then
+  echo "::error file=$workflow::eligibility job must be unconditional so required workflows complete for ineligible events"
+  status=1
 fi
 
-actual_allowlist="$(jq -c 'sort' <<<"$allowlist_json")"
-expected_allowlist="$(jq -c '[.[] | select(.eligible) | .login] | sort' "$fixtures")"
-if [[ "$actual_allowlist" != "$expected_allowlist" ]]; then
-  echo "::error file=$workflow::trusted-author allowlist differs from the eligible fixture authors"
-  echo "expected: $expected_allowlist"
-  echo "actual:   $actual_allowlist"
+eligibility_permissions="$(yq -r '(.jobs.eligibility.permissions // {}) | keys | join(",")' "$workflow")"
+if [[ -n "$eligibility_permissions" ]]; then
+  echo "::error file=$workflow::eligibility job must not request repository permissions; got: $eligibility_permissions"
+  status=1
+fi
+
+eligibility_first_uses="$(yq -r '.jobs.eligibility.steps[0].uses // ""' "$workflow")"
+eligibility_first_egress="$(yq -r '.jobs.eligibility.steps[0].with."egress-policy" // ""' "$workflow")"
+if [[ "$eligibility_first_uses" != "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920" ||
+  "$eligibility_first_egress" != "audit" ]]; then
+  echo "::error file=$workflow::eligibility must begin with the pinned harden-runner action in audit mode"
+  status=1
+fi
+
+eligibility_output="$(yq -r '.jobs.eligibility.outputs.eligible // ""' "$workflow")"
+# shellcheck disable=SC2016 # GitHub expression is intentionally compared literally.
+if [[ "$eligibility_output" != '${{ steps.classify.outputs.eligible }}' ]]; then
+  echo "::error file=$workflow::eligibility output must be bound to steps.classify.outputs.eligible"
+  status=1
+fi
+
+ineligible_condition="$(yq -r '
+  [(.jobs.eligibility.steps // [])[]
+   | select(.id == "ineligible")
+   | .if // ""]
+  | join("\n")' "$workflow")"
+if [[ "$ineligible_condition" != *"steps.classify.outputs.eligible != 'true'"* ]]; then
+  echo "::error file=$workflow::eligibility job needs an explicit successful ineligible-event step"
+  status=1
+fi
+
+auto_merge_needs="$(yq -r '.jobs."auto-merge".needs // ""' "$workflow")"
+auto_merge_condition="$(yq -r '.jobs."auto-merge".if // ""' "$workflow")"
+if [[ "$auto_merge_needs" != "eligibility" ||
+  "$auto_merge_condition" != "needs.eligibility.outputs.eligible == 'true'" ]]; then
+  echo "::error file=$workflow::privileged auto-merge job must depend only on an exactly-true eligibility output"
+  status=1
+fi
+
+eligibility_uses="$(yq -r '[(.jobs.eligibility.steps // [])[] | .uses // ""] | join("\n")' "$workflow")"
+if [[ "$eligibility_uses" == *"create-github-app-token"* ]]; then
+  echo "::error file=$workflow::ineligible events must not mint a privileged GitHub App token"
+  status=1
+fi
+
+# Match the complete classifier shape rather than checking that a few strings
+# occur somewhere. This proves each allowlist is attached to the correct event
+# actor and rejects extra OR branches that could bypass the privileged gate.
+allowlist_json="$(jq -c '[.[] | select(.eligible) | .login]' "$fixtures")"
+reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
+normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
+expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
+if [[ "$normalized_condition" != "$expected_condition" ]]; then
+  echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
+  echo "expected: $expected_condition"
+  echo "actual:   $normalized_condition"
   status=1
 fi
 
