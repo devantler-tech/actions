@@ -121,8 +121,14 @@ classifier_condition="$(yq -r '
    | select(.id == "classify")
    | .if // ""]
   | join("\n")' "$workflow")"
-if [[ "$(grep -oF 'chatgpt-codex-connector[bot]' <<<"$classifier_condition" | wc -l | tr -d ' ')" -lt 2 ]]; then
-  echo "::error file=$workflow::pull_request_review runs must include chatgpt-codex-connector[bot] so findings actively disarm"
+normalized_classifier="$(tr -d '[:space:]' <<<"$classifier_condition")"
+reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
+review_branch="github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)"
+comment_branch="github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)"
+if [[ "$normalized_classifier" != *"$review_branch"* ||
+  "$normalized_classifier" != *"$comment_branch"* ||
+  "$(grep -oF 'chatgpt-codex-connector[bot]' <<<"$normalized_classifier" | wc -l | tr -d ' ')" -ne 2 ]]; then
+  echo "::error file=$workflow::both reviewer-driven branches must bind CodeRabbit and Codex to their event-specific actor"
   status=1
 fi
 

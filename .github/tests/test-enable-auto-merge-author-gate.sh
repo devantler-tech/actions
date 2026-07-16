@@ -27,6 +27,14 @@ if [[ -n "$eligibility_permissions" ]]; then
   status=1
 fi
 
+eligibility_first_uses="$(yq -r '.jobs.eligibility.steps[0].uses // ""' "$workflow")"
+eligibility_first_egress="$(yq -r '.jobs.eligibility.steps[0].with."egress-policy" // ""' "$workflow")"
+if [[ "$eligibility_first_uses" != "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920" ||
+  "$eligibility_first_egress" != "audit" ]]; then
+  echo "::error file=$workflow::eligibility must begin with the pinned harden-runner action in audit mode"
+  status=1
+fi
+
 eligibility_output="$(yq -r '.jobs.eligibility.outputs.eligible // ""' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expression is intentionally compared literally.
 if [[ "$eligibility_output" != '${{ steps.classify.outputs.eligible }}' ]]; then
@@ -58,33 +66,17 @@ if [[ "$eligibility_uses" == *"create-github-app-token"* ]]; then
   status=1
 fi
 
-for required_fragment in \
-  "github.event_name == 'pull_request'" \
-  "!github.event.pull_request.draft" \
-  "github.event.pull_request.user.login"; do
-  if [[ "$condition" != *"$required_fragment"* ]]; then
-    echo "::error file=$workflow::eligibility classifier is missing: $required_fragment"
-    status=1
-  fi
-done
-
-allowlist_json="$({
-  printf '%s\n' "$condition" |
-    tr -d '[:space:]' |
-    sed -nE "s/.*contains\(fromJSON\('([^']+)'\),github\.event\.pull_request\.user\.login\).*/\1/p"
-} || true)"
-if [[ -z "$allowlist_json" ]] || ! jq -e 'type == "array" and all(.[]; type == "string")' \
-  <<<"$allowlist_json" >/dev/null; then
-  echo "::error file=$workflow::eligibility classifier must use a JSON trusted-author allowlist"
-  exit 1
-fi
-
-actual_allowlist="$(jq -c 'sort' <<<"$allowlist_json")"
-expected_allowlist="$(jq -c '[.[] | select(.eligible) | .login] | sort' "$fixtures")"
-if [[ "$actual_allowlist" != "$expected_allowlist" ]]; then
-  echo "::error file=$workflow::trusted-author allowlist differs from the eligible fixture authors"
-  echo "expected: $expected_allowlist"
-  echo "actual:   $actual_allowlist"
+# Match the complete classifier shape rather than checking that a few strings
+# occur somewhere. This proves each allowlist is attached to the correct event
+# actor and rejects extra OR branches that could bypass the privileged gate.
+allowlist_json="$(jq -c '[.[] | select(.eligible) | .login]' "$fixtures")"
+reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
+normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
+expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
+if [[ "$normalized_condition" != "$expected_condition" ]]; then
+  echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
+  echo "expected: $expected_condition"
+  echo "actual:   $normalized_condition"
   status=1
 fi
 
