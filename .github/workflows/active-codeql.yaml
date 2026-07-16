@@ -4,7 +4,7 @@ name: 🔍 CodeQL
 # with NO query exclusions — see .github/codeql/codeql-config.yml.
 #
 # The actions/unpinned-tag exclusion that originally justified this setup was
-# reverted in #426, once first-party self-references stopped being tag-pinned.
+# reverted in #541, once first-party self-references stopped being tag-pinned.
 # Advanced setup is retained only because default setup is disabled in the repo
 # settings (the two are mutually exclusive); returning to default setup is an
 # equivalent settings-side alternative. CodeQL default setup must stay DISABLED
