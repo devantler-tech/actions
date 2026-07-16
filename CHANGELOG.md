@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.0.2](https://github.com/devantler-tech/actions/compare/v10.0.1...v10.0.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **auto-merge:** complete ineligible required runs ([#599](https://github.com/devantler-tech/actions/issues/599)) ([7df5238](https://github.com/devantler-tech/actions/commit/7df5238ba32e28fd1f33284eeee367efa81c48ab))
+
 ## [10.0.1](https://github.com/devantler-tech/actions/compare/v10.0.0...v10.0.1) (2026-07-15)
 
 
