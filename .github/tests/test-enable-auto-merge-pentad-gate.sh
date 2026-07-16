@@ -113,10 +113,15 @@ if [[ "$documented_review_types" != *"edited"* ]]; then
 fi
 
 # Codex findings are submitted as pull-request reviews, not issue comments.
-# The job must therefore re-evaluate for both supported reviewer bots; parsing
-# Codex review objects is ineffective if their submitted event never runs it.
-job_condition="$(yq -r '.jobs."auto-merge".if // ""' "$workflow")"
-if [[ "$(grep -oF 'chatgpt-codex-connector[bot]' <<<"$job_condition" | wc -l | tr -d ' ')" -lt 2 ]]; then
+# The classifier must therefore re-evaluate for both supported reviewer bots;
+# parsing Codex review objects is ineffective if their submitted event never
+# reaches the privileged job.
+classifier_condition="$(yq -r '
+  [(.jobs.eligibility.steps // [])[]
+   | select(.id == "classify")
+   | .if // ""]
+  | join("\n")' "$workflow")"
+if [[ "$(grep -oF 'chatgpt-codex-connector[bot]' <<<"$classifier_condition" | wc -l | tr -d ' ')" -lt 2 ]]; then
   echo "::error file=$workflow::pull_request_review runs must include chatgpt-codex-connector[bot] so findings actively disarm"
   status=1
 fi
