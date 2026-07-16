@@ -55,8 +55,8 @@ fi
 auto_merge_needs="$(yq -r '.jobs."auto-merge".needs // ""' "$workflow")"
 auto_merge_condition="$(yq -r '.jobs."auto-merge".if // ""' "$workflow")"
 if [[ "$auto_merge_needs" != "eligibility" ||
-  "$auto_merge_condition" != *"needs.eligibility.outputs.eligible == 'true'"* ]]; then
-  echo "::error file=$workflow::privileged auto-merge job must depend on the eligibility output"
+  "$auto_merge_condition" != "needs.eligibility.outputs.eligible == 'true'" ]]; then
+  echo "::error file=$workflow::privileged auto-merge job must depend only on an exactly-true eligibility output"
   status=1
 fi
 
