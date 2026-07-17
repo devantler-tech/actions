@@ -13,6 +13,7 @@ Install agent skills with the [`gh skill`](https://github.blog/changelog/2026-04
 | `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `project` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
+| `experimental-rate-limit-retry` | Opt in (default off) to a widened retry envelope for the `gh skill install` registry pulls, to ride out a transient GitHub rate-limit 403 during a burst ([#514](https://github.com/devantler-tech/actions/issues/514)). Off keeps the shared retry defaults; activation is a deliberate, reversible step. | ❌ | `false` |
 
 ## Outputs
 

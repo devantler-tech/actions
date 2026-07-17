@@ -28,6 +28,16 @@ inputs:
     description: GitHub token exposed to `gh` as `GH_TOKEN`
     required: false
     default: ${{ github.token }}
+  experimental-rate-limit-retry:
+    description: |
+      Opt in (default off) to a widened retry envelope for the `gh skill install` registry pulls, to
+      ride out a transient GitHub rate-limit 403 during a burst (devantler-tech/actions#514). Off
+      keeps the shared retry.sh fast-fail defaults, so this changes no existing consumer's behaviour.
+      Activation is a deliberate, reversible step — validate that the widened envelope actually clears
+      the burst before flipping it on for a consumer; cutting the burst's request load is the
+      root-cause follow-up on #514.
+    required: false
+    default: "false"
 outputs:
   installed-skills:
     description: Newline-separated list of `source/skill-name[@pin]` entries that were installed
@@ -54,8 +64,18 @@ runs:
         INPUT_SKILLS: ${{ inputs.skills }}
         INPUT_AGENTS: ${{ inputs.agents }}
         INPUT_SCOPE: ${{ inputs.scope }}
+        INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY: ${{ inputs.experimental-rate-limit-retry }}
       run: |
         set -euo pipefail
+
+        # Opt-in (default-off, #514): widen the shared retry.sh envelope for the
+        # `gh skill install` registry pulls below so a transient rate-limit 403
+        # during a Dependabot burst does not red a required check. The opt-in
+        # lives in a shared, tested script so both states are covered in CI
+        # (test-agent-skills-retry-env); default keeps retry.sh's fast-fail
+        # defaults, so no existing consumer's behaviour changes until enabled.
+        # shellcheck source=/dev/null
+        source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}"
 
         # Bounded retry for the registry pulls below — `gh skill install` fetches
         # each skill over the network, so a transient flake must not red a required
