@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.1](https://github.com/devantler-tech/actions/compare/v10.1.0...v10.1.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **validate-go-project:** make the concurrency group invocation-aware ([#628](https://github.com/devantler-tech/actions/issues/628)) ([79aeb16](https://github.com/devantler-tech/actions/commit/79aeb16f2a17c7019a93cc16da6e51d711406ba7)), closes [#587](https://github.com/devantler-tech/actions/issues/587)
+
 ## [10.1.0](https://github.com/devantler-tech/actions/compare/v10.0.3...v10.1.0) (2026-07-17)
 
 
