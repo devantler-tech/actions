@@ -242,6 +242,37 @@ if [[ -z "$handoff_line" || -z "$handoff_exit_line" || -z "$merge_line" || "$han
   status=1
 fi
 
+# Arming auto-merge on a PR that modifies .github/workflows/ is refused unless
+# the App token carries Workflows: write (GitHub treats
+# enablePullRequestAutoMerge as updating the workflow). The arming App token
+# must request that scope so workflow-touching PRs can be armed on installations
+# that grant it (actions#559).
+app_token_workflows="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token")
+   | .with."permission-workflows" // ""]
+  | join("\n")' "$workflow")"
+if [[ "$app_token_workflows" != "write" ]]; then
+  echo "::error file=$workflow::the arming App token must request Workflows: write so auto-merge can be armed on PRs that modify .github/workflows/ (actions#559)"
+  status=1
+fi
+
+# An installation without Workflows: write has that scope intersected away, so
+# the arming call is still refused there. The arming step must degrade
+# gracefully on that specific refusal (warn + exit 0) rather than fail the
+# required check, while any OTHER merge failure stays a hard error (actions#559).
+if ! grep -Fq 'without `workflows` permission' <<<"$pre_arm_run"; then
+  echo "::error file=$workflow::Enable Auto-Merge must detect the 'without \`workflows\` permission' arming refusal and degrade gracefully (actions#559)"
+  status=1
+fi
+graceful_line="$(grep -nF 'without `workflows` permission' <<<"$pre_arm_run" | head -1 | cut -d: -f1 || true)"
+graceful_exit_line="$(awk -v start="$graceful_line" 'NR >= start && /exit 0/ {print NR; exit}' <<<"$pre_arm_run")"
+hard_error_line="$(grep -nF 'Failed to enable auto-merge' <<<"$pre_arm_run" | head -1 | cut -d: -f1 || true)"
+if [[ -z "$graceful_line" || -z "$graceful_exit_line" || -z "$hard_error_line" ]]; then
+  echo "::error file=$workflow::the workflows-permission refusal must warn+exit 0, and any other failure must still hard-error (actions#559)"
+  status=1
+fi
+
 # The head-seen floor must ignore check suites created for some other PR that
 # happened to use the same commit SHA. Reusing the oldest cross-branch suite
 # makes a stale summary look newer than the PR's adoption of the head.

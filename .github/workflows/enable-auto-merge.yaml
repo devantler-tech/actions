@@ -142,10 +142,18 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           # Least-privilege token scope: approving and enabling auto-merge on
           # PRs. The gate's read-only lookups use GITHUB_TOKEN instead (see
-          # the job's permissions block), so no extra App permission is ever
-          # required of consumer installations.
+          # the job's permissions block).
           permission-contents: write
           permission-pull-requests: write
+          # Arming auto-merge on a PR that modifies .github/workflows/ requires
+          # the App token to carry Workflows: write — GitHub treats
+          # enablePullRequestAutoMerge as updating the workflow and refuses it
+          # otherwise (actions#559). The devantler-tech installation grants
+          # this org-wide; an installation WITHOUT the grant has this scope
+          # silently intersected away by the mint, and the arming step degrades
+          # gracefully rather than failing the required check (see the
+          # 🔀 Enable Auto-Merge step below).
+          permission-workflows: write
 
       # Self-reference: check out THIS workflow's own repo at the exact commit
       # it is running from (job.workflow_repository / job.workflow_sha) — never
@@ -450,5 +458,27 @@ jobs:
           fi
           # --match-head-commit preserves the legacy default-off behavior
           # while binding its arming request to the allowlist-proven head.
-          gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY" --match-head-commit "$HEAD_SHA"
-          echo "✅ Auto-merge enabled for PR #${PR_NUMBER} at ${HEAD_SHA} using squash method"
+          #
+          # Arming a PR that touches .github/workflows/ needs the App token to
+          # carry Workflows: write (the token mint requests it). The
+          # devantler-tech installation grants it, but an installation WITHOUT
+          # the grant has the scope intersected away and GitHub refuses the
+          # arming with "... without `workflows` permission". Degrade
+          # gracefully there — the PR simply is not auto-armed (a trusted human
+          # merges it) — instead of leaving a permanently-red required check
+          # (actions#559). Any OTHER failure is still a hard error.
+          set +e
+          merge_output=$(gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY" --match-head-commit "$HEAD_SHA" 2>&1)
+          merge_exit=$?
+          set -e
+          # shellcheck disable=SC2016 # The backticks in the workflows-permission match below are literal (part of GitHub's error text), not a command substitution.
+          if [[ $merge_exit -eq 0 ]]; then
+            echo "✅ Auto-merge enabled for PR #${PR_NUMBER} at ${HEAD_SHA} using squash method"
+          elif [[ "$merge_output" == *'without `workflows` permission'* ]]; then
+            echo "::warning::PR #${PR_NUMBER} modifies a workflow file and this GitHub App installation lacks Workflows: write, so auto-merge could not be armed. A trusted human can merge it manually. Grant the App Workflows: write to enable auto-arming on workflow-touching PRs here."
+            exit 0
+          else
+            echo "::error::Failed to enable auto-merge for PR #${PR_NUMBER}."
+            echo "$merge_output"
+            exit 1
+          fi
