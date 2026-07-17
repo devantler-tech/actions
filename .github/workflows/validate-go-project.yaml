@@ -21,8 +21,15 @@ on:
   merge_group:
   ##################################
 
+# Invocation-aware concurrency: keying on github.workflow keeps this workflow's
+# two invocations on the same ref in separate groups — the org-required direct
+# run (github.workflow == this workflow's name) versus a caller's reusable-workflow
+# self-test (a reusable workflow inherits the CALLER's github.workflow, e.g. the CI
+# workflow). Without it both share one group on the same repository+ref and
+# cancel each other, failing the aggregate required check nondeterministically
+# (devantler-tech/actions#587). Runs of the same logical invocation still supersede.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}"
   cancel-in-progress: true
 
 permissions: {}
