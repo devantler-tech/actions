@@ -1009,7 +1009,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Exercise agent-skills-retry-env.sh (opt-in off AND on)
+      - name: 🧪 Exercise agent-skills-retry-env.sh (opt-in off AND on) + action wiring
         shell: bash
         run: bash .github/tests/agent-skills-retry-env.sh
 

@@ -63,4 +63,22 @@ if [ "$(cat "$counter")" != "5" ]; then
 fi
 echo "✅ on: retry.sh rides out a 4-failure burst (5 attempts) with the widened envelope"
 
+# ── action↔helper wiring (lockstep) — the unit checks above prove the helper, but
+#    would stay green if setup-agent-skills stopped forwarding the input,
+#    misspelled the env var, or dropped the `source` call, leaving consumers who
+#    enable the opt-in silently on the defaults. Pin that wiring here. ──
+ay="$repo_root/setup-agent-skills/action.yaml"
+fwd="$(yq -r '.runs.steps[] | select(.id=="install") | .env.INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY' "$ay")"
+case "$fwd" in
+  *inputs.experimental-rate-limit-retry*) : ;;
+  *) echo "::error::setup-agent-skills must forward the experimental-rate-limit-retry input into INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY (got: $fwd)"; exit 1 ;;
+esac
+# shellcheck disable=SC2016  # match the literal source line, not an expansion
+if ! yq -r '.runs.steps[] | select(.id=="install") | .run' "$ay" \
+  | grep -qF 'source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}"'; then
+  echo "::error::setup-agent-skills must source agent-skills-retry-env.sh with INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY"
+  exit 1
+fi
+echo "✅ wiring: setup-agent-skills forwards the opt-in input and sources the helper"
+
 echo "all agent-skills-retry-env checks passed"
