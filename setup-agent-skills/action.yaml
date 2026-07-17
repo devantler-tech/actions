@@ -70,13 +70,12 @@ runs:
 
         # Opt-in (default-off, #514): widen the shared retry.sh envelope for the
         # `gh skill install` registry pulls below so a transient rate-limit 403
-        # during a Dependabot burst — which clears as the burst subsides — does
-        # not red a required check. Default keeps retry.sh's fast-fail defaults,
-        # so no existing consumer's behaviour changes until this is deliberately
-        # enabled. 5 attempts on a 10s→45s backoff spread retries across ~115s.
-        if [ "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}" = "true" ]; then
-          export RETRY_MAX_ATTEMPTS=5 RETRY_BASE_DELAY=10 RETRY_MAX_DELAY=45
-        fi
+        # during a Dependabot burst does not red a required check. The opt-in
+        # lives in a shared, tested script so both states are covered in CI
+        # (test-agent-skills-retry-env); default keeps retry.sh's fast-fail
+        # defaults, so no existing consumer's behaviour changes until enabled.
+        # shellcheck source=/dev/null
+        source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}"
 
         # Bounded retry for the registry pulls below — `gh skill install` fetches
         # each skill over the network, so a transient flake must not red a required
