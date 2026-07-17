@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.0.3](https://github.com/devantler-tech/actions/compare/v10.0.2...v10.0.3) (2026-07-17)
+
+
+### Bug Fixes
+
+* **release:** disable issue notification hooks ([#612](https://github.com/devantler-tech/actions/issues/612)) ([49d67dc](https://github.com/devantler-tech/actions/commit/49d67dc41db2e6ec3b727177c4e391f09dc4ec90))
+
 ## [10.0.2](https://github.com/devantler-tech/actions/compare/v10.0.1...v10.0.2) (2026-07-16)
 
 
