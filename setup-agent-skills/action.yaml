@@ -55,16 +55,20 @@ runs:
         INPUT_AGENTS: ${{ inputs.agents }}
         INPUT_SCOPE: ${{ inputs.scope }}
         # Widen the shared retry.sh envelope for these registry pulls. `gh skill
-        # install` fetches skill blobs from the GitHub API, which trips a
-        # *secondary* rate-limit (HTTP 403 "API rate limit exceeded for
-        # installation") during Dependabot bursts. The default 3-attempt / ~15s
-        # window regularly outlasts the reset; 6 attempts with a 10s→60s backoff
-        # keep retrying for ~190s, past a typical secondary-limit reset window,
-        # so a burst no longer reds a required check (#514). Only the failure
-        # path pays this cost — a first-try install still returns immediately.
-        RETRY_MAX_ATTEMPTS: "6"
+        # install` fetches skill blobs from the GitHub API; during a Dependabot
+        # burst many concurrent jobs hit it at once and trip a rate-limit 403
+        # ("API rate limit exceeded for installation") that clears once the
+        # burst subsides — reruns minutes later succeed. The default 3-attempt /
+        # ~15s window is too short to ride that out; 5 attempts on a 10s→45s
+        # backoff spread retries across ~115s so a transient burst no longer
+        # reds a required check (#514). Only the failure path pays this cost — a
+        # first-try install still returns immediately, and a genuinely broken
+        # install (bad pin/token) still fails, just ~115s later. Cutting the
+        # burst's request load (matrix dedupe / audit gating) is the root-cause
+        # follow-up tracked on #514.
+        RETRY_MAX_ATTEMPTS: "5"
         RETRY_BASE_DELAY: "10"
-        RETRY_MAX_DELAY: "60"
+        RETRY_MAX_DELAY: "45"
       run: |
         set -euo pipefail
 
