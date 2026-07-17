@@ -28,6 +28,16 @@ inputs:
     description: GitHub token exposed to `gh` as `GH_TOKEN`
     required: false
     default: ${{ github.token }}
+  experimental-rate-limit-retry:
+    description: |
+      Opt in (default off) to a widened retry envelope for the `gh skill install` registry pulls, to
+      ride out a transient GitHub rate-limit 403 during a burst (devantler-tech/actions#514). Off
+      keeps the shared retry.sh fast-fail defaults, so this changes no existing consumer's behaviour.
+      Activation is a deliberate, reversible step — validate that the widened envelope actually clears
+      the burst before flipping it on for a consumer; cutting the burst's request load is the
+      root-cause follow-up on #514.
+    required: false
+    default: "false"
 outputs:
   installed-skills:
     description: Newline-separated list of `source/skill-name[@pin]` entries that were installed
@@ -54,23 +64,19 @@ runs:
         INPUT_SKILLS: ${{ inputs.skills }}
         INPUT_AGENTS: ${{ inputs.agents }}
         INPUT_SCOPE: ${{ inputs.scope }}
-        # Widen the shared retry.sh envelope for these registry pulls. `gh skill
-        # install` fetches skill blobs from the GitHub API; during a Dependabot
-        # burst many concurrent jobs hit it at once and trip a rate-limit 403
-        # ("API rate limit exceeded for installation") that clears once the
-        # burst subsides — reruns minutes later succeed. The default 3-attempt /
-        # ~15s window is too short to ride that out; 5 attempts on a 10s→45s
-        # backoff spread retries across ~115s so a transient burst no longer
-        # reds a required check (#514). Only the failure path pays this cost — a
-        # first-try install still returns immediately, and a genuinely broken
-        # install (bad pin/token) still fails, just ~115s later. Cutting the
-        # burst's request load (matrix dedupe / audit gating) is the root-cause
-        # follow-up tracked on #514.
-        RETRY_MAX_ATTEMPTS: "5"
-        RETRY_BASE_DELAY: "10"
-        RETRY_MAX_DELAY: "45"
+        INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY: ${{ inputs.experimental-rate-limit-retry }}
       run: |
         set -euo pipefail
+
+        # Opt-in (default-off, #514): widen the shared retry.sh envelope for the
+        # `gh skill install` registry pulls below so a transient rate-limit 403
+        # during a Dependabot burst — which clears as the burst subsides — does
+        # not red a required check. Default keeps retry.sh's fast-fail defaults,
+        # so no existing consumer's behaviour changes until this is deliberately
+        # enabled. 5 attempts on a 10s→45s backoff spread retries across ~115s.
+        if [ "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}" = "true" ]; then
+          export RETRY_MAX_ATTEMPTS=5 RETRY_BASE_DELAY=10 RETRY_MAX_DELAY=45
+        fi
 
         # Bounded retry for the registry pulls below — `gh skill install` fetches
         # each skill over the network, so a transient flake must not red a required
