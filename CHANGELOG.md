@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.0](https://github.com/devantler-tech/actions/compare/v10.0.3...v10.1.0) (2026-07-17)
+
+
+### Features
+
+* **setup-agent-skills:** add opt-in widened retry envelope for rate-limit bursts ([#617](https://github.com/devantler-tech/actions/issues/617)) ([56fe62e](https://github.com/devantler-tech/actions/commit/56fe62e40b007df2cc25901d6df002916cc77c39))
+
 ## [10.0.3](https://github.com/devantler-tech/actions/compare/v10.0.2...v10.0.3) (2026-07-17)
 
 
