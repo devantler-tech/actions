@@ -1839,6 +1839,16 @@ jobs:
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
+  test-create-release-no-issue-side-effects:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Create Release - No Issue Side Effects"
+    uses: ./.github/workflows/create-release.yaml
+    with:
+      disable-issue-side-effects: true
+      dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
   test-create-release-config:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Create Release - Least Privilege"
@@ -2420,6 +2430,7 @@ jobs:
       - test-enable-auto-merge-pentad-gate
       - test-create-release
       - test-create-release-config
+      - test-create-release-no-issue-side-effects
       - test-deploy-github-pages
       - test-publish-dotnet-library
       - test-publish-app
@@ -2503,6 +2514,7 @@ jobs:
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
             ${{ needs.test-create-release.result }}
             ${{ needs.test-create-release-config.result }}
+            ${{ needs.test-create-release-no-issue-side-effects.result }}
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}
             ${{ needs.test-publish-app.result }}

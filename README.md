@@ -70,7 +70,7 @@ then carry its own branding and Marketplace release lifecycle.
 
 [.github/workflows/create-release.yaml](.github/workflows/create-release.yaml) is a workflow used to create releases using semantic-release.
 
-The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App needs `contents: write` (tags/releases) and `issues: write` + `pull-requests: write` (release comments).
+The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App always needs `contents: write` (tags/releases). By default it also needs `issues: write` + `pull-requests: write` for semantic-release success/fail hooks. Set `disable-issue-side-effects: true` to suppress those hooks and mint the token with `contents: write` only.
 
 #### Usage
 
@@ -78,17 +78,20 @@ The release is published with a GitHub App token, so the caller must set the `AP
 jobs:
   release:
     uses: devantler-tech/actions/.github/workflows/create-release.yaml@{ref} # ref
+    with:
+      disable-issue-side-effects: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
 #### Secrets and Inputs
 
-| Key               | Type            | Default | Required | Description                                                       |
-|-------------------|-----------------|---------|----------|-------------------------------------------------------------------|
-| `APP_CLIENT_ID`   | Variable        | -       | Yes      | GitHub App client ID used to mint the release token               |
-| `APP_PRIVATE_KEY` | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable) |
-| `dry-run`         | Input (boolean) | `false` | No       | Run semantic-release in dry-run mode (no tags or publishes)       |
+| Key                          | Type            | Default | Required | Description                                                               |
+|------------------------------|-----------------|---------|----------|---------------------------------------------------------------------------|
+| `APP_CLIENT_ID`              | Variable        | -       | Yes      | GitHub App client ID used to mint the release token                       |
+| `APP_PRIVATE_KEY`            | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable)         |
+| `disable-issue-side-effects` | Input (boolean) | `false` | No       | Disable success/fail hooks and omit issue/pull-request token permissions  |
+| `dry-run`                    | Input (boolean) | `false` | No       | Run semantic-release in dry-run mode (no tags or publishes)               |
 
 </details>
 

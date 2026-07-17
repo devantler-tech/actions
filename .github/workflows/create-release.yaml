@@ -2,6 +2,11 @@ name: 🎉 Create Release
 on:
   workflow_call:
     inputs:
+      disable-issue-side-effects:
+        description: "Disable semantic-release success/fail hooks and their issue/PR permissions"
+        required: false
+        default: false
+        type: boolean
       dry-run:
         description: "Run semantic-release in dry-run mode (no tags, releases, or publishes)"
         required: false
@@ -29,10 +34,11 @@ jobs:
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # semantic-release only publishes tags and GitHub Releases. Its optional
-          # success/fail notification hooks are disabled below, so issue and pull-
-          # request write access would be unnecessary standing privilege.
+          # Keep existing notification-hook permissions by default for compatibility.
+          # Opted-in callers omit them alongside the disabled hooks below.
           permission-contents: write
+          permission-issues: ${{ !inputs.disable-issue-side-effects && 'write' || '' }}
+          permission-pull-requests: ${{ !inputs.disable-issue-side-effects && 'write' || '' }}
 
       - name: 📑 Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,6 +56,9 @@ jobs:
         # GitHub already closes local issues from merge keywords. Disable the
         # nonessential notification hooks so a bare issue reference intended for
         # another repository cannot turn an otherwise-published release red.
-        run: npx semantic-release@25.0.3 --success false --fail false ${{ inputs.dry-run && '--dry-run' || '' }}
+        run: >-
+          npx semantic-release@25.0.3
+          ${{ inputs.disable-issue-side-effects && '--success false --fail false' || '' }}
+          ${{ inputs.dry-run && '--dry-run' || '' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
