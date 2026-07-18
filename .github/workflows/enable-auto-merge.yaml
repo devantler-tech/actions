@@ -209,9 +209,15 @@ jobs:
       # Enforced-path-only read scopes, minted as a SEPARATE App token so the
       # default-off path — and therefore every legacy workflow_call consumer's
       # permissions block — never needs them. If a consumer's App installation
-      # lacks Checks/Actions read, the mint silently intersects them away and
-      # the gate's lookups fail, which fails the gate step CLOSED (no arming),
-      # never open.
+      # lacks Checks/Actions read, create-github-app-token does NOT intersect
+      # the ungranted scope away — it 422s and FAILS this step (same behavior
+      # the arming mint's continue-on-error + base-scope fallback handles, see
+      # #559/#626), so `steps.gates` never runs. That is deliberately loud: an
+      # enforced run whose gates cannot be read is a misconfigured installation,
+      # not an ordinary case to swallow. It still fails CLOSED — the "Disarm
+      # auto-merge on failed gates" step below matches
+      # `steps.gate-token.outcome == 'failure'`, so nothing is ever armed on
+      # unverified gates and an already-armed PR is actively revoked.
       - name: 🔑 Generate gate-lookup token (enforced runs only)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: gate-token
