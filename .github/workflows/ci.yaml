@@ -2511,6 +2511,7 @@ jobs:
       - test-create-release
       - test-create-release-config
       - test-create-release-no-issue-side-effects
+      - test-release-config-bumps
       - test-deploy-github-pages
       - test-publish-dotnet-library
       - test-publish-app
@@ -2596,6 +2597,7 @@ jobs:
             ${{ needs.test-create-release.result }}
             ${{ needs.test-create-release-config.result }}
             ${{ needs.test-create-release-no-issue-side-effects.result }}
+            ${{ needs.test-release-config-bumps.result }}
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}
             ${{ needs.test-publish-app.result }}

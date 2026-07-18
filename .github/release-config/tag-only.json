@@ -4,10 +4,13 @@
       "@semantic-release/commit-analyzer",
       {
         "parserOpts": {
-          "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
+          "breakingHeaderPattern": "^(\\w*)(?:\\((.*)\\))?!: (.*)$"
         },
         "releaseRules": [
-          { "breaking": true, "release": "major" }
+          {
+            "breaking": true,
+            "release": "major"
+          }
         ]
       }
     ]

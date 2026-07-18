@@ -1,37 +1,24 @@
 #!/usr/bin/env bash
 #
-# Guards the shared semantic-release config on two axes:
+# Guards the shared semantic-release config (.github/release-config/) by
+# asserting the BUMP it actually produces, not the config's shape.
 #
-#   1. DRIFT — the heredoc embedded in create-release.yaml must stay
-#      byte-identical to the reviewable copies in release-config/.
-#   2. BEHAVIOUR — the config must actually map commit types to the intended
-#      bumps. This is the check that was missing when a bare configuration
-#      silently gave `feat!:` NO RELEASE AT ALL (a breaking change shipping
-#      unversioned), so it asserts the real bump, not the config's shape.
+# Shape assertions would not have caught the bug this config exists to fix: a
+# bare configuration silently gave `feat!:` NO RELEASE AT ALL, so a breaking
+# change shipped unversioned. The config looked perfectly fine. Only running
+# semantic-release against real commits reveals it.
 
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-workflow="$repo_root/.github/workflows/create-release.yaml"
-config_dir="$repo_root/release-config"
+config_dir="$repo_root/.github/release-config"
 
-# --- 1. drift -----------------------------------------------------------------
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-yq -r '.jobs.release.steps[] | select(.name | test("Materialise")) | .run' "$workflow" > "$work/materialise.sh"
-( cd "$work" && bash materialise.sh >/dev/null )
+mkdir -p "$work/node_modules/@devantler-tech/release-config"
+cp "$config_dir"/*.json "$work/node_modules/@devantler-tech/release-config/"
 
-for f in package.json index.json tag-only.json; do
-  if ! diff -q "$config_dir/$f" "$work/node_modules/@devantler-tech/release-config/$f" >/dev/null; then
-    echo "release-config/$f has drifted from the heredoc in create-release.yaml" >&2
-    diff -u "$config_dir/$f" "$work/node_modules/@devantler-tech/release-config/$f" >&2 || true
-    exit 1
-  fi
-done
-echo "✅ embedded config is byte-identical to release-config/"
-
-# --- 2. behaviour -------------------------------------------------------------
 # A throwaway repo tagged at its base commit, so ONLY the commit under test is
 # ever analysed. (Without this, commits already on the branch since the last tag
 # contaminate the result and every case reads the same.)
@@ -68,11 +55,14 @@ assert_bump() {
   git add f.txt .releaserc
   git commit -q -m "$message"
   git push -q --force origin "$branch" >/dev/null 2>&1
-  local actual
-  actual="$(npx semantic-release --dry-run --no-ci --branches "$branch" 2>&1 \
-    | grep -oiE 'major release|minor release|patch release|no release' | head -1 || true)"
+  local raw actual
+  raw="$(npx semantic-release --dry-run --no-ci --branches "$branch" 2>&1 || true)"
+  actual="$(printf '%s' "$raw" | grep -oiE 'major release|minor release|patch release|no release' | head -1 || true)"
   if [[ "$actual" != "$expected" ]]; then
     echo "bump mismatch for '${message%%$'\n'*}': expected '$expected', got '${actual:-<none>}'" >&2
+    echo "--- semantic-release output ------------------------------------------" >&2
+    printf '%s\n' "$raw" | grep -vE '^\s*at |node_modules' | tail -30 >&2
+    echo "----------------------------------------------------------------------" >&2
     exit 1
   fi
   printf '  %-42s -> %s\n' "${message%%$'\n'*}" "$actual"
@@ -82,6 +72,9 @@ assert_bump() {
 assert_bump "feat!: breaking"                 "major release"
 assert_bump "fix!: breaking"                  "major release"
 assert_bump "feat(scope)!: breaking"          "major release"
+# A scope containing characters beyond [\w.-] — the default conventional parser
+# accepts these, so the bang pattern must not be narrower than it.
+assert_bump "feat(api/client)!: breaking"     "major release"
 # Everything else must be untouched by that fix.
 assert_bump "feat: a feature"                 "minor release"
 assert_bump "fix: a fix"                      "patch release"

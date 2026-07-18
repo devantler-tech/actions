@@ -47,72 +47,35 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: 🧩 Materialise the shared release config
+      - name: 🧩 Fetch the shared release config
         # Makes `"extends": "@devantler-tech/release-config"` resolvable in a
         # consumer's .releaserc. OPT-IN and fully backward compatible: a repo
-        # that does not use `extends` is completely unaffected by this step.
+        # that does not use `extends` is completely unaffected.
         #
-        # Why written inline rather than checked out from this repo: a reusable
-        # workflow has the CONSUMER's repository checked out, not its own, so
-        # reading a file from devantler-tech/actions would need a second
-        # checkout at a ref this workflow cannot reliably derive. Writing it
-        # here pins the config to the very commit of this workflow that the
-        # consumer already pins by SHA — stronger versioning, no extra fetch,
-        # no ref skew.
-        #
-        # Canonical copies live in release-config/ for review;
-        # .github/tests/test-release-config-bumps.sh asserts this stays
-        # byte-identical to them and that the bump behaviour is correct.
+        # Uses this repo's documented SAME-COMMIT SELF-CHECKOUT pattern
+        # (AGENTS.md, "Self-references within this repo"): a reusable workflow
+        # resolves `./` against the CALLER's checkout, so it cannot read its own
+        # files directly — but `job.workflow_repository` at `job.workflow_sha`
+        # names this workflow's own repo at its exact commit. Zero-lag by
+        # construction, and it keeps ONE copy of the config rather than a
+        # duplicate embedded here.
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          sparse-checkout: .github/release-config
+          persist-credentials: false
+
+      - name: 🧩 Install the shared release config
         run: |
           set -euo pipefail
           dir=node_modules/@devantler-tech/release-config
           mkdir -p "$dir"
-          cat > "$dir/package.json" <<'JSON'
-          {
-            "name": "@devantler-tech/release-config",
-            "version": "1.0.0",
-            "description": "Shared semantic-release configuration for devantler-tech repositories.",
-            "main": "index.json",
-            "license": "MIT",
-            "private": true
-          }
-          JSON
-          cat > "$dir/index.json" <<'JSON'
-          {
-            "plugins": [
-              [
-                "@semantic-release/commit-analyzer",
-                {
-                  "parserOpts": {
-                    "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
-                  },
-                  "releaseRules": [
-                    { "breaking": true, "release": "major" }
-                  ]
-                }
-              ],
-              "@semantic-release/release-notes-generator",
-              "@semantic-release/github"
-            ]
-          }
-          JSON
-          cat > "$dir/tag-only.json" <<'JSON'
-          {
-            "plugins": [
-              [
-                "@semantic-release/commit-analyzer",
-                {
-                  "parserOpts": {
-                    "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
-                  },
-                  "releaseRules": [
-                    { "breaking": true, "release": "major" }
-                  ]
-                }
-              ]
-            ]
-          }
-          JSON
+          cp .devantler-tech-actions/.github/release-config/*.json "$dir/"
+          # Drop the self-checkout: semantic-release inspects the workspace, and
+          # a stray checkout should not be visible to it.
+          rm -rf .devantler-tech-actions
           echo "shared release config available as @devantler-tech/release-config"
 
       - name: 📦 Setup Node.js
