@@ -10,9 +10,36 @@ on:
   ##################################
 
 jobs:
-  zizmor:
+  # A required workflow whose only job is skipped can remain unsatisfied.
+  # Classify every event in an unconditional, zero-permission job so merge
+  # groups complete green as a deliberate no-op while the scan stays skipped.
+  eligibility:
+    permissions: {}
     runs-on: ubuntu-latest
-    if: github.event_name != 'merge_group'
+    outputs:
+      scan: ${{ steps.classify.outputs.scan }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 🔎 Classify advisory scan event
+        id: classify
+        if: github.event_name != 'merge_group'
+        run: echo "scan=true" >> "$GITHUB_OUTPUT"
+
+      - name: ✅ Complete merge-group required-workflow run
+        id: no-op
+        if: steps.classify.outputs.scan != 'true'
+        run: >-
+          echo "::notice::The pull-request advisory scan already ran;
+          completing this merge-group workflow as a safe no-op."
+
+  zizmor:
+    needs: eligibility
+    if: needs.eligibility.outputs.scan == 'true'
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
       contents: read # only needed for private repos
