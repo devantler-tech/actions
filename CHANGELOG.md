@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.3](https://github.com/devantler-tech/actions/compare/v10.1.2...v10.1.3) (2026-07-18)
+
+
+### Continuous Integration
+
+* **zizmor:** deduplicate full repository scans ([#640](https://github.com/devantler-tech/actions/issues/640)) ([8ff24af](https://github.com/devantler-tech/actions/commit/8ff24af18e45ee4cc8c2f22bdbe8b5ddbefe962a))
+
 ## [10.1.2](https://github.com/devantler-tech/actions/compare/v10.1.1...v10.1.2) (2026-07-18)
 
 
