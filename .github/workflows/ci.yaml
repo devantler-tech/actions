@@ -1009,9 +1009,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Exercise agent-skills-retry-env.sh (opt-in off AND on) + action wiring
+      - name: 🧪 Exercise agent-skills reliability contracts
         shell: bash
-        run: bash .github/tests/agent-skills-retry-env.sh
+        run: |
+          bash .github/tests/agent-skills-retry-env.sh
+          bash .github/tests/agent-skills-update-fixture.sh
 
   # ── update-agent-skills ───────────────────────────────────
   test-update-agent-skills-noop:
@@ -1029,11 +1031,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 📦 Install a skill pinned to a historical commit
-        uses: ./setup-agent-skills
-        with:
-          skills: |
-            github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
+      - name: 📦 Seed pinned agent-skill fixture
+        shell: bash
+        run: |
+          mkdir -p .agents/skills/self-improvement
+          cp -R .github/tests/agent-skills-fixtures/pinned-self-improvement/. \
+            .agents/skills/self-improvement/
 
       - name: 🔄 Run update-agent-skills (should be a no-op against a pinned skill)
         id: update
@@ -1041,21 +1044,27 @@ jobs:
         with:
           dir: .agents/skills
 
-      - name: ✅ Verify no-op
+      - name: ✅ Verify pinned no-op
         shell: bash
         env:
           CHANGED: ${{ steps.update.outputs.changed }}
           UPDATED: ${{ steps.update.outputs.updated-skills }}
         run: |
           set -euo pipefail
+          expected_ref="7b9904e7a2739f2ecdea621c5bc548804bddb9c2"
           if [[ "$CHANGED" != "false" ]]; then
             echo "::error::Expected changed=false when all skills are pinned, got: $CHANGED"
             echo "updated-skills output: $UPDATED"
             exit 1
           fi
-          if ! grep -q '8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c' .agents/skills/git-commit/SKILL.md; then
+          if [[ "$UPDATED" != *"self-improvement is pinned to $expected_ref (skipped)"* ]]; then
+            echo "::error::Expected gh skill update to skip the explicitly pinned skill"
+            echo "updated-skills output: $UPDATED"
+            exit 1
+          fi
+          if ! grep -q "$expected_ref" .agents/skills/self-improvement/SKILL.md; then
             echo "::error::Pinned commit SHA was removed from SKILL.md metadata"
-            cat .agents/skills/git-commit/SKILL.md
+            cat .agents/skills/self-improvement/SKILL.md
             exit 1
           fi
 
@@ -1070,16 +1079,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 📦 Install a skill pinned to a historical commit
-        uses: ./setup-agent-skills
-        with:
-          skills: |
-            github/awesome-copilot git-commit@8fbf6c4a798df51d1d1d8fd37a1aa7e94203109c
+      - name: 📦 Seed pinned agent-skill fixture
+        shell: bash
+        run: |
+          mkdir -p .agents/skills/self-improvement
+          cp -R .github/tests/agent-skills-fixtures/pinned-self-improvement/. \
+            .agents/skills/self-improvement/
 
       - name: 🔢 Snapshot SKILL.md hash before
         id: before
         shell: bash
-        run: echo "sha=$(shasum -a 256 .agents/skills/git-commit/SKILL.md | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(shasum -a 256 .agents/skills/self-improvement/SKILL.md | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: 🔄 Run update-agent-skills with --unpin --dry-run
         id: update
@@ -1089,15 +1099,21 @@ jobs:
           unpin: "true"
           dry-run: "true"
 
-      - name: ✅ Verify SKILL.md was not modified on disk
+      - name: ✅ Verify pending update without mutation
         shell: bash
         env:
           BEFORE: ${{ steps.before.outputs.sha }}
+          UPDATED: ${{ steps.update.outputs.updated-skills }}
         run: |
           set -euo pipefail
-          after=$(shasum -a 256 .agents/skills/git-commit/SKILL.md | awk '{print $1}')
+          after=$(shasum -a 256 .agents/skills/self-improvement/SKILL.md | awk '{print $1}')
           if [[ "$BEFORE" != "$after" ]]; then
             echo "::error::SKILL.md was modified despite --dry-run (before=$BEFORE after=$after)"
+            exit 1
+          fi
+          if [[ "$UPDATED" != *"update(s) available"* || "$UPDATED" != *"self-improvement (devantler-tech/agent-skills)"* ]]; then
+            echo "::error::Expected --unpin --dry-run to report the stale self-improvement fixture"
+            echo "updated-skills output: $UPDATED"
             exit 1
           fi
 
