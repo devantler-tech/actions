@@ -12,8 +12,8 @@ on:
         required: false
         default: false
         type: boolean
-      use-shared-config:
-        description: "Make @devantler-tech/release-config resolvable so .releaserc can `extends` it. Default-off: existing callers are untouched."
+      breaking-bang-commits:
+        description: "Treat `type!:` commits as breaking (major). semantic-release's default Angular preset ignores the bang, so such commits otherwise produce NO release at all. Default-off: existing callers are untouched."
         required: false
         default: false
         type: boolean
@@ -27,8 +27,6 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: read # the same-commit self-checkout of this repo (shared release config)
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -54,49 +52,60 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: 🧩 Fetch the shared release config
-        # OPT-IN (default-off, per AGENTS.md feature-flag-first): callers that do
-        # not set use-shared-config never run this, so a fetch/auth hiccup here
-        # can never abort their release.
-        #
-        # Uses this repo's documented SAME-COMMIT SELF-CHECKOUT pattern
-        # (AGENTS.md, "Self-references within this repo"): a reusable workflow
-        # resolves `./` against the CALLER's checkout, so `job.workflow_repository`
-        # @ `job.workflow_sha` is what lets it read its own files at the exact
-        # commit the caller pinned. One copy of the config, no embedded duplicate.
-        if: ${{ inputs.use-shared-config }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .devantler-tech-actions
-          sparse-checkout: .github/release-config
-          persist-credentials: false
-
       - name: 📦 Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
 
-      - name: 🧩 Install the shared release config
-        # semantic-release resolves plugins named in an EXTENDED config relative
-        # to the workspace, but `npx semantic-release@…` installs into the npx
-        # cache — not node_modules. Without a workspace install the extended
-        # config dies with MODULE_NOT_FOUND (verified). Installing
-        # semantic-release here puts @semantic-release/* where the extended
-        # config can find them; the Release step's command is unchanged, and npx
-        # reuses this resolution.
-        if: ${{ inputs.use-shared-config }}
+      - name: 💥 Teach semantic-release the `type!:` breaking form
+        # semantic-release's default Angular preset recognises ONLY a
+        # `BREAKING CHANGE:` footer, so `feat!:` produces NO RELEASE AT ALL —
+        # a breaking change ships silently unversioned. The org's own
+        # commit-message ruleset explicitly permits the bang, so contributors
+        # are invited to write exactly the form that does nothing.
+        #
+        # This injects the bang pattern into the caller's EXISTING .releaserc in
+        # the ephemeral workspace — nothing is committed, and the caller needs no
+        # config change at all. Deliberately NOT done via `extends`: an extended
+        # config makes semantic-release resolve plugins against the workspace,
+        # but the Release step runs `npx`, which installs into the npx cache, so
+        # `extends` dies with MODULE_NOT_FOUND unless the workflow also installs
+        # semantic-release locally (which zizmor correctly flags as an unpinned
+        # ad-hoc install). Editing the config in place keeps plugin resolution
+        # exactly as it is today.
+        #
+        # Existing parserOpts/releaseRules are MERGED, never replaced, so a
+        # caller that already customises them keeps its settings.
+        if: ${{ inputs.breaking-bang-commits }}
         run: |
           set -euo pipefail
-          # --no-save / a scratch manifest: never mutate a caller's package.json.
-          [ -f package.json ] || echo '{"name":"release-scratch","private":true}' > package.json
-          npm install --no-save --no-audit --no-fund semantic-release@25.0.3
-          dir=node_modules/@devantler-tech/release-config
-          mkdir -p "$dir"
-          cp .devantler-tech-actions/.github/release-config/*.json "$dir/"
-          rm -rf .devantler-tech-actions
-          echo "shared release config available as @devantler-tech/release-config"
+          config=""
+          for f in .releaserc .releaserc.json .releaserc.yaml .releaserc.yml release.config.js; do
+            [ -f "$f" ] && { config="$f"; break; }
+          done
+          if [ -z "$config" ]; then
+            echo "::error::breaking-bang-commits is enabled but no semantic-release config was found"
+            exit 1
+          fi
+          if [ "$config" != ".releaserc" ] && [ "$config" != ".releaserc.json" ]; then
+            echo "::error::breaking-bang-commits currently supports only JSON config (.releaserc/.releaserc.json); found $config"
+            exit 1
+          fi
+          jq '
+            def bang: {breakingHeaderPattern: "^(\\w*)(?:\\((.*)\\))?!: (.*)$"};
+            .plugins |= map(
+              if type == "string" and . == "@semantic-release/commit-analyzer"
+              then [., {parserOpts: bang, releaseRules: [{breaking: true, release: "major"}]}]
+              elif type == "string" and . == "@semantic-release/release-notes-generator"
+              then [., {parserOpts: bang}]
+              elif type == "array" and .[0] == "@semantic-release/commit-analyzer"
+              then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {})),
+                           releaseRules: (((.[1].releaseRules) // []) + [{breaking: true, release: "major"}])})]
+              elif type == "array" and .[0] == "@semantic-release/release-notes-generator"
+              then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {}))})]
+              else . end)
+          ' "$config" > "$config.bang" && mv "$config.bang" "$config"
+          echo 'type!: commits will be treated as breaking'
 
       - name: 🎉 Release
         # GitHub already closes local issues from merge keywords. Disable the

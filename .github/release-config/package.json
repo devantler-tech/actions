@@ -1,8 +1,0 @@
-{
-  "name": "@devantler-tech/release-config",
-  "version": "1.0.0",
-  "description": "Shared semantic-release configuration for devantler-tech repositories.",
-  "main": "index.json",
-  "license": "MIT",
-  "private": true
-}

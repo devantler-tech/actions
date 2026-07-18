@@ -1867,10 +1867,10 @@ jobs:
 
   test-create-release-shared-config:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    name: "[Test] Create Release - Shared Config Opt-In"
+    name: "[Test] Create Release - Breaking Bang Commits"
     uses: ./.github/workflows/create-release.yaml
     with:
-      use-shared-config: true
+      breaking-bang-commits: true
       dry-run: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
 #
-# Guards the shared semantic-release config (.github/release-config/) by
-# asserting the BUMP it actually produces, not the config's shape.
+# Verifies the `breaking-bang-commits` option of create-release.yaml by running
+# semantic-release against real fixture commits — asserting the BUMP, not the
+# config's shape.
 #
-# Shape assertions would not have caught the bug this config exists to fix: a
-# bare configuration silently gave `feat!:` NO RELEASE AT ALL, so a breaking
-# change shipped unversioned. The config looked perfectly fine. Only running
-# semantic-release against real commits reveals it.
+# A shape assertion would not have caught the bug this exists to fix: a bare
+# configuration silently gave `feat!:` NO RELEASE AT ALL, so a breaking change
+# shipped unversioned. The config looked perfectly fine.
+#
+# The fixture deliberately mirrors PRODUCTION: semantic-release is run via `npx`
+# with nothing installed into the workspace, exactly as the Release step does.
+# An earlier version of this test installed semantic-release locally and so
+# passed while the real workflow was broken.
 
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-config_dir="$repo_root/.github/release-config"
+workflow="$repo_root/.github/workflows/create-release.yaml"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-mkdir -p "$work/node_modules/@devantler-tech/release-config"
-cp "$config_dir"/*.json "$work/node_modules/@devantler-tech/release-config/"
+# The exact script the workflow runs — not a copy that could drift from it.
+yq -r '.jobs.release.steps[] | select(.name | test("Teach semantic-release")) | .run' \
+  "$workflow" > "$work/inject.sh"
 
-# A throwaway repo tagged at its base commit, so ONLY the commit under test is
-# ever analysed. (Without this, commits already on the branch since the last tag
-# contaminate the result and every case reads the same.)
 fixture="$work/fixture"
 mkdir -p "$fixture" && cd "$fixture"
 git init -q .
@@ -31,64 +34,54 @@ git config commit.gpgsign false
 git init -q --bare "$work/origin.git"
 git remote add origin "$work/origin.git"
 printf 'node_modules\n' > .gitignore
-# npm needs a package.json present or it installs nothing into node_modules.
-npm init -y >/dev/null 2>&1
 echo base > f.txt
-git add f.txt .gitignore package.json
+git add f.txt .gitignore
 git commit -q -m "chore: base"
 git tag v1.0.0
-git push -q origin main --tags 2>/dev/null || git push -q origin master --tags
-
-npm install --silent --no-audit --no-fund "semantic-release@25.0.3" >/dev/null 2>&1
-if [[ ! -x node_modules/.bin/semantic-release ]]; then
-  echo "semantic-release was not installed into the fixture — cannot verify bumps" >&2
-  exit 1
-fi
-cp -R "$work/node_modules/@devantler-tech" node_modules/
-
 branch="$(git rev-parse --abbrev-ref HEAD)"
+git push -q origin "$branch" --tags
+
+# $1 commit message, $2 expected bump, $3 inject? (yes|no)
 assert_bump() {
-  local message="$1" expected="$2"
+  local message="$1" expected="$2" inject="$3"
   git reset -q --hard v1.0.0
-  printf '{ "extends": "@devantler-tech/release-config/tag-only.json", "branches": ["%s"] }' "$branch" > .releaserc
+  printf '{ "branches": ["%s"], "plugins": ["@semantic-release/commit-analyzer"] }' "$branch" > .releaserc
   echo "$RANDOM" > f.txt
   git add f.txt .releaserc
   git commit -q -m "$message"
   git push -q --force origin "$branch" >/dev/null 2>&1
+  [[ "$inject" == "yes" ]] && bash "$work/inject.sh" >/dev/null
+
   local raw actual
-  # Strip the ambient GitHub Actions environment. semantic-release's CI
-  # detection reads GITHUB_REF and would otherwise analyse "refs/pull/N/merge"
-  # instead of this fixture's branch — which is exactly how this test passed
-  # locally and failed in CI.
+  # Strip the ambient Actions environment: semantic-release's CI detection reads
+  # GITHUB_REF and would otherwise analyse refs/pull/N/merge, not this fixture.
   raw="$(env -u GITHUB_REF -u GITHUB_ACTIONS -u GITHUB_EVENT_NAME -u GITHUB_HEAD_REF \
            -u GITHUB_BASE_REF -u GITHUB_REPOSITORY -u CI \
-           npx semantic-release --dry-run --no-ci --branches "$branch" 2>&1 || true)"
+           npx --yes semantic-release@25.0.3 --dry-run --no-ci --branches "$branch" 2>&1 || true)"
   actual="$(printf '%s' "$raw" | grep -oiE 'major release|minor release|patch release|no release' | head -1 || true)"
   if [[ "$actual" != "$expected" ]]; then
-    echo "bump mismatch for '${message%%$'\n'*}': expected '$expected', got '${actual:-<none>}'" >&2
-    echo "--- semantic-release output ------------------------------------------" >&2
-    printf '%s\n' "$raw" | grep -vE '^\s*at |node_modules' | tail -30 >&2
-    echo "----------------------------------------------------------------------" >&2
+    echo "bump mismatch for '${message%%$'\n'*}' (inject=$inject): expected '$expected', got '${actual:-<none>}'" >&2
+    printf '%s\n' "$raw" | grep -vE '^\s*at |node_modules' | tail -25 >&2
     exit 1
   fi
-  printf '  %-42s -> %s\n' "${message%%$'\n'*}" "$actual"
+  printf '  inject=%-4s %-42s -> %s\n' "$inject" "${message%%$'\n'*}" "$actual"
 }
 
-# The bang forms are the regression this config exists to fix.
-assert_bump "feat!: breaking"                 "major release"
-assert_bump "fix!: breaking"                  "major release"
-assert_bump "feat(scope)!: breaking"          "major release"
-# A scope containing characters beyond [\w.-] — the default conventional parser
-# accepts these, so the bang pattern must not be narrower than it.
-assert_bump "feat(api/client)!: breaking"     "major release"
-# Everything else must be untouched by that fix.
-assert_bump "feat: a feature"                 "minor release"
-assert_bump "fix: a fix"                      "patch release"
-assert_bump "docs: docs"                      "no release"
-assert_bump "chore: chore"                    "no release"
-assert_bump "ci: ci"                          "no release"
+# The regression: without the option, bang commits release NOTHING.
+assert_bump "feat!: breaking"              "no release"    "no"
+# With it, every bang form is a major.
+assert_bump "feat!: breaking"              "major release" "yes"
+assert_bump "fix!: breaking"               "major release" "yes"
+assert_bump "feat(scope)!: breaking"       "major release" "yes"
+assert_bump "feat(api/client)!: breaking"  "major release" "yes"
+# Nothing else may move.
+assert_bump "feat: a feature"              "minor release" "yes"
+assert_bump "fix: a fix"                   "patch release" "yes"
+assert_bump "docs: docs"                   "no release"    "yes"
+assert_bump "chore: chore"                 "no release"    "yes"
+assert_bump "ci: ci"                       "no release"    "yes"
 assert_bump "feat: footer
 
-BREAKING CHANGE: gone."                       "major release"
+BREAKING CHANGE: gone."                    "major release" "yes"
 
 echo "✅ bump matrix is correct"

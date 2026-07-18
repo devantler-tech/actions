@@ -74,36 +74,29 @@ Because composite actions and reusable workflows now live together, one componen
 - This repo **releases itself via release-please** (`active-release.yaml` → release PR → tag). The `create-release.yaml` reusable workflow (semantic-release) is a **product consumed by other repos**, not how this repo releases; the root `.releaserc` exists only for that workflow's self-test dry-run.
 - The release PR is **opened by botantler-1** (`APP_CLIENT_ID`/`APP_PRIVATE_KEY`), **approved by botantler-2** (`APP_CLIENT_ID_2`/`APP_PRIVATE_KEY_2`) — a PR cannot be approved by its opener — and **auto-merged armed with the App token** (not `GITHUB_TOKEN`; a `GITHUB_TOKEN`-armed merge would not re-trigger the workflow to cut the tag).
 
-### Shared semantic-release config (`release-config/`)
+### `type!:` breaking commits (`breaking-bang-commits`)
 
 - **A bare `.releaserc` gives `feat!:` NO RELEASE AT ALL** — not a wrong bump, *no release*, so a
   breaking change ships silently unversioned. semantic-release's default Angular preset recognises
   only a `BREAKING CHANGE:` footer, while this org's commit-message ruleset explicitly permits the
-  bang (`(!)?`). Every consumer was exposed to this.
-- `.github/release-config/` is the fix, shared once instead of per repo: `index.json` (analyzer +
-  release-notes-generator + github) and `tag-only.json` (analyzer only, for repos where GoReleaser
-  creates the Release). `create-release.yaml` materialises them into
-  `node_modules/@devantler-tech/release-config` before running semantic-release.
-- **Opt-in on BOTH sides.** The caller passes `use-shared-config: true` (default-off, per
-  feature-flag-first) *and* sets `{"extends": "@devantler-tech/release-config", "branches": ["main"]}`
-  — and must **drop their own `plugins` key**: a local `plugins` array *replaces* the shared one
-  rather than merging, so a config carrying both silently keeps the broken behaviour. Repos that do
-  not use `extends` are unaffected; this is additive.
-- **`npx` alone is not enough.** semantic-release resolves plugins named in an *extended* config
-  against the workspace, but `npx semantic-release@…` installs into the npx cache, so an extended
-  config dies with `MODULE_NOT_FOUND` (verified in a production-shaped fixture). The workflow
-  therefore `npm install`s semantic-release into the workspace when the flag is on — `--no-save`,
-  with a scratch manifest if the caller has no `package.json`, so a caller's manifest is never
-  mutated. The Release step's command is unchanged.
-- `create-release.yaml` reads the config via this repo's **same-commit self-checkout** pattern
-  (see *Self-references within this repo*): a reusable workflow resolves `./` against the *caller's*
-  checkout, so `job.workflow_repository` @ `job.workflow_sha` is what lets it read its own files at
-  the exact commit the consumer pinned. The self-checkout is removed before semantic-release runs.
-  There is therefore exactly ONE copy of the config — no embedded duplicate to drift.
-- That test also asserts the **actual bump matrix** (`feat!:`/`fix!:`/`feat(scope)!:` → major;
-  `feat:` → minor; `fix:` → patch; `docs:`/`chore:`/`ci:` → none; `BREAKING CHANGE:` footer → major)
-  by running semantic-release against fixture commits. Config-shape assertions would not have caught
-  the original bug; only the bump does.
+  bang (`(!)?`). Every consumer of `create-release.yaml` is exposed to this.
+- `create-release.yaml` takes **`breaking-bang-commits`** (boolean, **default-off** per
+  feature-flag-first). When enabled it injects the bang pattern into the caller's **existing**
+  `.releaserc` in the ephemeral workspace — nothing is committed, and **the caller needs no config
+  change**, only the one input.
+- **Deliberately not done via `extends` / a shared config package.** An extended config makes
+  semantic-release resolve plugins against the workspace, but the Release step runs `npx`, which
+  installs into the npx cache — so `extends` dies with `MODULE_NOT_FOUND` unless the workflow also
+  installs semantic-release locally, which zizmor correctly flags as an unpinned ad-hoc install.
+  Editing the config in place leaves plugin resolution exactly as it already is.
+- **Caller settings win.** Existing `parserOpts`/`releaseRules` are merged, never replaced: the bang
+  pattern is a *default*, so a caller that sets its own `breakingHeaderPattern` keeps it, and extra
+  `releaseRules` (e.g. this repo's `ci` → patch) are preserved.
+- `.github/tests/test-release-config-bumps.sh` asserts the real bump matrix by running
+  semantic-release against fixture commits **in production shape** (`npx`, nothing installed into
+  the workspace), including the `inject=no` control that reproduces the bug. An earlier version of
+  that test installed semantic-release locally and therefore passed while the real workflow was
+  broken — mirror production in fixtures, or the proof proves nothing.
 
 ## Adding a New Action
 
