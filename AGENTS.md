@@ -74,6 +74,30 @@ Because composite actions and reusable workflows now live together, one componen
 - This repo **releases itself via release-please** (`active-release.yaml` → release PR → tag). The `create-release.yaml` reusable workflow (semantic-release) is a **product consumed by other repos**, not how this repo releases; the root `.releaserc` exists only for that workflow's self-test dry-run.
 - The release PR is **opened by botantler-1** (`APP_CLIENT_ID`/`APP_PRIVATE_KEY`), **approved by botantler-2** (`APP_CLIENT_ID_2`/`APP_PRIVATE_KEY_2`) — a PR cannot be approved by its opener — and **auto-merged armed with the App token** (not `GITHUB_TOKEN`; a `GITHUB_TOKEN`-armed merge would not re-trigger the workflow to cut the tag).
 
+### Shared semantic-release config (`release-config/`)
+
+- **A bare `.releaserc` gives `feat!:` NO RELEASE AT ALL** — not a wrong bump, *no release*, so a
+  breaking change ships silently unversioned. semantic-release's default Angular preset recognises
+  only a `BREAKING CHANGE:` footer, while this org's commit-message ruleset explicitly permits the
+  bang (`(!)?`). Every consumer was exposed to this.
+- `release-config/` is the fix, shared once instead of per repo: `index.json` (analyzer +
+  release-notes-generator + github) and `tag-only.json` (analyzer only, for repos where GoReleaser
+  creates the Release). `create-release.yaml` materialises them into
+  `node_modules/@devantler-tech/release-config` before running semantic-release.
+- **Consumers opt in** with `{"extends": "@devantler-tech/release-config", "branches": ["main"]}`
+  — and must **drop their own `plugins` key**: a local `plugins` array *replaces* the shared one
+  rather than merging, so a config carrying both silently keeps the broken behaviour. Repos that do
+  not use `extends` are unaffected; this is additive.
+- The config is **written inline in the workflow**, not read from this repo: a reusable workflow has
+  the *consumer's* repository checked out, so it cannot read its own files without a second checkout
+  at a ref it cannot reliably derive. Inlining pins the config to the same commit consumers already
+  pin by SHA. `release-config/` holds the reviewable copies, and
+  `.github/tests/test-release-config-bumps.sh` fails if the two ever drift.
+- That test also asserts the **actual bump matrix** (`feat!:`/`fix!:`/`feat(scope)!:` → major;
+  `feat:` → minor; `fix:` → patch; `docs:`/`chore:`/`ci:` → none; `BREAKING CHANGE:` footer → major)
+  by running semantic-release against fixture commits. Config-shape assertions would not have caught
+  the original bug; only the bump does.
+
 ## Adding a New Action
 
 1. Create `<action-name>/action.yaml` and `<action-name>/README.md` (template in CONTRIBUTING.md)

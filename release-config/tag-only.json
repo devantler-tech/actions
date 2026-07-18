@@ -1,0 +1,15 @@
+{
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "parserOpts": {
+          "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
+        },
+        "releaseRules": [
+          { "breaking": true, "release": "major" }
+        ]
+      }
+    ]
+  ]
+}

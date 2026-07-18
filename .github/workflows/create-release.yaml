@@ -47,6 +47,74 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: 🧩 Materialise the shared release config
+        # Makes `"extends": "@devantler-tech/release-config"` resolvable in a
+        # consumer's .releaserc. OPT-IN and fully backward compatible: a repo
+        # that does not use `extends` is completely unaffected by this step.
+        #
+        # Why written inline rather than checked out from this repo: a reusable
+        # workflow has the CONSUMER's repository checked out, not its own, so
+        # reading a file from devantler-tech/actions would need a second
+        # checkout at a ref this workflow cannot reliably derive. Writing it
+        # here pins the config to the very commit of this workflow that the
+        # consumer already pins by SHA — stronger versioning, no extra fetch,
+        # no ref skew.
+        #
+        # Canonical copies live in release-config/ for review;
+        # .github/tests/test-release-config-bumps.sh asserts this stays
+        # byte-identical to them and that the bump behaviour is correct.
+        run: |
+          set -euo pipefail
+          dir=node_modules/@devantler-tech/release-config
+          mkdir -p "$dir"
+          cat > "$dir/package.json" <<'JSON'
+          {
+            "name": "@devantler-tech/release-config",
+            "version": "1.0.0",
+            "description": "Shared semantic-release configuration for devantler-tech repositories.",
+            "main": "index.json",
+            "license": "MIT",
+            "private": true
+          }
+          JSON
+          cat > "$dir/index.json" <<'JSON'
+          {
+            "plugins": [
+              [
+                "@semantic-release/commit-analyzer",
+                {
+                  "parserOpts": {
+                    "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
+                  },
+                  "releaseRules": [
+                    { "breaking": true, "release": "major" }
+                  ]
+                }
+              ],
+              "@semantic-release/release-notes-generator",
+              "@semantic-release/github"
+            ]
+          }
+          JSON
+          cat > "$dir/tag-only.json" <<'JSON'
+          {
+            "plugins": [
+              [
+                "@semantic-release/commit-analyzer",
+                {
+                  "parserOpts": {
+                    "breakingHeaderPattern": "^(\\w*)(?:\\(([\\w\\-\\.]*)\\))?!: (.*)$"
+                  },
+                  "releaseRules": [
+                    { "breaking": true, "release": "major" }
+                  ]
+                }
+              ]
+            ]
+          }
+          JSON
+          echo "shared release config available as @devantler-tech/release-config"
+
       - name: 📦 Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
