@@ -84,10 +84,17 @@ Because composite actions and reusable workflows now live together, one componen
   release-notes-generator + github) and `tag-only.json` (analyzer only, for repos where GoReleaser
   creates the Release). `create-release.yaml` materialises them into
   `node_modules/@devantler-tech/release-config` before running semantic-release.
-- **Consumers opt in** with `{"extends": "@devantler-tech/release-config", "branches": ["main"]}`
+- **Opt-in on BOTH sides.** The caller passes `use-shared-config: true` (default-off, per
+  feature-flag-first) *and* sets `{"extends": "@devantler-tech/release-config", "branches": ["main"]}`
   — and must **drop their own `plugins` key**: a local `plugins` array *replaces* the shared one
   rather than merging, so a config carrying both silently keeps the broken behaviour. Repos that do
   not use `extends` are unaffected; this is additive.
+- **`npx` alone is not enough.** semantic-release resolves plugins named in an *extended* config
+  against the workspace, but `npx semantic-release@…` installs into the npx cache, so an extended
+  config dies with `MODULE_NOT_FOUND` (verified in a production-shaped fixture). The workflow
+  therefore `npm install`s semantic-release into the workspace when the flag is on — `--no-save`,
+  with a scratch manifest if the caller has no `package.json`, so a caller's manifest is never
+  mutated. The Release step's command is unchanged.
 - `create-release.yaml` reads the config via this repo's **same-commit self-checkout** pattern
   (see *Self-references within this repo*): a reusable workflow resolves `./` against the *caller's*
   checkout, so `job.workflow_repository` @ `job.workflow_sha` is what lets it read its own files at

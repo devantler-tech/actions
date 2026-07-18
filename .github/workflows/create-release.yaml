@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      use-shared-config:
+        description: "Make @devantler-tech/release-config resolvable so .releaserc can `extends` it. Default-off: existing callers are untouched."
+        required: false
+        default: false
+        type: boolean
     secrets:
       APP_PRIVATE_KEY:
         required: true
@@ -22,6 +27,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # the same-commit self-checkout of this repo (shared release config)
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -48,17 +55,16 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: 🧩 Fetch the shared release config
-        # Makes `"extends": "@devantler-tech/release-config"` resolvable in a
-        # consumer's .releaserc. OPT-IN and fully backward compatible: a repo
-        # that does not use `extends` is completely unaffected.
+        # OPT-IN (default-off, per AGENTS.md feature-flag-first): callers that do
+        # not set use-shared-config never run this, so a fetch/auth hiccup here
+        # can never abort their release.
         #
         # Uses this repo's documented SAME-COMMIT SELF-CHECKOUT pattern
         # (AGENTS.md, "Self-references within this repo"): a reusable workflow
-        # resolves `./` against the CALLER's checkout, so it cannot read its own
-        # files directly — but `job.workflow_repository` at `job.workflow_sha`
-        # names this workflow's own repo at its exact commit. Zero-lag by
-        # construction, and it keeps ONE copy of the config rather than a
-        # duplicate embedded here.
+        # resolves `./` against the CALLER's checkout, so `job.workflow_repository`
+        # @ `job.workflow_sha` is what lets it read its own files at the exact
+        # commit the caller pinned. One copy of the config, no embedded duplicate.
+        if: ${{ inputs.use-shared-config }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: ${{ job.workflow_repository }}
@@ -67,21 +73,30 @@ jobs:
           sparse-checkout: .github/release-config
           persist-credentials: false
 
-      - name: 🧩 Install the shared release config
-        run: |
-          set -euo pipefail
-          dir=node_modules/@devantler-tech/release-config
-          mkdir -p "$dir"
-          cp .devantler-tech-actions/.github/release-config/*.json "$dir/"
-          # Drop the self-checkout: semantic-release inspects the workspace, and
-          # a stray checkout should not be visible to it.
-          rm -rf .devantler-tech-actions
-          echo "shared release config available as @devantler-tech/release-config"
-
       - name: 📦 Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+
+      - name: 🧩 Install the shared release config
+        # semantic-release resolves plugins named in an EXTENDED config relative
+        # to the workspace, but `npx semantic-release@…` installs into the npx
+        # cache — not node_modules. Without a workspace install the extended
+        # config dies with MODULE_NOT_FOUND (verified). Installing
+        # semantic-release here puts @semantic-release/* where the extended
+        # config can find them; the Release step's command is unchanged, and npx
+        # reuses this resolution.
+        if: ${{ inputs.use-shared-config }}
+        run: |
+          set -euo pipefail
+          # --no-save / a scratch manifest: never mutate a caller's package.json.
+          [ -f package.json ] || echo '{"name":"release-scratch","private":true}' > package.json
+          npm install --no-save --no-audit --no-fund semantic-release@25.0.3
+          dir=node_modules/@devantler-tech/release-config
+          mkdir -p "$dir"
+          cp .devantler-tech-actions/.github/release-config/*.json "$dir/"
+          rm -rf .devantler-tech-actions
+          echo "shared release config available as @devantler-tech/release-config"
 
       - name: 🎉 Release
         # GitHub already closes local issues from merge keywords. Disable the

@@ -56,7 +56,13 @@ assert_bump() {
   git commit -q -m "$message"
   git push -q --force origin "$branch" >/dev/null 2>&1
   local raw actual
-  raw="$(npx semantic-release --dry-run --no-ci --branches "$branch" 2>&1 || true)"
+  # Strip the ambient GitHub Actions environment. semantic-release's CI
+  # detection reads GITHUB_REF and would otherwise analyse "refs/pull/N/merge"
+  # instead of this fixture's branch — which is exactly how this test passed
+  # locally and failed in CI.
+  raw="$(env -u GITHUB_REF -u GITHUB_ACTIONS -u GITHUB_EVENT_NAME -u GITHUB_HEAD_REF \
+           -u GITHUB_BASE_REF -u GITHUB_REPOSITORY -u CI \
+           npx semantic-release --dry-run --no-ci --branches "$branch" 2>&1 || true)"
   actual="$(printf '%s' "$raw" | grep -oiE 'major release|minor release|patch release|no release' | head -1 || true)"
   if [[ "$actual" != "$expected" ]]; then
     echo "bump mismatch for '${message%%$'\n'*}': expected '$expected', got '${actual:-<none>}'" >&2

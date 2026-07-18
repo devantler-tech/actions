@@ -1865,6 +1865,16 @@ jobs:
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
+  test-create-release-shared-config:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Create Release - Shared Config Opt-In"
+    uses: ./.github/workflows/create-release.yaml
+    with:
+      use-shared-config: true
+      dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
   test-create-release-config:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Create Release - Least Privilege"
@@ -2511,6 +2521,7 @@ jobs:
       - test-create-release
       - test-create-release-config
       - test-create-release-no-issue-side-effects
+      - test-create-release-shared-config
       - test-release-config-bumps
       - test-deploy-github-pages
       - test-publish-dotnet-library
@@ -2597,6 +2608,7 @@ jobs:
             ${{ needs.test-create-release.result }}
             ${{ needs.test-create-release-config.result }}
             ${{ needs.test-create-release-no-issue-side-effects.result }}
+            ${{ needs.test-create-release-shared-config.result }}
             ${{ needs.test-release-config-bumps.result }}
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}
