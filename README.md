@@ -84,6 +84,32 @@ them by path as shown above. The reasoning, and when it would be worth revisitin
 
 The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App always needs `contents: write` (tags/releases). By default it also needs `issues: write` + `pull-requests: write` for semantic-release success/fail hooks. Set `disable-issue-side-effects: true` to suppress those hooks and mint the token with `contents: write` only.
 
+**`breaking-bang-commits` (default `false`).** semantic-release's default Angular preset recognises a
+breaking change only from a `BREAKING CHANGE:` footer — so a bang-style commit (`feat!: …`) produces
+**no release at all**, and the breaking change ships unversioned. This org's commit-message ruleset
+explicitly permits the bang, so contributors are invited to write exactly the form that does nothing.
+
+Set `breaking-bang-commits: true` and `type!:` commits become **major** releases. Nothing else
+changes: `feat:` → minor, `fix:` → patch, `docs:`/`chore:`/`ci:` → no release, and the
+`BREAKING CHANGE:` footer keeps working. **No change to your `.releaserc` is needed** — the pattern
+is injected into the config in the ephemeral workspace at release time, and your own
+`parserOpts`/`releaseRules` win over the injected defaults.
+
+Requires a **JSON** config (`.releaserc`, `.releaserc.json`, or `package.json`'s `release` key) that
+declares `plugins` explicitly. Any other shape (a JS or YAML config, or one relying on
+semantic-release's default plugin list) **fails the run with an explanatory error** rather than
+silently skipping the option.
+
+```yaml
+jobs:
+  release:
+    uses: devantler-tech/actions/.github/workflows/create-release.yaml@<sha> # vX.Y.Z
+    with:
+      breaking-bang-commits: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
 #### Usage
 
 ```yaml

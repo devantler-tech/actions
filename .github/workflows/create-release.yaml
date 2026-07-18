@@ -64,48 +64,89 @@ jobs:
         # commit-message ruleset explicitly permits the bang, so contributors
         # are invited to write exactly the form that does nothing.
         #
-        # This injects the bang pattern into the caller's EXISTING .releaserc in
-        # the ephemeral workspace — nothing is committed, and the caller needs no
-        # config change at all. Deliberately NOT done via `extends`: an extended
+        # This injects the bang pattern into the caller's EXISTING config in the
+        # ephemeral workspace — nothing is committed, and the caller needs no
+        # config change, only this input. Deliberately NOT `extends`: an extended
         # config makes semantic-release resolve plugins against the workspace,
         # but the Release step runs `npx`, which installs into the npx cache, so
         # `extends` dies with MODULE_NOT_FOUND unless the workflow also installs
-        # semantic-release locally (which zizmor correctly flags as an unpinned
-        # ad-hoc install). Editing the config in place keeps plugin resolution
-        # exactly as it is today.
+        # semantic-release locally (an unpinned ad-hoc install). Editing the
+        # config in place keeps plugin resolution exactly as it is today.
         #
-        # Existing parserOpts/releaseRules are MERGED, never replaced, so a
-        # caller that already customises them keeps its settings.
+        # FAILS CLOSED. Every path that cannot inject exits non-zero with the
+        # reason: enabling this input and silently not applying it would leave a
+        # breaking change unreleased while the run looked green — the exact
+        # failure this feature exists to prevent.
+        #
+        # Existing parserOpts/releaseRules are MERGED as DEFAULTS, so a caller's
+        # own values win.
         if: ${{ inputs.breaking-bang-commits }}
         run: |
           set -euo pipefail
+
+          # semantic-release's own config search order.
           config=""
-          for f in .releaserc .releaserc.json .releaserc.yaml .releaserc.yml release.config.js; do
-            [ -f "$f" ] && { config="$f"; break; }
+          json_path=""
+          for f in .releaserc .releaserc.json .releaserc.yaml .releaserc.yml \
+                   .releaserc.js .releaserc.cjs .releaserc.mjs \
+                   release.config.js release.config.cjs release.config.mjs; do
+            if [ -f "$f" ]; then config="$f"; break; fi
           done
+          if [ -z "$config" ] && [ -f package.json ] && jq -e 'has("release")' package.json >/dev/null 2>&1; then
+            config="package.json"
+            json_path=".release"
+          fi
+
           if [ -z "$config" ]; then
-            echo "::error::breaking-bang-commits is enabled but no semantic-release config was found"
+            echo "::error::breaking-bang-commits is enabled but no semantic-release config was found. Remove the input or add a JSON config."
             exit 1
           fi
-          if [ "$config" != ".releaserc" ] && [ "$config" != ".releaserc.json" ]; then
-            echo "::error::breaking-bang-commits currently supports only JSON config (.releaserc/.releaserc.json); found $config"
+          # A JS or YAML config cannot be rewritten safely; say so rather than
+          # pretend the option was applied.
+          case "$config" in
+            *.js|*.cjs|*.mjs|*.yaml|*.yml)
+              echo "::error::breaking-bang-commits supports JSON config only; found ${config}. Convert it to .releaserc/.releaserc.json/package.json, or add the breakingHeaderPattern to that file yourself."
+              exit 1 ;;
+          esac
+          if ! jq -e . "$config" >/dev/null 2>&1; then
+            echo "::error::${config} is not valid JSON (a bare .releaserc may be YAML); breaking-bang-commits supports JSON only."
             exit 1
           fi
-          jq '
+
+          root="${json_path:-.}"
+          if ! jq -e "${root} | has(\"plugins\")" "$config" >/dev/null 2>&1; then
+            echo "::error::${config} declares no \"plugins\" — semantic-release would use its defaults, which this step cannot rewrite. Declare plugins explicitly to use breaking-bang-commits."
+            exit 1
+          fi
+
+          # Separate statements, never `jq ... && mv ...`: on the left of `&&` a
+          # failure is a *tested* condition, so `set -e` does not abort and a
+          # later echo would make the step report success with the config
+          # unchanged.
+          jq --arg root "$root" '
             def bang: {breakingHeaderPattern: "^(\\w*)(?:\\((.*)\\))?!: (.*)$"};
-            .plugins |= map(
-              if type == "string" and . == "@semantic-release/commit-analyzer"
-              then [., {parserOpts: bang, releaseRules: [{breaking: true, release: "major"}]}]
-              elif type == "string" and . == "@semantic-release/release-notes-generator"
-              then [., {parserOpts: bang}]
-              elif type == "array" and .[0] == "@semantic-release/commit-analyzer"
-              then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {})),
-                           releaseRules: (((.[1].releaseRules) // []) + [{breaking: true, release: "major"}])})]
-              elif type == "array" and .[0] == "@semantic-release/release-notes-generator"
-              then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {}))})]
-              else . end)
-          ' "$config" > "$config.bang" && mv "$config.bang" "$config"
-          echo 'type!: commits will be treated as breaking'
+            def inject:
+              .plugins |= map(
+                if type == "string" and . == "@semantic-release/commit-analyzer"
+                then [., {parserOpts: bang, releaseRules: [{breaking: true, release: "major"}]}]
+                elif type == "string" and . == "@semantic-release/release-notes-generator"
+                then [., {parserOpts: bang}]
+                elif type == "array" and .[0] == "@semantic-release/commit-analyzer"
+                then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {})),
+                             releaseRules: (((.[1].releaseRules) // []) + [{breaking: true, release: "major"}])})]
+                elif type == "array" and .[0] == "@semantic-release/release-notes-generator"
+                then [.[0], ((.[1] // {}) + {parserOpts: (bang + ((.[1].parserOpts) // {}))})]
+                else . end);
+            if $root == ".release" then .release |= inject else inject end
+          ' "$config" > "$config.bang"
+          mv "$config.bang" "$config"
+
+          # Verify the rewrite actually landed rather than trusting jq's exit.
+          if ! jq -e "[${root} | .plugins[] | select(type == \"array\" and .[0] == \"@semantic-release/commit-analyzer\" and .[1].parserOpts.breakingHeaderPattern != null)] | length > 0" "$config" >/dev/null; then
+            echo "::error::failed to inject the breaking-change pattern into ${config}; refusing to release with the option silently unapplied."
+            exit 1
+          fi
+          echo "type!: commits will be treated as breaking (${config})"
 
       - name: 🎉 Release
         # GitHub already closes local issues from merge keywords. Disable the
