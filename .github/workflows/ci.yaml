@@ -1524,29 +1524,6 @@ jobs:
           fi
           echo "run-dotnet-tests inlined coverage step matches $WRAPPER (uses + input set) ✅"
 
-  # ── zizmor ──────────────────────────────────────────────────
-  zizmor:
-    runs-on: ubuntu-latest
-    # Run on pull_request (catch new findings) and on push to main (refresh the
-    # code-scanning baseline so resolved findings auto-close); skip merge_group,
-    # where the PR scan already ran and the queue ref makes a SARIF upload moot.
-    # Scanning on push to main is essential: without it the default-branch
-    # code-scanning baseline never refreshes, leaving stale alerts that the
-    # `code_scanning` branch rule treats as a merge blocker on every PR.
-    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    permissions:
-      security-events: write
-      contents: read
-      actions: read
-    steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: 🔒 Run zizmor
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
-
   # ── lint-readme-parity ──────────────────────────────────────
   lint-readme-parity:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -1652,6 +1629,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-template-sync-token-routing.sh
 
+      - name: 🔀 Check Zizmor event routing
+        shell: bash
+        run: bash .github/tests/test-zizmor-routing.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
@@ -1724,7 +1705,10 @@ jobs:
           exit "$status"
 
   test-zizmor:
-    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    # Pull requests already run the organization-required standalone workflow.
+    # Keep this reusable-workflow self-test for main pushes so the default-branch
+    # SARIF baseline still refreshes without duplicating the PR advisory scan.
+    if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Zizmor - Default Settings"
     uses: ./.github/workflows/scan-for-workflow-vulnerabilities.yaml
     permissions:
@@ -2487,7 +2471,6 @@ jobs:
       - test-upsert-issue-missing-body
       - test-upsert-issue-missing-body-file
       - test-run-dotnet-tests-missing-working-directory
-      - zizmor
       - lint-readme-parity
       - lint-ci-coverage-parity
       - test-zizmor
@@ -2573,7 +2556,6 @@ jobs:
             ${{ needs.test-upsert-issue-missing-body.result }}
             ${{ needs.test-upsert-issue-missing-body-file.result }}
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
-            ${{ needs.zizmor.result }}
             ${{ needs.lint-readme-parity.result }}
             ${{ needs.lint-ci-coverage-parity.result }}
             ${{ needs.test-zizmor.result }}
