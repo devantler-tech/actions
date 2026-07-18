@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.4](https://github.com/devantler-tech/actions/compare/v10.1.3...v10.1.4) (2026-07-18)
+
+
+### Bug Fixes
+
+* **enable-auto-merge:** arm auto-merge on workflow-touching PRs ([#626](https://github.com/devantler-tech/actions/issues/626)) ([b11c728](https://github.com/devantler-tech/actions/commit/b11c7284f7aa10cad09ab89ca4185efb2b18ae49))
+
 ## [10.1.3](https://github.com/devantler-tech/actions/compare/v10.1.2...v10.1.3) (2026-07-18)
 
 
