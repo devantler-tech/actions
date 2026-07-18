@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.1.2](https://github.com/devantler-tech/actions/compare/v10.1.1...v10.1.2) (2026-07-18)
+
+
+### Continuous Integration
+
+* **agent-skills:** seed update tests without live setup fetches ([#633](https://github.com/devantler-tech/actions/issues/633)) ([679720e](https://github.com/devantler-tech/actions/commit/679720eefda9ab32b6d5d293e349fa325a62f3e4))
+
 ## [10.1.1](https://github.com/devantler-tech/actions/compare/v10.1.0...v10.1.1) (2026-07-17)
 
 
