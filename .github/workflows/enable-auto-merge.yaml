@@ -134,9 +134,21 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: 🔑 Generate GitHub App Token
+      # Primary mint requests Workflows: write so a PR that modifies
+      # .github/workflows/ can be armed — GitHub treats
+      # enablePullRequestAutoMerge as updating the workflow and refuses it
+      # without that scope (actions#559). The devantler-tech installation
+      # grants Workflows org-wide. An installation WITHOUT the grant CANNOT
+      # mint a Workflows-scoped token: actions/create-github-app-token 422s
+      # rather than intersecting the scope away (documented in
+      # template-sync.yaml). So this mint is non-fatal (continue-on-error) and
+      # falls back to the base-scoped token below — otherwise EVERY PR there
+      # (workflow-touching or not) would hit a red required check before the
+      # arming step's graceful-degrade could ever run.
+      - name: 🔑 Generate GitHub App Token (Workflows-scoped)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
+        continue-on-error: true
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -145,15 +157,23 @@ jobs:
           # the job's permissions block).
           permission-contents: write
           permission-pull-requests: write
-          # Arming auto-merge on a PR that modifies .github/workflows/ requires
-          # the App token to carry Workflows: write — GitHub treats
-          # enablePullRequestAutoMerge as updating the workflow and refuses it
-          # otherwise (actions#559). The devantler-tech installation grants
-          # this org-wide; an installation WITHOUT the grant has this scope
-          # silently intersected away by the mint, and the arming step degrades
-          # gracefully rather than failing the required check (see the
-          # 🔀 Enable Auto-Merge step below).
           permission-workflows: write
+
+      # Base-scoped fallback (no Workflows) for installations that have not
+      # granted the App Workflows: write — reached only when the primary mint
+      # above 422s. Non-workflow PRs arm normally with this token; a
+      # workflow-touching PR cannot be armed there and degrades gracefully at
+      # the arming step. A genuine auth error (bad key) fails BOTH mints, and
+      # this one has no continue-on-error, so the job still fails closed.
+      - name: 🔑 Generate GitHub App Token (base scope fallback)
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token-base
+        if: steps.app-token.outcome == 'failure'
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
       # Self-reference: check out THIS workflow's own repo at the exact commit
       # it is running from (job.workflow_repository / job.workflow_sha) — never
@@ -174,7 +194,7 @@ jobs:
       - name: 🔎 Resolve target pull request
         id: pr
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -234,7 +254,7 @@ jobs:
         id: gates
         if: steps.pr.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ steps.gate-token.outputs.token || steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token || steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
@@ -345,7 +365,7 @@ jobs:
              (steps.gates.outcome == 'success' && steps.gates.outputs.armable == 'false'))
           }}
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number || github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
@@ -372,7 +392,7 @@ jobs:
         id: approve
         if: steps.gates.outputs.armable == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
@@ -416,7 +436,7 @@ jobs:
             steps.gates.outputs.armable == 'true'
           }}
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.gates.outputs.head_sha }}
@@ -460,13 +480,14 @@ jobs:
           # while binding its arming request to the allowlist-proven head.
           #
           # Arming a PR that touches .github/workflows/ needs the App token to
-          # carry Workflows: write (the token mint requests it). The
-          # devantler-tech installation grants it, but an installation WITHOUT
-          # the grant has the scope intersected away and GitHub refuses the
-          # arming with "... without `workflows` permission". Degrade
-          # gracefully there — the PR simply is not auto-armed (a trusted human
-          # merges it) — instead of leaving a permanently-red required check
-          # (actions#559). Any OTHER failure is still a hard error.
+          # carry Workflows: write (the primary mint requests it). The
+          # devantler-tech installation grants it. An installation WITHOUT the
+          # grant falls back to the base-scoped token above, so GitHub refuses
+          # the arming with "... without `workflows` permission" only for a
+          # workflow-touching PR. Degrade gracefully there — the PR simply is
+          # not auto-armed (a trusted human merges it) — instead of leaving a
+          # permanently-red required check (actions#559). Any OTHER failure is
+          # still a hard error.
           set +e
           merge_output=$(gh pr merge "$PR_NUMBER" --auto --squash --repo "$REPOSITORY" --match-head-commit "$HEAD_SHA" 2>&1)
           merge_exit=$?

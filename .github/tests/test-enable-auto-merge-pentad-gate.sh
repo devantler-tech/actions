@@ -257,10 +257,41 @@ if [[ "$app_token_workflows" != "write" ]]; then
   status=1
 fi
 
-# An installation without Workflows: write has that scope intersected away, so
-# the arming call is still refused there. The arming step must degrade
-# gracefully on that specific refusal (warn + exit 0) rather than fail the
-# required check, while any OTHER merge failure stays a hard error (actions#559).
+# An installation WITHOUT the Workflows grant cannot mint a Workflows-scoped
+# token — create-github-app-token 422s rather than intersecting the scope away —
+# which would fail the required check for EVERY PR there before the arming
+# step's graceful-degrade could run. So the Workflows-scoped mint must be
+# non-fatal (continue-on-error) and fall back to a base-scoped token with NO
+# Workflows scope, reached only on that failure (actions#559).
+app_token_coe="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token")
+   | .["continue-on-error"] // false]
+  | join("\n")' "$workflow")"
+if [[ "$app_token_coe" != "true" ]]; then
+  echo "::error file=$workflow::the Workflows-scoped App token mint must be continue-on-error so a 422 on a grant-less installation does not fail the required check (actions#559)"
+  status=1
+fi
+fallback_count="$(yq -r '
+  [.jobs."auto-merge".steps[] | select(.id == "app-token-base")] | length' "$workflow")"
+fallback_workflows="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token-base")
+   | .with."permission-workflows" // "ABSENT"]
+  | join("\n")' "$workflow")"
+fallback_if="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token-base")
+   | .if // ""]
+  | join("\n")' "$workflow")"
+if [[ "$fallback_count" != "1" || "$fallback_workflows" != "ABSENT" || "$fallback_if" != *"steps.app-token.outcome"* ]]; then
+  echo "::error file=$workflow::a base-scoped fallback mint (id app-token-base, NO permission-workflows) gated on steps.app-token.outcome == 'failure' must back the non-fatal Workflows-scoped mint (actions#559)"
+  status=1
+fi
+
+# The arming step must degrade gracefully on the workflows-permission refusal
+# (warn + exit 0) rather than fail the required check, while any OTHER merge
+# failure stays a hard error (actions#559).
 if ! grep -Fq 'without `workflows` permission' <<<"$pre_arm_run"; then
   echo "::error file=$workflow::Enable Auto-Merge must detect the 'without \`workflows\` permission' arming refusal and degrade gracefully (actions#559)"
   status=1
