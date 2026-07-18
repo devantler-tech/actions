@@ -2,6 +2,28 @@
 
 The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`; that repo is being retired and will be archived once all consumers migrate their `uses:` pins here.)
 
+## Using them
+
+An **action** is a step inside one of your jobs. A **reusable workflow** replaces a whole job. Both
+are called by path from this repository, pinned to a ref:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # an action — a step in your own job
+      - uses: devantler-tech/actions/setup-go-toolchain@<ref>
+
+  release:
+    # a reusable workflow — the whole job comes from here
+    uses: devantler-tech/actions/.github/workflows/create-release.yaml@<ref>
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+Pin `<ref>` to a commit SHA. Each entry in the tables below links to its own inputs and outputs.
+
 The diagram below shows how GitHub Workflows, Jobs, Steps, Reusable Workflows, and Actions relate.
 
 ```mermaid
@@ -44,20 +66,10 @@ flowchart TD
 
 ### Distribution
 
-This repository is a portfolio-first, publicly reusable catalogue. Consumers call
-an action directly as `devantler-tech/actions/<action-name>@<ref>`; the suite is
-intentionally not published as a family of GitHub Marketplace listings in its
-current multi-action layout.
-
-[GitHub Marketplace publishing requires a root action metadata file](https://docs.github.com/en/actions/how-tos/create-and-publish-actions/publish-in-github-marketplace),
-and action metadata in subdirectories is not automatically listed. This repository
-instead contains multiple subdirectory actions and reusable workflows under one
-release stream, so adding `branding:` to the nested `action.yaml` files would not
-make them independently discoverable and is deliberately omitted.
-
-Revisit Marketplace publication only when an action has enough independent demand
-to justify extraction into its own single-action repository. That repository should
-then carry its own branding and Marketplace release lifecycle.
+These are not on the GitHub Marketplace, and that is deliberate: Marketplace does not list actions
+that live in subdirectories, and everything here shares one repository and one release stream. Call
+them by path as shown above. The reasoning, and when it would be worth revisiting, is in
+[`AGENTS.md`](AGENTS.md#conventions).
 
 ## Reusable Workflows
 
@@ -206,7 +218,29 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) approves pull requests from an exact-match allowlist of trusted single-author bots and, with enforcement off, preserves the legacy head-bound auto-merge behavior. Its **opt-in, default-off** fail-closed review/pre-merge gate (`.scripts/check-merge-gates.sh`, enabled via the `enforce-review-gates` input or the `ENFORCE_MERGE_GATES` repository/organization variable) requires, at the PR's **current head**, a green review (CodeRabbit's latest head verdict `APPROVED`, or a Codex clean pass when CodeRabbit has no blocking head result) and a green, **fresh** CodeRabbit pre-merge result before approval. Missing, stale, edited, mixed, unknown, or unreadable evidence is red and actively revokes both classic auto-merge and merge-queue state. Enforced runs deliberately **never auto-arm**: GitHub cannot atomically bind mutable reviewer evidence to its merge call, so the workflow revokes stale arming before approval, binds approval to the proven head, revokes again after approval, and leaves final arming to the portfolio maintenance agent's live pentad check. The gate script is checked out from the **workflow-defining** repository at the running commit (`job.workflow_repository`/`job.workflow_sha`); the legacy default-off arming remains bound with `--match-head-commit`. Because review results land after the `pull_request` events, the workflow also triggers on `pull_request_review`/`issue_comment` where it lives; `workflow_call` consumers that enable enforcement must add those triggers to their **caller** workflow (a reusable workflow cannot schedule its callers).
+[.github/workflows/enable-auto-merge.yaml](.github/workflows/enable-auto-merge.yaml) approves pull
+requests opened by an allowlist of trusted single-author bots, so routine bot PRs do not need a human
+click.
+
+**By default** it behaves as it always has: it approves the PR and arms auto-merge, bound to the
+commit it checked.
+
+**With review enforcement turned on** — the `enforce-review-gates` input, or the
+`ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
+_current_ commit, both a passing review (CodeRabbit approved, or a clean Codex pass when CodeRabbit
+has no blocking result) and a fresh CodeRabbit pre-merge result. This gate fails closed: evidence
+that is missing, stale, edited, mixed, or unreadable counts as a failure, and the workflow then
+actively withdraws any auto-merge or merge-queue state the PR had.
+
+Enforced runs approve but deliberately **never arm the merge themselves**. GitHub offers no way to
+tie mutable review evidence to the merge call atomically, so arming is left to whatever drives the
+merge afterwards.
+
+> [!IMPORTANT]
+> **If you enable enforcement via `workflow_call`, add `pull_request_review` and `issue_comment`
+> triggers to your own caller workflow.** Review results arrive after the `pull_request` event, and a
+> reusable workflow cannot add triggers to the workflow calling it — so without these the gate never
+> re-evaluates once a review lands.
 
 #### Usage
 
