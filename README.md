@@ -299,6 +299,10 @@ The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile
 
 Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
 
+**Grant `contents: write`, even if you set `apply-fixes: false`.** A caller must grant at least what the called workflow's jobs declare. Granting less is not a narrower permission — GitHub rejects the call when it loads the file, and *the entire calling workflow* returns `startup_failure` with no jobs at all, which looks exactly like the workflow never triggering. `actionlint` does not catch it.
+
+**Fork pull requests lint read-only, automatically.** GitHub withholds secrets from forks, so fixes could never be committed back; auto-fixing there would only produce a failure an outside contributor cannot resolve. Real lint errors still fail on forks — only the auto-fix half is skipped.
+
 #### Usage
 
 ```yaml

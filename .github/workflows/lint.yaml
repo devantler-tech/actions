@@ -74,8 +74,17 @@ jobs:
       # continue-on-error: a consumer without the App configured (or a fork PR, where
       # secrets are unavailable) still gets a lint gate — it just cannot commit fixes.
       # The final step turns that into a clear failure rather than a silent pass.
+      # Fork pull requests never get secrets, so the App token cannot be minted and fixes
+      # can never be committed back. Auto-fixing there would leave changes that the job then
+      # fails on — a red check an outside contributor cannot resolve except by installing
+      # this image locally. So forks lint READ-ONLY: nothing is fixed, nothing is left
+      # uncommitted, nothing fails for a reason they cannot act on.
+      #
+      # This is not a softer gate. With APPLY_FIXES=none a fixable formatting issue is
+      # reported as a warning and MegaLinter exits 0, but real lint ERRORS — invalid JSON,
+      # shellcheck failures — still fail the job exactly as they do on a branch.
       - name: 🔑 Generate GitHub App Token
-        if: ${{ inputs.apply-fixes }}
+        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true }}
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: generate-token
@@ -109,7 +118,7 @@ jobs:
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLY_FIXES: ${{ inputs.apply-fixes && 'all' || 'none' }}
+          APPLY_FIXES: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true && 'all' || 'none' }}
           APPLY_FIXES_EVENT: all
           APPLY_FIXES_MODE: commit
           # actionlint (<=1.7.12, bundled in MegaLinter) doesn't yet know the `code-quality`
@@ -135,7 +144,7 @@ jobs:
       # PR, or an unconfigured consumer). Leaving them uncommitted would pass a PR whose
       # tree is still unformatted, so fail loudly with the diff instead.
       - name: ❌ Fail if uncommitted changes remain
-        if: ${{ inputs.apply-fixes && steps.generate-token.outcome != 'success' }}
+        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true && steps.generate-token.outcome != 'success' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
