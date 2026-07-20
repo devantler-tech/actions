@@ -70,6 +70,10 @@ jobs:
               contains(
                 fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
                 github.event.pull_request.user.login
+              ) &&
+              contains(
+                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                github.actor
               )
             ) ||
             (

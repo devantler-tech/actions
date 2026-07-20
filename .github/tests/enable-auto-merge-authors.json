@@ -4,6 +4,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "devantler",
+    "actor": "devantler",
     "eligible": false
   },
   {
@@ -11,6 +12,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "dependabot[bot]",
+    "actor": "dependabot[bot]",
     "eligible": true
   },
   {
@@ -18,6 +20,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "renovate[bot]",
+    "actor": "renovate[bot]",
     "eligible": true
   },
   {
@@ -25,6 +28,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "github-actions[bot]",
+    "actor": "github-actions[bot]",
     "eligible": true
   },
   {
@@ -32,6 +36,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "ksail-bot[bot]",
+    "actor": "ksail-bot[bot]",
     "eligible": true
   },
   {
@@ -39,6 +44,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
     "eligible": true
   },
   {
@@ -46,6 +52,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "unknown-automation[bot]",
+    "actor": "unknown-automation[bot]",
     "eligible": false
   },
   {
@@ -53,6 +60,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "octocat",
+    "actor": "octocat",
     "eligible": false
   },
   {
@@ -60,6 +68,7 @@
     "event_name": "pull_request",
     "draft": true,
     "login": "dependabot[bot]",
+    "actor": "dependabot[bot]",
     "eligible": false
   },
   {
@@ -67,6 +76,15 @@
     "event_name": "merge_group",
     "draft": false,
     "login": "dependabot[bot]",
+    "actor": "dependabot[bot]",
+    "eligible": false
+  },
+  {
+    "name": "untrusted actor updates trusted bot PR",
+    "event_name": "pull_request",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "octocat",
     "eligible": false
   }
 ]
