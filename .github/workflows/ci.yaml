@@ -1416,7 +1416,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
+          dotnet restore
+          dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
           exit "${PIPESTATUS[0]}"
 
       - name: ✅ Assert the test gate blocked on the failing test
@@ -1466,7 +1467,7 @@ jobs:
           GATE: run-dotnet-tests/action.yaml
           # Match the full command, not a bare substring — commands also appear in comments,
           # so a looser grep could false-pass if the real value changed while a comment did not.
-          EXPECTED_TEST_CMD: 'dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
+          EXPECTED_TEST_CMD: 'dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED_TEST_CMD" "$GATE"; then
