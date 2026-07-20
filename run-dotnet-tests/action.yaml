@@ -3,8 +3,9 @@ description: Test .NET solution or project
 author: devantler-tech
 inputs:
   github-token:
-    description: GitHub token to access the repository
-    required: true
+    description: Deprecated compatibility input; credentials are not exposed to repository-controlled .NET processes
+    required: false
+    default: ""
   working-directory:
     description: Directory to run the tests in
     required: false
@@ -20,18 +21,6 @@ runs:
         dotnet-version: |
           9
           10
-    - name: 🚚 Add GHCR as NuGet feed
-      run: |
-        dotnet nuget add source \
-          --username ${GITHUB_ACTOR} \
-          --password ${GITHUB_TOKEN} \
-          --store-password-in-clear-text \
-          --name github \
-          "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-      env:
-        GITHUB_ACTOR: ${{ github.actor }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-      shell: bash
     - name: 🧪 Test
       run: dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
       shell: bash

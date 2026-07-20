@@ -19,7 +19,6 @@ jobs:
   test:
     permissions:
       contents: read
-      packages: read
       # Required for the GitHub Code Quality coverage upload. Callers of this reusable workflow
       # must also grant `code-quality: write`, or the run fails at startup.
       code-quality: write
@@ -57,5 +56,4 @@ jobs:
       - name: 🧪 Test .NET solution or project
         uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: ${{ inputs.working-directory || '.' }}

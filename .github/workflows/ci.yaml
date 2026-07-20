@@ -410,7 +410,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      packages: read
       code-quality: write # for the GitHub Code Quality coverage upload
     strategy:
       matrix:
@@ -424,7 +423,6 @@ jobs:
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
   # ── setup-agent-skills ────────────────────────────────────
@@ -1347,7 +1345,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
     steps:
       - name: 📑 Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -1359,7 +1356,6 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: does-not-exist
 
       - name: ✅ Verify step failed as expected
