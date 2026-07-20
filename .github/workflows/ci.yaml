@@ -2429,6 +2429,117 @@ jobs:
           fi
           echo "validate-go-project.yaml concurrency group is invocation-aware ✅"
 
+  # ── lint.yaml self-tests ─────────────────────────────────────────────────────
+  # lint.yaml is a GATING reusable workflow (it fails a PR on a lint finding), so per the
+  # AGENTS.md convention it carries BOTH a passes-on-good-input and a blocks-on-bad-input
+  # self-test — a happy-path test alone cannot catch a gate that silently stopped biting.
+  # apply-fixes is false here: the self-test must never commit to the branch under test.
+  test-lint-workflow:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Passes On Clean Fixture"
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/lint.yaml
+    with:
+      working-directory: .github/tests/megalinter-clean-fixture
+      apply-fixes: false
+
+  test-lint-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Blocks On Invalid Fixture"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Same MegaLinter image SHA as lint.yaml's gate (guarded by test-lint-gate-lockstep),
+      # pointed at a fixture whose JSON has a syntax error no formatter can auto-fix — so
+      # APPLY_FIXES cannot mask it and the run must exit non-zero. continue-on-error lets
+      # the next step assert the failure. Reports go to a dedicated folder the assertion
+      # reads, which distinguishes a real lint block from an operational failure (e.g. an
+      # image pull error), which would leave no report at all.
+      - name: 🧹 Lint invalid fixture (expected to fail)
+        id: ml
+        continue-on-error: true
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
+        env:
+          DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
+          REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
+          VALIDATE_ALL_CODEBASE: true
+          APPLY_FIXES: none
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ✅ Assert the lint gate blocked on the invalid fixture
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.ml.outcome }}
+        run: |
+          set -euo pipefail
+          REPORTS="${GITHUB_WORKSPACE}/megalinter-bad-fixture-reports"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::MegaLinter should FAIL on the deliberately-invalid JSON in .github/tests/megalinter-bad-fixture, but its outcome was '$OUTCOME'. lint.yaml's gate is no longer blocking on lint findings."
+            exit 1
+          fi
+          if ! grep -rqF "bad.json" "$REPORTS" 2>/dev/null; then
+            echo "::error::MegaLinter failed, but no report named the bad.json fixture — the failure was operational (e.g. an image pull error), not a real lint block. Reports:"
+            ls -R "$REPORTS" 2>/dev/null || echo "(no reports captured)"
+            exit 1
+          fi
+          echo "Lint gate correctly blocked on the invalid JSON fixture ✅"
+
+  test-lint-gate-lockstep:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Gate Pins Self-Tested Image"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
+      # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
+      # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
+      # If any of the three is bumped alone, this goes red and forces them to move together.
+      - name: 🔒 Assert both gates pin the self-tested MegaLinter image
+        shell: bash
+        env:
+          # Match the full `uses:` line, not the bare SHA — the SHA also appears in
+          # comments, so a bare grep could false-pass if the real `uses:` changed while a
+          # comment still named the old one.
+          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc"
+        run: |
+          set -euo pipefail
+          status=0
+          for gate in .github/workflows/lint.yaml .github/workflows/validate-go-project.yaml; do
+            if ! grep -qF "$EXPECTED" "$gate"; then
+              echo "::error::$gate no longer pins '$EXPECTED'. If the MegaLinter image was bumped intentionally, update test-lint-blocks, both gates and this EXPECTED value together so the failure-mode self-test keeps exercising the real gate."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Both MegaLinter gates pin the self-tested image ✅"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -2504,6 +2615,9 @@ jobs:
       - test-validate-go-test-blocks
       - test-validate-go-gate-lockstep
       - test-validate-go-project-concurrency-key
+      - test-lint-workflow
+      - test-lint-blocks
+      - test-lint-gate-lockstep
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -2589,6 +2703,9 @@ jobs:
             ${{ needs.test-validate-go-test-blocks.result }}
             ${{ needs.test-validate-go-gate-lockstep.result }}
             ${{ needs.test-validate-go-project-concurrency-key.result }}
+            ${{ needs.test-lint-workflow.result }}
+            ${{ needs.test-lint-blocks.result }}
+            ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}

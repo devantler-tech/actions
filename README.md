@@ -286,6 +286,45 @@ jobs:
 
 </details>
 
+### 🧹 Lint
+
+<details>
+<summary>Click to expand</summary>
+
+[.github/workflows/lint.yaml](.github/workflows/lint.yaml) lints a whole repository with [MegaLinter](https://megalinter.io) (Go flavor), auto-fixing what it can and committing the result back to the pull request.
+
+**Which one do I want?** If your repository *is* a Go module, use [✅ Validate Go Project](#-validate-go-project) — it already runs MegaLinter as one stage of a full Go pipeline. Reach for this workflow when Go is only part of a larger tree (a game client plus a Go server, for example): it lints everything and leaves the Go build and tests to your own job.
+
+The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile, Kubernetes, spelling, secrets and copy-paste. It has no GDScript, Python or Terraform linters — see [MegaLinter's flavor list](https://megalinter.io/latest/flavors/) if you need those.
+
+Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
+
+#### Usage
+
+```yaml
+jobs:
+  lint:
+    uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+#### Secrets and Inputs
+
+| Key                 | Type            | Default | Required | Description                                                                                                          |
+|---------------------|-----------------|---------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`   | Secret          | -       | No       | GitHub App private key. Needed only to commit auto-fixes; without it a fixable finding fails the build instead        |
+| `working-directory` | Input           | `""`    | No       | Directory to lint. Empty lints the whole repository                                                                   |
+| `go-version-file`   | Input           | `""`    | No       | Path to a `go.mod`. When set, Go is installed first so the Go linters use the module's toolchain, not the container's |
+| `apply-fixes`       | Input (boolean) | `true`  | No       | Auto-fix and commit back to the pull request. Set `false` for a read-only gate                                        |
+| `pr-owner`          | Input           | `""`    | No       | Pull request author login. Auto-fix commits are suppressed for dependency-bot pull requests                           |
+
+</details>
+
 ### 📦 Publish App
 
 <details>
