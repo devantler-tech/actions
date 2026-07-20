@@ -2437,8 +2437,12 @@ jobs:
   test-lint-workflow:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Lint - Passes On Clean Fixture"
+    # contents: write even though apply-fixes is false and this job never pushes. A caller
+    # must grant at least what the called workflow's jobs declare, and lint.yaml's job
+    # declares contents: write for the auto-fix commit. Granting less is not a narrower
+    # permission — it is a startup failure, and the whole CI workflow never runs.
     permissions:
-      contents: read
+      contents: write
       issues: write
       pull-requests: write
     uses: ./.github/workflows/lint.yaml
