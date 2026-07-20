@@ -25,8 +25,7 @@ jobs:
   test-approve-pr:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
-      contents: write
+      contents: read
     if: >-
       !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
@@ -45,9 +44,9 @@ jobs:
       - name: 🧪 Run approve-pr
         uses: ./approve-pr
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          app-private-key: dry-run-placeholder
           pr-number: ${{ github.event.pull_request.number }}
+          dry-run: true
 
   # ── cleanup-ghcr-packages ───────────────────────────────────
   test-cleanup-ghcr-packages:
