@@ -18,7 +18,7 @@
     "event_name": "pull_request",
     "draft": false,
     "login": "renovate[bot]",
-    "eligible": true
+    "eligible": false
   },
   {
     "name": "GitHub Actions",
