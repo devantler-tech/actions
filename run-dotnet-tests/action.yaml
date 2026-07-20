@@ -4,7 +4,8 @@ author: devantler-tech
 inputs:
   github-token:
     description: GitHub token to access the repository
-    required: true
+    required: false
+    default: ""
   working-directory:
     description: Directory to run the tests in
     required: false
@@ -21,6 +22,7 @@ runs:
           9
           10
     - name: 🚚 Add GHCR as NuGet feed
+      if: inputs.github-token != ''
       run: |
         dotnet nuget add source \
           --username ${GITHUB_ACTOR} \
