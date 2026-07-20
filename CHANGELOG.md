@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.0](https://github.com/devantler-tech/actions/compare/v10.1.4...v10.2.0) (2026-07-20)
+
+
+### Features
+
+* add a repo-wide MegaLinter reusable workflow for non-Go-module repos ([#663](https://github.com/devantler-tech/actions/issues/663)) ([92201ce](https://github.com/devantler-tech/actions/commit/92201ceff336fd833b6a46cec42e715935eec4f3))
+
 ## [10.1.4](https://github.com/devantler-tech/actions/compare/v10.1.3...v10.1.4) (2026-07-18)
 
 
