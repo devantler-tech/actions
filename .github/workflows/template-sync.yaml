@@ -54,21 +54,21 @@ on:
         type: boolean
       use-app-token:
         description: >-
-          When `true` (the default), open the sync PR with a GitHub App token
+          When `true`, open the sync PR with a GitHub App token
           (minted from the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret)
           instead of the default `GITHUB_TOKEN`. A PR opened with `GITHUB_TOKEN`
-          does NOT trigger the caller's `on: pull_request`/`push` CI runs, so its
-          required checks never report and it stays blocked; an App token avoids
-          this. Set to `false` to fall back to `GITHUB_TOKEN`.
+          does NOT trigger the caller's `on: pull_request`/`push` CI runs. Only
+          opt in after ensuring CI treats template-sync PR content as untrusted.
         required: false
-        default: true
+        default: false
         type: boolean
     secrets:
       APP_PRIVATE_KEY:
         description: >-
           GitHub App private key, required when `use-app-token` is `true` (the
-          default). Paired with the `APP_CLIENT_ID` repository/organization variable to
-          mint an App token for opening the sync PR.
+          non-default opt-in). Paired with the `APP_CLIENT_ID`
+          repository/organization variable to mint an App token for opening the
+          sync PR.
         required: false
 
 permissions: {}
@@ -118,7 +118,8 @@ jobs:
           # token path that can sync workflow changes — the `use-app-token: false`
           # fallback (`GITHUB_TOKEN`) can never push workflow files regardless of
           # job permissions (a GitHub safety restriction), so a template carrying
-          # workflow changes requires `use-app-token: true` (the default).
+          # workflow changes requires explicitly opting in with
+          # `use-app-token: true`.
           # NOTE: the App must have the **Workflows** repository permission granted
           # for this scope to mint; without it `create-github-app-token` 422s.
           permission-workflows: write
