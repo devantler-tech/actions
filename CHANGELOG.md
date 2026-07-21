@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.1](https://github.com/devantler-tech/actions/compare/v10.2.0...v10.2.1) (2026-07-21)
+
+
+### Continuous Integration
+
+* **coderabbit:** keep docstring coverage advisory instead of merge-blocking ([#661](https://github.com/devantler-tech/actions/issues/661)) ([6b063f9](https://github.com/devantler-tech/actions/commit/6b063f9608a49bc9cd0e0f1856192dd0d49fab12))
+
 ## [10.2.0](https://github.com/devantler-tech/actions/compare/v10.1.4...v10.2.0) (2026-07-20)
 
 
