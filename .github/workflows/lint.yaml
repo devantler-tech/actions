@@ -61,19 +61,16 @@ jobs:
   lint:
     name: 🧹 Lint - mega-linter
     runs-on: ubuntu-latest
+    outputs:
+      fixes-created: ${{ steps.fixes.outputs.changed }}
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      # continue-on-error: a consumer without the App configured (or a fork PR, where
-      # secrets are unavailable) still gets a lint gate — it just cannot commit fixes.
-      # The final step turns that into a clear failure rather than a silent pass.
       # Fork pull requests never get secrets, so the App token cannot be minted and fixes
       # can never be committed back. Auto-fixing there would leave changes that the job then
       # fails on — a red check an outside contributor cannot resolve except by installing
@@ -83,23 +80,10 @@ jobs:
       # This is not a softer gate. With APPLY_FIXES=none a fixable formatting issue is
       # reported as a warning and MegaLinter exits 0, but real lint ERRORS — invalid JSON,
       # shellcheck failures — still fail the job exactly as they do on a branch.
-      - name: 🔑 Generate GitHub App Token
-        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true }}
-        continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: generate-token
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # Least-privilege: this token only pushes auto-fixes back to the PR branch.
-          # MegaLinter's PR/issue reporting uses the default GITHUB_TOKEN.
-          permission-contents: write
-
       - name: 📄 Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
-          token: ${{ steps.generate-token.outputs.token || github.token }}
+          persist-credentials: false
 
       - name: ⚙️ Setup Go
         if: ${{ inputs.go-version-file != '' }}
@@ -117,7 +101,6 @@ jobs:
           DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLY_FIXES: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true && 'all' || 'none' }}
           APPLY_FIXES_EVENT: all
           APPLY_FIXES_MODE: commit
@@ -127,33 +110,75 @@ jobs:
           # catches up.
           ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality
 
+      # PR-controlled MegaLinter configuration may execute commands. Export only its
+      # resulting patch here; write credentials are minted later on a fresh runner.
+      - name: 📦 Prepare applied fixes
+        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true }}
+        id: fixes
+        shell: bash
+        run: |
+          git add --intent-to-add .
+          if git diff --quiet HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/megalinter-fixes.patch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📤 Upload applied fixes
+        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: megalinter-fixes
+          path: ${{ runner.temp }}/megalinter-fixes.patch
+          if-no-files-found: error
+
+  apply-fixes:
+    name: 🧹 Lint - apply fixes
+    needs: lint
+    if: |
+      inputs.apply-fixes
+      && needs.lint.outputs.fixes-created == 'true'
+      && github.event.pull_request.head.repo.fork != true
+      && github.event_name == 'pull_request'
+      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
+      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: true
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: 📥 Download applied fixes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: megalinter-fixes
+          path: ${{ runner.temp }}
+
+      - name: Apply fixes
+        shell: bash
+        run: git apply --index "${RUNNER_TEMP}/megalinter-fixes.patch"
+
       - name: Commit and push applied linter fixes
-        if: |
-          inputs.apply-fixes
-          && steps.generate-token.outcome == 'success'
-          && github.event_name == 'pull_request'
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
         uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: "chore: Apply megalinter fixes"
           commit_user_name: megalinter-bot
           commit_user_email: 129584137+megalinter-bot@users.noreply.github.com
-
-      # Auto-fix was requested but the fixes could not be committed (no App token — a fork
-      # PR, or an unconfigured consumer). Leaving them uncommitted would pass a PR whose
-      # tree is still unformatted, so fail loudly with the diff instead.
-      - name: ❌ Fail if uncommitted changes remain
-        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true && steps.generate-token.outcome != 'success' }}
-        shell: bash
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Auto-fix produced changes that cannot be committed (no App token — e.g. a fork PR). Please run the fix locally and push."
-            echo ""
-            echo "Changed files:"
-            git diff --stat
-            echo ""
-            echo "Full diff:"
-            git diff
-            exit 1
-          fi
