@@ -2166,7 +2166,7 @@ jobs:
       - name: 🌈 Scan vulnerable fixture (expected to fail)
         id: scan
         continue-on-error: true
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
         with:
           inputs: .github/tests/zizmor-fixture/template-injection.yml
           advanced-security: false
@@ -2218,7 +2218,7 @@ jobs:
           # Match the full `uses:` line, not the bare ref — the ref also appears in
           # comments, so a bare-ref grep could false-pass if the real `uses:` SHA changed
           # while a comment still mentioned the old ref.
-          EXPECTED: "uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa"
+          EXPECTED: "uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02"
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED" .github/workflows/scan-for-workflow-vulnerabilities.yaml; then
