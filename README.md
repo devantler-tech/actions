@@ -299,7 +299,7 @@ The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile
 
 Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
 
-**Grant `contents: write`, even if you set `apply-fixes: false`.** A caller must grant at least what the called workflow's jobs declare. Granting less is not a narrower permission — GitHub rejects the call when it loads the file, and *the entire calling workflow* returns `startup_failure` with no jobs at all, which looks exactly like the workflow never triggering. `actionlint` does not catch it.
+MegaLinter always runs read-only, without a GitHub token or persisted checkout credentials. When auto-fixing is enabled, the lint job exports a patch and a separate job on a fresh runner mints the write-scoped App token, applies that patch, and commits it. This isolation prevents pull-request-controlled MegaLinter configuration from accessing repository write credentials.
 
 **Fork pull requests lint read-only, automatically.** GitHub withholds secrets from forks, so fixes could never be committed back; auto-fixing there would only produce a failure an outside contributor cannot resolve. Real lint errors still fail on forks — only the auto-fix half is skipped.
 
@@ -310,9 +310,7 @@ jobs:
   lint:
     uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
