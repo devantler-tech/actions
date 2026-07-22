@@ -72,7 +72,7 @@ fi
 allowlist_json="$(jq -c '[.[] | select(.eligible) | .login]' "$fixtures")"
 reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
+expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login)&&contains(fromJSON('$allowlist_json'),github.actor))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"
@@ -85,11 +85,13 @@ while IFS= read -r fixture; do
   event_name="$(jq -r '.event_name' <<<"$fixture")"
   draft="$(jq -r '.draft' <<<"$fixture")"
   login="$(jq -r '.login' <<<"$fixture")"
+  actor="$(jq -r '.actor' <<<"$fixture")"
   expected="$(jq -r '.eligible' <<<"$fixture")"
   actual=false
 
   if [[ "$event_name" == "pull_request" && "$draft" == "false" ]] &&
-    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null; then
+    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
+    jq -e --arg actor "$actor" 'index($actor) != null' <<<"$allowlist_json" >/dev/null; then
     actual=true
   fi
 
