@@ -57,5 +57,7 @@ jobs:
       - name: 🧪 Test .NET solution or project
         uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Never expose a token to PR-controlled MSBuild targets or tests. Authenticated
+          # GitHub Packages restore remains available for workflow_call / merge-group runs.
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: ${{ inputs.working-directory || '.' }}
