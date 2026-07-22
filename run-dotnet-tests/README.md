@@ -8,7 +8,7 @@ Test .NET solutions or projects across multiple platforms with code coverage rep
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `github-token` | GitHub token to access the repository | ✅ | - |
+| `github-token` | GitHub token used to access private GitHub Packages. Do not pass it when testing untrusted code. | ❌ | - |
 | `working-directory` | Directory to run the tests in | ❌ | `.` |
 
 ## Usage

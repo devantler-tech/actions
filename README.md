@@ -456,7 +456,11 @@ jobs:
 
 #### Secrets and Inputs
 
-This workflow needs no caller-provided secrets or inputs — it authenticates to the GHCR NuGet feed with the automatic `GITHUB_TOKEN` (requires the `packages: read` permission shown above).
+This workflow needs no caller-provided secrets or inputs. Trusted `workflow_call` and
+merge-queue runs authenticate to the GHCR NuGet feed with the automatic `GITHUB_TOKEN`
+(requiring the `packages: read` permission shown above). Pull-request runs deliberately
+omit that credential so repository-controlled MSBuild targets and test code cannot read
+or exfiltrate it; consequently, private GitHub Packages are unavailable in that context.
 
 </details>
 
