@@ -203,13 +203,18 @@ jobs:
         github.event.pull_request.user.login == 'devantler'
       )
     steps:
-      - name: 📑 Checkout
+      # Never execute this privileged local action from the PR merge commit: an
+      # allowlisted PR can modify action.yaml and otherwise inherit this job's
+      # write-scoped GITHUB_TOKEN. Load the implementation from the trusted base.
+      - name: 📑 Checkout trusted action
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted-actions
           persist-credentials: false
 
       - name: 🧪 Run enable-auto-merge-on-pr
-        uses: ./enable-auto-merge-on-pr
+        uses: ./.trusted-actions/enable-auto-merge-on-pr
         with:
           pr-number: ${{ github.event.pull_request.number }}
           dry-run: "true"
