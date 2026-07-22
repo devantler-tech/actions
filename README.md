@@ -58,7 +58,7 @@ flowchart TD
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
 | [run-dotnet-tests](run-dotnet-tests/README.md) | Test .NET solution or project with coverage |
 | [setup-agent-skills](setup-agent-skills/README.md) | Install agent skills via `gh skill` from a newline list of `<owner/repo> <skill>[@pin]` entries, for one or more agents (e.g. Copilot, Claude Code) |
-| [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with optional private module support |
+| [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with private module discovery |
 | [setup-ksail-cli](setup-ksail-cli/README.md) | Install KSail CLI via Homebrew |
 | [update-agent-skills](update-agent-skills/README.md) | Run `gh skill update --all` against installed skills and report changes |
 | [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |

@@ -661,12 +661,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-go-toolchain with token
+      - name: 🧪 Run setup-go-toolchain with private module discovery
         uses: ./setup-go-toolchain
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ✅ Verify GOPRIVATE is set
+      - name: ✅ Verify private module configuration is safe
         shell: bash
         run: |
           goprivate=$(go env GOPRIVATE)
@@ -675,6 +675,11 @@ jobs:
             exit 1
           fi
           echo "GOPRIVATE: $goprivate"
+
+          if git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null | grep -q 'x-access-token'; then
+            echo "::error::A GitHub token was persisted in global Git configuration"
+            exit 1
+          fi
 
   # ── setup-ksail-cli ────────────────────────────────────────
   test-setup-ksail-cli:

@@ -1,5 +1,5 @@
 name: Setup Go Toolchain
-description: Setup Go with optional private module support for devantler-tech
+description: Setup Go with private module discovery for devantler-tech
 author: devantler-tech
 inputs:
   go-version:
@@ -7,7 +7,7 @@ inputs:
     required: false
     default: stable
   github-token:
-    description: GitHub token for private module access
+    description: Deprecated; tokens are not persisted by this action
     required: false
 outputs:
   go-version:
@@ -22,11 +22,6 @@ runs:
       with:
         go-version: ${{ inputs.go-version }}
 
-    - name: 🔑 Configure private modules
-      if: inputs.github-token != ''
+    - name: 🔒 Configure private module discovery
       shell: bash
-      env:
-        TOKEN: ${{ inputs.github-token }}
-      run: |
-        go env -w GOPRIVATE=github.com/devantler-tech/*
-        git config --global url."https://x-access-token:${TOKEN}@github.com/devantler-tech/".insteadOf "https://github.com/devantler-tech/"
+      run: go env -w GOPRIVATE=github.com/devantler-tech/*
