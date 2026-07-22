@@ -1642,9 +1642,9 @@ jobs:
           #        that does `uses: ./<action>`;
           #   (1b) every reusable workflow (workflow_call) is exercised by a job
           #        that does `uses: ./.github/workflows/<x>.yaml`; and
-          #   (2)  ci-required-checks.needs and the `job-results` input of its
-          #        ./aggregate-job-checks step name the SAME set of jobs — a job
-          #        in `needs:` but missing from `job-results` has its failure
+          #   (2)  ci-required-checks.needs and its trusted inline JOB_RESULTS
+          #        environment value name the SAME set of jobs — a job in
+          #        `needs:` but missing from `JOB_RESULTS` has its failure
           #        silently ignored (the single required check stays green).
           # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
           ci=".github/workflows/ci.yaml"
@@ -1671,12 +1671,12 @@ jobs:
             fi
           done
 
-          # (2) ci-required-checks: needs <-> job-results parity
+          # (2) ci-required-checks: needs <-> inline JOB_RESULTS parity
           needs="$(yq -r '.jobs.ci-required-checks.needs[]' "$ci" | sort -u)"
           results="$(
             yq -r '.jobs.ci-required-checks.steps[]
-                     | select(.uses == "./aggregate-job-checks")
-                     | .with["job-results"]' "$ci" \
+                     | select(.name == "📊 Summarize workflow result")
+                     | .env.JOB_RESULTS' "$ci" \
               | grep -oE 'needs\.[a-z0-9-]+\.result' \
               | sed -E 's/needs\.(.*)\.result/\1/' | sort -u
           )"
@@ -1685,7 +1685,7 @@ jobs:
           while IFS= read -r j; do
             [[ -z "$j" ]] && continue
             if ! grep -qxF "$j" <<<"$results"; then
-              echo "::error file=$ci::job '$j' is in ci-required-checks.needs but missing from the aggregate-job-checks job-results input — its failure would be silently ignored"
+              echo "::error file=$ci::job '$j' is in ci-required-checks.needs but missing from the trusted inline JOB_RESULTS value — its failure would be silently ignored"
               status=1
             fi
           done <<<"$needs"
@@ -1694,7 +1694,7 @@ jobs:
           while IFS= read -r j; do
             [[ -z "$j" ]] && continue
             if ! grep -qxF "$j" <<<"$needs"; then
-              echo "::error file=$ci::job '$j' is referenced in job-results but not in ci-required-checks.needs — its result will never be populated"
+              echo "::error file=$ci::job '$j' is referenced in JOB_RESULTS but not in ci-required-checks.needs — its result will never be populated"
               status=1
             fi
           done <<<"$results"
@@ -2626,17 +2626,13 @@ jobs:
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    permissions: {}
     steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - uses: ./aggregate-job-checks
-        with:
-          job-results: >-
+      # Keep the required gate inline: checked-out pull request actions are attacker-controlled.
+      - name: 📊 Summarize workflow result
+        shell: bash
+        env:
+          JOB_RESULTS: >-
             ${{ needs.test-approve-pr.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
@@ -2713,3 +2709,24 @@ jobs:
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
+        run: |
+          set -Eeuo pipefail
+          set -f
+          read -r -a results <<< "$JOB_RESULTS"
+
+          for result in "${results[@]}"; do
+            case "$result" in
+              success|skipped)
+                ;;
+              failure|cancelled)
+                echo "❌ CI - Required Checks — at least one job failed or was cancelled."
+                exit 1
+                ;;
+              *)
+                echo "❌ CI - Required Checks — unknown job result: '$result'."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "✅ CI - Required Checks — all jobs succeeded or were skipped."
