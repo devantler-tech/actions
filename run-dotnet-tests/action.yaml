@@ -20,20 +20,31 @@ runs:
         dotnet-version: |
           9
           10
-    - name: 🚚 Add GHCR as NuGet feed
+    - name: 🚚 Restore packages
       run: |
-        dotnet nuget add source \
-          --username ${GITHUB_ACTOR} \
-          --password ${GITHUB_TOKEN} \
-          --store-password-in-clear-text \
-          --name github \
-          "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+        set -euo pipefail
+        config="$(mktemp)"
+        trap 'rm -f "$config"' EXIT
+        chmod 600 "$config"
+        cat >"$config" <<'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <packageSources>
+            <clear />
+            <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
+          </packageSources>
+        </configuration>
+        EOF
+        dotnet restore --configfile "$config"
       env:
-        GITHUB_ACTOR: ${{ github.actor }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
+        # NuGet reads source credentials from this process-only environment variable, so the
+        # token is neither written to NuGet.Config nor exposed to repository-controlled tests.
+        NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ inputs.github-token }};ValidAuthenticationTypes=Basic
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
     - name: 🧪 Test
-      run: dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
+      run: dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
       shell: bash
       working-directory: ${{ inputs.working-directory }}
     # GitHub Code Quality accepts a single Cobertura report, so merge the per-project files.
