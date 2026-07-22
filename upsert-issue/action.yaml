@@ -83,20 +83,18 @@ runs:
 
         # Search for existing issue by exact title (any state).
         # Prefer an open issue; fall back to the most recent closed one.
-        ISSUE_NUMBER=$(
-          retry gh issue list \
-            --repo "$REPO" \
-            --state all \
-            --search "in:title \"${TITLE}\"" \
-            --json number,title,state \
-            --jq "
-              [ .[] | select(.title == \"${TITLE}\") ] |
-              ([ .[] | select(.state == \"OPEN\") ] | first // empty) as \$open |
-              if \$open then \$open.number
-              else (last // empty | .number)
-              end
-            "
-        )
+        ISSUES_JSON=$(retry gh issue list \
+          --repo "$REPO" \
+          --state all \
+          --search "in:title \"${TITLE}\"" \
+          --json number,title,state)
+        ISSUE_NUMBER=$(jq -r --arg title "$TITLE" '
+          [ .[] | select(.title == $title) ] |
+          ([ .[] | select(.state == "OPEN") ] | first // empty) as $open |
+          if $open then $open.number
+          else (last // empty | .number)
+          end
+        ' <<< "$ISSUES_JSON")
 
         if [ "$OPEN" = "true" ]; then
           if [ -n "$ISSUE_NUMBER" ]; then
