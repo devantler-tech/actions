@@ -27,12 +27,12 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
+    # Renovate PRs can modify this local action, so never expose App credentials to them.
     if: >-
       !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
       (
         github.event.pull_request.user.login == 'dependabot[bot]' ||
-        github.event.pull_request.user.login == 'renovate[bot]' ||
         github.event.pull_request.user.login == 'botantler[bot]' ||
         github.event.pull_request.user.login == 'devantler'
       )
