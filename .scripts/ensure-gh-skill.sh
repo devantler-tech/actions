@@ -48,6 +48,16 @@ case "$(uname -m)" in
   *) echo "::error::Unsupported arch: $(uname -m)"; exit 1 ;;
 esac
 
+# The release archive is executable input.  Verify its GitHub artifact
+# attestation with the runner-provided gh before trusting it; downloading a
+# checksum beside the archive would leave both files under the same mutable
+# release-asset trust boundary.  Do not bootstrap the verifier from the asset
+# it is about to verify.
+if ! command -v gh >/dev/null 2>&1 || ! gh attestation --help >/dev/null 2>&1; then
+  echo "::error::A trusted runner-provided gh with 'gh attestation' support is required to verify the gh release archive before installation."
+  exit 1
+fi
+
 tmp=$(mktemp -d)
 asset="gh_${REQUIRED}_${os}_${arch}.${ext}"
 url="https://github.com/cli/cli/releases/download/v${REQUIRED}/${asset}"
@@ -60,6 +70,10 @@ fi
 # Linux path downloads to a file rather than streaming `curl | tar` so the network
 # pull is a single retryable command.
 retry curl -fsSL -o "$tmp/$asset" "$url"
+if ! gh attestation verify "$tmp/$asset" --repo cli/cli; then
+  echo "::error::GitHub artifact attestation verification failed for $asset; refusing to install it."
+  exit 1
+fi
 if [ "$ext" = "zip" ]; then
   unzip -q "$tmp/$asset" -d "$tmp"
 else

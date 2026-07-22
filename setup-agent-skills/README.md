@@ -59,4 +59,4 @@ Omit `agents` to install for GitHub Copilot only (the default), or set it to any
 
 ## Requirements
 
-- `gh` **≥ 2.90.0** on the runner (with `gh skill` support). If the runner image ships an older `gh`, this action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.
+- A trusted runner-provided `gh` with `gh attestation` support. If it is older than **2.90.0** (and therefore lacks `gh skill`), this action downloads the required GitHub CLI release archive on Linux or macOS (amd64/arm64) and verifies its GitHub artifact attestation before installation. Windows runners must pre-install `gh >= 2.90.0`.
