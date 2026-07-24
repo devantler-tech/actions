@@ -57,7 +57,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -162,7 +162,7 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
@@ -234,7 +234,7 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
@@ -318,7 +318,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -399,7 +399,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -493,7 +493,7 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
@@ -566,7 +566,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -622,7 +622,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -711,7 +711,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -784,7 +784,7 @@ jobs:
       # `go test ./...` so the extra tree never enters the caller's test scope.
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         continue-on-error: true
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
