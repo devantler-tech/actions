@@ -565,11 +565,19 @@ jobs:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
       source-repo-path: devantler-tech/gitops-tenant-template
-    secrets:
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-By default the sync PR is opened with a GitHub App token (`use-app-token: true`) so it triggers the caller's CI; this needs the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret. Set `use-app-token: false` to fall back to `GITHUB_TOKEN` (the PR then will not trigger `on: pull_request` checks).
+By default the sync PR is opened with `GITHUB_TOKEN`, so GitHub does not trigger
+`on: pull_request` or `on: push` workflows for the resulting branch or PR. This
+prevents content copied from a compromised or malicious template from reaching a
+caller's CI trust boundary before review.
+
+Set `use-app-token: true` and pass `APP_PRIVATE_KEY` only when CI must run before
+the sync PR is reviewed. This opt-in mints a write-scoped App token and permits
+workflow-file updates, but it also causes the template-controlled PR content to
+trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
+expose secrets or write-scoped tokens to jobs that check out or execute its
+content, including local actions and scripts.
 
 #### Secrets and Inputs
 
@@ -583,7 +591,7 @@ By default the sync PR is opened with a GitHub App token (`use-app-token: true`)
 | `pr-labels`                      | Input (string)  | `dependencies,automation`                        | No       | Comma-separated labels for the sync PR                                      |
 | `pr-branch-name-prefix`          | Input (string)  | `chore/template-sync`                            | No       | Prefix for the branch the sync PR is opened from                            |
 | `template-sync-ignore-file-path` | Input (string)  | `.templatesyncignore`                            | No       | Path to the file listing consumer-owned (non-synced) files                  |
-| `use-app-token`                  | Input (boolean) | `true`                                           | No       | Open the sync PR with a GitHub App token so it triggers the caller's CI     |
+| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to an App-authored sync PR that triggers the caller's CI             |
 | `dry-run`                        | Input (boolean) | `false`                                          | No       | Skip the sync and PR creation (validate workflow interface only)            |
 
 > **Note:** The calling workflow runs the sync job with `contents: write` and `pull-requests: write` (declared by the reusable workflow).
