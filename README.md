@@ -456,7 +456,15 @@ jobs:
 
 #### Secrets and Inputs
 
-This workflow needs no caller-provided secrets or inputs — it authenticates to the GHCR NuGet feed with the automatic `GITHUB_TOKEN` (requires the `packages: read` permission shown above).
+| Key                        | Type            | Default | Required | Description                                                                 |
+|----------------------------|-----------------|---------|----------|-----------------------------------------------------------------------------|
+| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private GitHub Packages on trusted pull-request code |
+| `working-directory`        | Input (string)  | `""`    | No       | Directory containing the .NET solution or project                           |
+
+Pull-request runs are credential-free by default. A trusted caller that needs private
+GitHub Packages can set `enable-github-packages: true`; untrusted pull-request code must
+leave it disabled. Merge-group and direct non-pull-request runs authenticate with the
+automatic `GITHUB_TOKEN` when the calling job grants `packages: read`.
 
 </details>
 
