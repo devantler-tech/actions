@@ -34,3 +34,23 @@ steps:
 Pass `github-token` only for trusted runs that need to restore private packages from
 GitHub Packages. The reusable workflow intentionally omits it on `pull_request` events so
 PR-controlled MSBuild targets and tests cannot read the credential.
+
+## Reusable workflow
+
+The reusable workflow is credential-free on pull requests by default. Trusted callers that
+need private GitHub Packages can opt in explicitly:
+
+```yaml
+jobs:
+  test:
+    uses: devantler-tech/actions/.github/workflows/run-dotnet-tests.yaml@main
+    with:
+      enable-github-packages: true
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write
+```
+
+Do not enable `enable-github-packages` for untrusted pull-request code. Merge-group and
+direct non-pull-request runs retain authenticated restore without the opt-in.

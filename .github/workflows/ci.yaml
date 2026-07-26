@@ -1368,7 +1368,7 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: does-not-exist
 
       - name: 🔒 Verify negative pull-request test received no GHCR credentials

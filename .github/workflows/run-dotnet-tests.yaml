@@ -5,6 +5,11 @@ permissions: {}
 on:
   workflow_call:
     inputs:
+      enable-github-packages:
+        required: false
+        type: boolean
+        default: false
+        description: "Allow authenticated GitHub Packages restore. Enable only for trusted pull-request code."
       working-directory:
         required: false
         type: string
@@ -57,7 +62,7 @@ jobs:
       - name: 🧪 Test .NET solution or project
         uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
-          # Never expose a token to PR-controlled MSBuild targets or tests. Authenticated
-          # GitHub Packages restore remains available for workflow_call / merge-group runs.
-          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
+          # Pull requests are credential-free by default. A trusted workflow_call caller may
+          # opt in when its private-package requirement outweighs the code-trust boundary.
+          github-token: ${{ (github.event_name != 'pull_request' || inputs.enable-github-packages) && secrets.GITHUB_TOKEN || '' }}
           working-directory: ${{ inputs.working-directory || '.' }}
