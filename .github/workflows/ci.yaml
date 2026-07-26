@@ -424,8 +424,17 @@ jobs:
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: .github/fixtures/run-dotnet-tests
+
+      - name: 🔒 Verify pull-request tests received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Pull-request tests configured the authenticated GHCR feed"
+            exit 1
+          fi
 
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
@@ -1359,8 +1368,17 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: does-not-exist
+
+      - name: 🔒 Verify negative pull-request test received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Negative pull-request test configured the authenticated GHCR feed"
+            exit 1
+          fi
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -1474,6 +1492,70 @@ jobs:
             exit 1
           fi
           echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
+
+      - name: 🔒 Assert credential-free tests skip coverage upload
+        shell: bash
+        env:
+          GATE: run-dotnet-tests/action.yaml
+        run: |
+          set -euo pipefail
+          upload_if="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .if' "$GATE")"
+          upload_token="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .with.token' "$GATE")"
+          if [[ "$upload_if" != *"inputs.github-token != ''"* ]]; then
+            echo "::error::$GATE must skip coverage upload when github-token is empty"
+            exit 1
+          fi
+          if [[ "$upload_token" != *"inputs.github-token"* || "$upload_token" == *"github.token"* ]]; then
+            echo "::error::$GATE coverage upload must use only the explicit github-token input"
+            exit 1
+          fi
+          echo "Credential-free tests cannot reach the token-bearing coverage upload ✅"
+
+      - name: 🔒 Assert the authenticated opt-in rejects fork and bot pull requests
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/run-dotnet-tests.yaml
+        run: |
+          set -euo pipefail
+          token_expr="$(yq -r '.jobs.test.steps[] | select(.name == "🧪 Test .NET solution or project") | .with.github-token' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$token_expr" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated pull-request path is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$token_expr" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW must trust the immutable pull-request author, not the actor who triggered this event"
+            exit 1
+          fi
+
+          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .if' "$WORKFLOW")"
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$verify_if" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated-source assertion is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$verify_if" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
+            exit 1
+          fi
+          if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
+            echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
+            exit 1
+          fi
+          echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
@@ -1782,6 +1864,26 @@ jobs:
     # (this repo is not itself a .NET project).
     with:
       working-directory: .github/fixtures/run-dotnet-tests
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  test-run-dotnet-tests-workflow-authenticated:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Run .NET Tests - Authenticated Packages"
+    uses: ./.github/workflows/run-dotnet-tests.yaml
+    # Exercise the opt-in state only for the maintainer-authored code from this repository.
+    with:
+      working-directory: .github/fixtures/run-dotnet-tests
+      enable-github-packages: true
     permissions:
       contents: read
       packages: read
@@ -2595,6 +2697,7 @@ jobs:
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
       - test-run-dotnet-tests-workflow
+      - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-pentad-gate
@@ -2683,6 +2786,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
+            ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
