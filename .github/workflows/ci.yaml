@@ -1830,11 +1830,11 @@ jobs:
         !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+        github.actor == 'devantler'
       }}
     name: "[Test] Run .NET Tests - Authenticated Packages"
     uses: ./.github/workflows/run-dotnet-tests.yaml
-    # Exercise the opt-in state only for trusted code from this repository.
+    # Exercise the opt-in state only for the maintainer's code from this repository.
     with:
       working-directory: .github/fixtures/run-dotnet-tests
       enable-github-packages: true
