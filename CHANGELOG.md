@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.4](https://github.com/devantler-tech/actions/compare/v10.2.3...v10.2.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ci:** pin CodeRabbit fail_commit_status false ([#747](https://github.com/devantler-tech/actions/issues/747)) ([97a2379](https://github.com/devantler-tech/actions/commit/97a2379a4ab4dd1e3fdd4de2e1fd6d4231023653))
+
 ## [10.2.3](https://github.com/devantler-tech/actions/compare/v10.2.2...v10.2.3) (2026-07-26)
 
 
