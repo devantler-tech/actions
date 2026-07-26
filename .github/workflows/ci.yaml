@@ -1511,6 +1511,26 @@ jobs:
           fi
           echo "Credential-free tests cannot reach the token-bearing coverage upload ✅"
 
+      - name: 🔒 Assert the authenticated opt-in rejects fork and bot pull requests
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/run-dotnet-tests.yaml
+        run: |
+          set -euo pipefail
+          token_expr="$(yq -r '.jobs.test.steps[] | select(.name == "🧪 Test .NET solution or project") | .with.github-token' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.actor" \
+            "[bot]"; do
+            if [[ "$token_expr" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated pull-request path is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
+
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
   # definitions together. This guard treats upload-coverage/action.yaml as the source of
