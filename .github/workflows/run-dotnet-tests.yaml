@@ -9,7 +9,7 @@ on:
         required: false
         type: boolean
         default: false
-        description: "Allow authenticated package restore and Code Quality upload. Enable only for trusted pull-request code."
+        description: "Allow authenticated package restore and Code Quality upload for trusted same-repository pull-request code."
       working-directory:
         required: false
         type: string
@@ -63,6 +63,17 @@ jobs:
         uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
           # Pull requests are credential-free by default. A trusted workflow_call caller may
-          # opt in when its private-package requirement outweighs the code-trust boundary.
-          github-token: ${{ (github.event_name != 'pull_request' || inputs.enable-github-packages) && secrets.GITHUB_TOKEN || '' }}
+          # opt in only for same-repository, non-bot code. Fork and bot pull requests cannot
+          # recover the token by changing the input in their workflow definition.
+          github-token: >-
+            ${{
+              (
+                github.event_name != 'pull_request' ||
+                (
+                  inputs.enable-github-packages &&
+                  github.event.pull_request.head.repo.full_name == github.repository &&
+                  !endsWith(github.actor, '[bot]')
+                )
+              ) && secrets.GITHUB_TOKEN || ''
+            }}
           working-directory: ${{ inputs.working-directory || '.' }}

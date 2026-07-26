@@ -38,8 +38,8 @@ also skip the token-bearing GitHub Code Quality upload.
 
 ## Reusable workflow
 
-The reusable workflow is credential-free on pull requests by default. Trusted callers that
-need private GitHub Packages can opt in explicitly:
+The reusable workflow is credential-free on pull requests by default. Trusted same-repository
+human-authored pull requests that need private GitHub Packages can opt in explicitly:
 
 ```yaml
 jobs:
@@ -53,6 +53,7 @@ jobs:
       code-quality: write
 ```
 
-Do not enable `enable-github-packages` for untrusted pull-request code. Merge-group and
-direct non-pull-request runs retain authenticated restore and Code Quality upload without
-the opt-in.
+The workflow honors `enable-github-packages` only when the pull request head is in the
+same repository and the triggering actor is not a bot. Fork and bot pull requests remain
+credential-free even if they set the input. Merge-group and direct non-pull-request runs
+retain authenticated restore and Code Quality upload without the opt-in.

@@ -458,14 +458,15 @@ jobs:
 
 | Key                        | Type            | Default | Required | Description                                                                 |
 |----------------------------|-----------------|---------|----------|-----------------------------------------------------------------------------|
-| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private packages and Code Quality on trusted pull-request code |
+| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private packages and Code Quality on trusted same-repository non-bot pull-request code |
 | `working-directory`        | Input (string)  | `""`    | No       | Directory containing the .NET solution or project                           |
 
-Pull-request runs are credential-free by default. A trusted caller that needs private
-GitHub Packages can set `enable-github-packages: true`; untrusted pull-request code must
-leave it disabled. Merge-group and direct non-pull-request runs authenticate with the
-automatic `GITHUB_TOKEN` when the calling job grants `packages: read`. The same explicit
-token boundary keeps the Code Quality uploader out of credential-free pull-request runs.
+Pull-request runs are credential-free by default. A trusted same-repository human-authored
+pull request that needs private GitHub Packages can set `enable-github-packages: true`.
+The workflow ignores that input for fork and bot pull requests, so their code cannot opt
+itself back into the token-bearing path. Merge-group and direct non-pull-request runs
+authenticate with the automatic `GITHUB_TOKEN` when the calling job grants `packages: read`.
+The same explicit token boundary keeps the Code Quality uploader out of credential-free runs.
 
 </details>
 
