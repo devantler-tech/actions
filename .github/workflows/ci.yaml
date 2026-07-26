@@ -1522,13 +1522,33 @@ jobs:
             "inputs.enable-github-packages" \
             "github.event.pull_request.head.repo.full_name" \
             "github.repository" \
-            "github.actor" \
+            "github.event.pull_request.user.login" \
             "[bot]"; do
             if [[ "$token_expr" != *"$required_guard"* ]]; then
               echo "::error::$WORKFLOW authenticated pull-request path is missing the '$required_guard' trust guard"
               exit 1
             fi
           done
+          if [[ "$token_expr" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW must trust the immutable pull-request author, not the actor who triggered this event"
+            exit 1
+          fi
+
+          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .if' "$WORKFLOW")"
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$verify_if" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated-source assertion is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
+            echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
+            exit 1
+          fi
           echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
