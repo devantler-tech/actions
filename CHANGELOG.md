@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.2](https://github.com/devantler-tech/actions/compare/v10.2.1...v10.2.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **template-sync:** default App-authored PRs off ([#707](https://github.com/devantler-tech/actions/issues/707)) ([fbf3d61](https://github.com/devantler-tech/actions/commit/fbf3d61a3f6847231441248878643536b328e37c))
+
 ## [10.2.1](https://github.com/devantler-tech/actions/compare/v10.2.0...v10.2.1) (2026-07-21)
 
 
