@@ -23,6 +23,19 @@ default_use_app_token="$(yq -r '.on.workflow_call.inputs.use-app-token.default' 
 [[ "$default_use_app_token" == "false" ]] ||
   fail "use-app-token must default to false so unreviewed template content cannot trigger caller CI"
 
+app_token_guard="$(
+  yq -r \
+    '.jobs.template-sync.steps[]
+      | select(.id == "app-token")
+      | .if // ""' \
+    "$workflow"
+)"
+# GitHub evaluates this expression; the shell compares it as a literal contract.
+# shellcheck disable=SC2016
+expected_app_token_guard='${{ inputs.use-app-token }}'
+[[ "$app_token_guard" == "$expected_app_token_guard" ]] ||
+  fail "the App-token path must run only when use-app-token is explicitly enabled"
+
 source_token="$(
   yq -r \
     '.jobs.template-sync.steps[]
