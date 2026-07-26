@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.3](https://github.com/devantler-tech/actions/compare/v10.2.2...v10.2.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* keep tokens out of pull request tests ([#665](https://github.com/devantler-tech/actions/issues/665)) ([ee6a2f9](https://github.com/devantler-tech/actions/commit/ee6a2f9ceb11ff1f88f02349d43a0906b8f8cf5c))
+
 ## [10.2.2](https://github.com/devantler-tech/actions/compare/v10.2.1...v10.2.2) (2026-07-26)
 
 
