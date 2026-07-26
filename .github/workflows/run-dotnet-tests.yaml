@@ -72,8 +72,26 @@ jobs:
                 (
                   inputs.enable-github-packages &&
                   github.event.pull_request.head.repo.full_name == github.repository &&
-                  !endsWith(github.actor, '[bot]')
+                  !endsWith(github.event.pull_request.user.login, '[bot]')
                 )
               ) && secrets.GITHUB_TOKEN || ''
             }}
           working-directory: ${{ inputs.working-directory || '.' }}
+
+      - name: 🔒 Verify authenticated GitHub Packages source
+        if: >-
+          ${{
+            github.event_name != 'pull_request' ||
+            (
+              inputs.enable-github-packages &&
+              github.event.pull_request.head.repo.full_name == github.repository &&
+              !endsWith(github.event.pull_request.user.login, '[bot]')
+            )
+          }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Authenticated run did not configure the GitHub Packages source"
+            exit 1
+          fi

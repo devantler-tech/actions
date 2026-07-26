@@ -1538,6 +1538,8 @@ jobs:
           verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
           for required_guard in \
             "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
             "github.event.pull_request.user.login" \
             "[bot]"; do
             if [[ "$verify_if" != *"$required_guard"* ]]; then
@@ -1545,6 +1547,10 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$verify_if" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
+            exit 1
+          fi
           if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
             echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
             exit 1
@@ -1870,11 +1876,11 @@ jobs:
         !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
         github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
-        github.actor == 'devantler'
+        github.event.pull_request.user.login == 'devantler'
       }}
     name: "[Test] Run .NET Tests - Authenticated Packages"
     uses: ./.github/workflows/run-dotnet-tests.yaml
-    # Exercise the opt-in state only for the maintainer's code from this repository.
+    # Exercise the opt-in state only for the maintainer-authored code from this repository.
     with:
       working-directory: .github/fixtures/run-dotnet-tests
       enable-github-packages: true
