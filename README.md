@@ -579,6 +579,19 @@ trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
 expose secrets or write-scoped tokens to jobs that check out or execute its
 content, including local actions and scripts.
 
+An opt-in caller must wire both the input and the corresponding secret:
+
+```yaml
+jobs:
+  template-sync:
+    uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
+    with:
+      source-repo-path: devantler-tech/gitops-tenant-template
+      use-app-token: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
 #### Secrets and Inputs
 
 | Key                              | Type            | Default                                          | Required | Description                                                                 |
