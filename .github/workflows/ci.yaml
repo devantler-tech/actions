@@ -424,7 +424,7 @@ jobs:
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: .github/fixtures/run-dotnet-tests
 
       - name: 🔒 Verify pull-request tests received no GHCR credentials
