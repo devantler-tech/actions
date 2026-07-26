@@ -438,7 +438,7 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. Coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
+[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. On authenticated runs, coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
 
 #### Usage
 
@@ -452,19 +452,20 @@ jobs:
       code-quality: write # required for GitHub Code Quality coverage upload
 ```
 
-> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
+> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_) and is skipped on credential-free pull-request runs.
 
 #### Secrets and Inputs
 
 | Key                        | Type            | Default | Required | Description                                                                 |
 |----------------------------|-----------------|---------|----------|-----------------------------------------------------------------------------|
-| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private GitHub Packages on trusted pull-request code |
+| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private packages and Code Quality on trusted pull-request code |
 | `working-directory`        | Input (string)  | `""`    | No       | Directory containing the .NET solution or project                           |
 
 Pull-request runs are credential-free by default. A trusted caller that needs private
 GitHub Packages can set `enable-github-packages: true`; untrusted pull-request code must
 leave it disabled. Merge-group and direct non-pull-request runs authenticate with the
-automatic `GITHUB_TOKEN` when the calling job grants `packages: read`.
+automatic `GITHUB_TOKEN` when the calling job grants `packages: read`. The same explicit
+token boundary keeps the Code Quality uploader out of credential-free pull-request runs.
 
 </details>
 

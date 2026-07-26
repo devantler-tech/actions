@@ -1823,6 +1823,26 @@ jobs:
       packages: read
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  test-run-dotnet-tests-workflow-authenticated:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      }}
+    name: "[Test] Run .NET Tests - Authenticated Packages"
+    uses: ./.github/workflows/run-dotnet-tests.yaml
+    # Exercise the opt-in state only for trusted code from this repository.
+    with:
+      working-directory: .github/fixtures/run-dotnet-tests
+      enable-github-packages: true
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-enable-auto-merge:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge"
@@ -2631,6 +2651,7 @@ jobs:
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
       - test-run-dotnet-tests-workflow
+      - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-pentad-gate
@@ -2719,6 +2740,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
+            ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}

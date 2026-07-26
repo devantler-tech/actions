@@ -9,7 +9,7 @@ on:
         required: false
         type: boolean
         default: false
-        description: "Allow authenticated GitHub Packages restore. Enable only for trusted pull-request code."
+        description: "Allow authenticated package restore and Code Quality upload. Enable only for trusted pull-request code."
       working-directory:
         required: false
         type: string

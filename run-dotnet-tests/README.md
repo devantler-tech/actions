@@ -1,14 +1,14 @@
 # Run Dotnet Tests
 
-Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 (STS) and .NET 10 (LTS) SDKs side-by-side, optionally configures GHCR for private packages, runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage).
+Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 (STS) and .NET 10 (LTS) SDKs side-by-side, optionally configures GHCR for private packages, runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) on authenticated runs.
 
-> **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build) and requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
+> **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build), requires the repo's **Code Quality** to be enabled (_Settings → Code quality_), and is skipped when `github-token` is empty.
 
 ## Inputs
 
 | Name | Description | Required | Default |
 |------|-------------|----------|---------|
-| `github-token` | GitHub token for authenticated GHCR package restore. Omit it when testing untrusted pull-request code. | ❌ | `""` |
+| `github-token` | GitHub token for authenticated GHCR package restore and Code Quality upload. Omit it when testing untrusted pull-request code. | ❌ | `""` |
 | `working-directory` | Directory to run the tests in | ❌ | `.` |
 
 ## Usage
@@ -33,7 +33,8 @@ steps:
 
 Pass `github-token` only for trusted runs that need to restore private packages from
 GitHub Packages. The reusable workflow intentionally omits it on `pull_request` events so
-PR-controlled MSBuild targets and tests cannot read the credential.
+PR-controlled MSBuild targets and tests cannot read the credential. Credential-free runs
+also skip the token-bearing GitHub Code Quality upload.
 
 ## Reusable workflow
 
@@ -53,4 +54,5 @@ jobs:
 ```
 
 Do not enable `enable-github-packages` for untrusted pull-request code. Merge-group and
-direct non-pull-request runs retain authenticated restore without the opt-in.
+direct non-pull-request runs retain authenticated restore and Code Quality upload without
+the opt-in.
