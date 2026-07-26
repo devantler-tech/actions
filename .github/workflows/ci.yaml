@@ -1493,6 +1493,24 @@ jobs:
           fi
           echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
 
+      - name: 🔒 Assert credential-free tests skip coverage upload
+        shell: bash
+        env:
+          GATE: run-dotnet-tests/action.yaml
+        run: |
+          set -euo pipefail
+          upload_if="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .if' "$GATE")"
+          upload_token="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .with.token' "$GATE")"
+          if [[ "$upload_if" != *"inputs.github-token != ''"* ]]; then
+            echo "::error::$GATE must skip coverage upload when github-token is empty"
+            exit 1
+          fi
+          if [[ "$upload_token" != *"inputs.github-token"* || "$upload_token" == *"github.token"* ]]; then
+            echo "::error::$GATE coverage upload must use only the explicit github-token input"
+            exit 1
+          fi
+          echo "Credential-free tests cannot reach the token-bearing coverage upload ✅"
+
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
   # definitions together. This guard treats upload-coverage/action.yaml as the source of
