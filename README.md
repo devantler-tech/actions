@@ -286,6 +286,49 @@ jobs:
 
 </details>
 
+### 🧹 Lint
+
+<details>
+<summary>Click to expand</summary>
+
+[.github/workflows/lint.yaml](.github/workflows/lint.yaml) lints a whole repository with [MegaLinter](https://megalinter.io) (Go flavor), auto-fixing what it can and committing the result back to the pull request.
+
+**Which one do I want?** If your repository *is* a Go module, use [✅ Validate Go Project](#-validate-go-project) — it already runs MegaLinter as one stage of a full Go pipeline. Reach for this workflow when Go is only part of a larger tree (a game client plus a Go server, for example): it lints everything and leaves the Go build and tests to your own job.
+
+The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile, Kubernetes, spelling, secrets and copy-paste. It has no GDScript, Python or Terraform linters — see [MegaLinter's flavor list](https://megalinter.io/latest/flavors/) if you need those.
+
+Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
+
+**Grant `contents: write`, even if you set `apply-fixes: false`.** A caller must grant at least what the called workflow's jobs declare. Granting less is not a narrower permission — GitHub rejects the call when it loads the file, and *the entire calling workflow* returns `startup_failure` with no jobs at all, which looks exactly like the workflow never triggering. `actionlint` does not catch it.
+
+**Fork pull requests lint read-only, automatically.** GitHub withholds secrets from forks, so fixes could never be committed back; auto-fixing there would only produce a failure an outside contributor cannot resolve. Real lint errors still fail on forks — only the auto-fix half is skipped.
+
+#### Usage
+
+```yaml
+jobs:
+  lint:
+    uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+#### Secrets and Inputs
+
+| Key                 | Type            | Default | Required | Description                                                                                                          |
+|---------------------|-----------------|---------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`   | Secret          | -       | No       | GitHub App private key. Needed only to commit auto-fixes; without it a fixable finding fails the build instead        |
+| `working-directory` | Input           | `""`    | No       | Directory to lint. Empty lints the whole repository                                                                   |
+| `go-version-file`   | Input           | `""`    | No       | Path to a `go.mod`. When set, Go is installed first so the Go linters use the module's toolchain, not the container's |
+| `apply-fixes`       | Input (boolean) | `true`  | No       | Auto-fix and commit back to the pull request. Set `false` for a read-only gate                                        |
+| `pr-owner`          | Input           | `""`    | No       | Pull request author login. Auto-fix commits are suppressed for dependency-bot pull requests                           |
+
+</details>
+
 ### 📦 Publish App
 
 <details>
@@ -522,11 +565,32 @@ jobs:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
       source-repo-path: devantler-tech/gitops-tenant-template
+```
+
+By default the sync PR is opened with `GITHUB_TOKEN`, so GitHub does not trigger
+`on: pull_request` or `on: push` workflows for the resulting branch or PR. This
+prevents content copied from a compromised or malicious template from reaching a
+caller's CI trust boundary before review.
+
+Set `use-app-token: true` and pass `APP_PRIVATE_KEY` only when CI must run before
+the sync PR is reviewed. This opt-in mints a write-scoped App token and permits
+workflow-file updates, but it also causes the template-controlled PR content to
+trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
+expose secrets or write-scoped tokens to jobs that check out or execute its
+content, including local actions and scripts.
+
+An opt-in caller must wire both the input and the corresponding secret:
+
+```yaml
+jobs:
+  template-sync:
+    uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
+    with:
+      source-repo-path: devantler-tech/gitops-tenant-template
+      use-app-token: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
-
-By default the sync PR is opened with a GitHub App token (`use-app-token: true`) so it triggers the caller's CI; this needs the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret. Set `use-app-token: false` to fall back to `GITHUB_TOKEN` (the PR then will not trigger `on: pull_request` checks).
 
 #### Secrets and Inputs
 
@@ -540,7 +604,7 @@ By default the sync PR is opened with a GitHub App token (`use-app-token: true`)
 | `pr-labels`                      | Input (string)  | `dependencies,automation`                        | No       | Comma-separated labels for the sync PR                                      |
 | `pr-branch-name-prefix`          | Input (string)  | `chore/template-sync`                            | No       | Prefix for the branch the sync PR is opened from                            |
 | `template-sync-ignore-file-path` | Input (string)  | `.templatesyncignore`                            | No       | Path to the file listing consumer-owned (non-synced) files                  |
-| `use-app-token`                  | Input (boolean) | `true`                                           | No       | Open the sync PR with a GitHub App token so it triggers the caller's CI     |
+| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to an App-authored sync PR that triggers the caller's CI             |
 | `dry-run`                        | Input (boolean) | `false`                                          | No       | Skip the sync and PR creation (validate workflow interface only)            |
 
 > **Note:** The calling workflow runs the sync job with `contents: write` and `pull-requests: write` (declared by the reusable workflow).

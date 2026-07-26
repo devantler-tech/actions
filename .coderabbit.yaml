@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration. Only the settings that differ from CodeRabbit's defaults are
+# listed here; everything else stays at the default.
+#
+# inheritance: without this, a repository .coderabbit.yaml is the sole config source and
+# REPLACES any organization/UI settings (the docstring ERROR gate itself lives in the UI,
+# since the YAML default is `warning`). Enabling inheritance keeps every UI/org setting —
+# path filters, request_changes_workflow, custom checks — and only overrides the one value
+# defined below, so this change stays scoped to docstrings.
+inheritance: true
+reviews:
+  pre_merge_checks:
+    # Docstring Coverage measures a single coverage percentage across a PR's changed files
+    # and cannot be scoped per-path (the only path mechanism, reviews.path_filters, would
+    # drop the files from the whole review rather than from just this metric).
+    #
+    # This repository is composite actions and reusable workflows: 16 bash scripts plus a
+    # small amount of other source. Shell functions do not idiomatically carry doc comments,
+    # so a PR touching an action's script is scored far below the 80% threshold and blocked
+    # on a documentation gap that does not exist. This is the failure
+    # devantler-tech/.github#103 hit: a changeset of YAML manifests, a bash test and Markdown
+    # scored 0.00% and the ONLY failed pre-merge check was Docstring Coverage.
+    #
+    # Keep the check as an advisory WARNING — CodeRabbit still reports coverage — instead of
+    # a hard merge ERROR. Mirrors devantler-tech/ksail#6145, devantler-tech/.github and
+    # devantler-tech/monorepo#2285, which made the same change for the same reason.
+    docstrings:
+      mode: warning

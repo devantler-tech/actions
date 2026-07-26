@@ -1,5 +1,26 @@
 # Changelog
 
+## [10.2.2](https://github.com/devantler-tech/actions/compare/v10.2.1...v10.2.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **template-sync:** default App-authored PRs off ([#707](https://github.com/devantler-tech/actions/issues/707)) ([fbf3d61](https://github.com/devantler-tech/actions/commit/fbf3d61a3f6847231441248878643536b328e37c))
+
+## [10.2.1](https://github.com/devantler-tech/actions/compare/v10.2.0...v10.2.1) (2026-07-21)
+
+
+### Continuous Integration
+
+* **coderabbit:** keep docstring coverage advisory instead of merge-blocking ([#661](https://github.com/devantler-tech/actions/issues/661)) ([6b063f9](https://github.com/devantler-tech/actions/commit/6b063f9608a49bc9cd0e0f1856192dd0d49fab12))
+
+## [10.2.0](https://github.com/devantler-tech/actions/compare/v10.1.4...v10.2.0) (2026-07-20)
+
+
+### Features
+
+* add a repo-wide MegaLinter reusable workflow for non-Go-module repos ([#663](https://github.com/devantler-tech/actions/issues/663)) ([92201ce](https://github.com/devantler-tech/actions/commit/92201ceff336fd833b6a46cec42e715935eec4f3))
+
 ## [10.1.4](https://github.com/devantler-tech/actions/compare/v10.1.3...v10.1.4) (2026-07-18)
 
 
