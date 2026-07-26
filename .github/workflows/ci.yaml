@@ -427,6 +427,15 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests
 
+      - name: 🔒 Verify pull-request tests received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Pull-request tests configured the authenticated GHCR feed"
+            exit 1
+          fi
+
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
