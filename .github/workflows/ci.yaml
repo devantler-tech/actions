@@ -1371,6 +1371,15 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: does-not-exist
 
+      - name: 🔒 Verify negative pull-request test received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Negative pull-request test configured the authenticated GHCR feed"
+            exit 1
+          fi
+
       - name: ✅ Verify step failed as expected
         shell: bash
         env:
