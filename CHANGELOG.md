@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.5](https://github.com/devantler-tech/actions/compare/v10.2.4...v10.2.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* isolate MegaLinter from write credentials ([#706](https://github.com/devantler-tech/actions/issues/706)) ([8a14ca2](https://github.com/devantler-tech/actions/commit/8a14ca27e2e1103f722306e377640c9269f8e3c4))
+
 ## [10.2.4](https://github.com/devantler-tech/actions/compare/v10.2.3...v10.2.4) (2026-07-26)
 
 
