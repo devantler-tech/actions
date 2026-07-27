@@ -311,9 +311,13 @@ jobs:
     uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
     permissions:
       contents: read
-    secrets:
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+    with:
+      apply-fixes: false
 ```
+
+To enable pull-request auto-fixes, set `apply-fixes: true` and pass
+`APP_PRIVATE_KEY`. MegaLinter still runs without that secret; only the separate
+patch-application job can access it.
 
 #### Secrets and Inputs
 
