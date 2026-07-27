@@ -2539,14 +2539,10 @@ jobs:
   test-lint-workflow:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Lint - Passes On Clean Fixture"
-    # contents: write even though apply-fixes is false and this job never pushes. A caller
-    # must grant at least what the called workflow's jobs declare, and lint.yaml's job
-    # declares contents: write for the auto-fix commit. Granting less is not a narrower
-    # permission — it is a startup failure, and the whole CI workflow never runs.
+    # This is the real read-only consumer proof: GitHub rejects a called workflow at
+    # startup if any job tries to elevate beyond these caller permissions.
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     uses: ./.github/workflows/lint.yaml
     with:
       working-directory: .github/tests/megalinter-clean-fixture
@@ -2620,6 +2616,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: 🔐 Assert the lint credential boundary
+        shell: bash
+        run: bash .github/tests/test-lint-credential-boundary.sh
 
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
       # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
