@@ -101,7 +101,7 @@ jobs:
           DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
-          APPLY_FIXES: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true && 'all' || 'none' }}
+          APPLY_FIXES: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && 'all' || 'none' }}
           APPLY_FIXES_EVENT: all
           APPLY_FIXES_MODE: commit
           # actionlint (<=1.7.12, bundled in MegaLinter) doesn't yet know the `code-quality`
@@ -113,7 +113,7 @@ jobs:
       # PR-controlled MegaLinter configuration may execute commands. Export only its
       # resulting patch here; write credentials are minted later on a fresh runner.
       - name: 📦 Prepare applied fixes
-        if: ${{ inputs.apply-fixes && github.event.pull_request.head.repo.fork != true }}
+        if: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
         id: fixes
         shell: bash
         run: |
@@ -161,7 +161,7 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true
           token: ${{ steps.generate-token.outputs.token }}
