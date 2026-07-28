@@ -25,20 +25,35 @@ runs:
       if: inputs.github-token != ''
       run: |
         set -euo pipefail
-        config="$(mktemp)"
-        trap 'rm -f "$config"' EXIT
-        chmod 600 "$config"
-        cat >"$config" <<'EOF'
-        <?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-          <packageSources>
-            <clear />
-            <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-            <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
-          </packageSources>
-        </configuration>
-        EOF
-        dotnet restore --configfile "$config"
+        source_cleanup=none
+        cleanup_source() {
+          case "$source_cleanup" in
+            added)
+              dotnet nuget remove source github
+              ;;
+            re-disable)
+              dotnet nuget disable source github
+              ;;
+          esac
+        }
+        trap cleanup_source EXIT
+
+        source_listing="$(dotnet nuget list source --format Detailed)"
+        if grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Enabled\]' <<<"$source_listing"; then
+          :
+        elif grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Disabled\]' <<<"$source_listing"; then
+          dotnet nuget enable source github
+          source_cleanup=re-disable
+        else
+          dotnet nuget add source \
+            --name github \
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          source_cleanup=added
+        fi
+
+        dotnet restore
+        trap - EXIT
+        cleanup_source
       env:
         # NuGet reads source credentials from this process-only environment variable, so the
         # token is neither written to NuGet.Config nor exposed to repository-controlled tests.

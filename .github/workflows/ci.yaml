@@ -436,6 +436,39 @@ jobs:
             exit 1
           fi
 
+  test-run-dotnet-tests-preserves-source-mapping:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Run .NET Tests - Preserve Source Mapping"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10
+
+      - name: 📦 Build mapped local package
+        run: >-
+          dotnet pack
+          .github/fixtures/run-dotnet-tests-source-mapping/dependency/Fixture.Dependency.csproj
+          --configuration Release
+          --output .github/fixtures/run-dotnet-tests-source-mapping/local-packages
+        shell: bash
+
+      - name: 🧪 Restore and test with caller source mapping
+        uses: ./run-dotnet-tests
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
