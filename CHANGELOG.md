@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.10](https://github.com/devantler-tech/actions/compare/v10.2.9...v10.2.10) (2026-07-28)
+
+
+### Bug Fixes
+
+* **validate-go-project:** scan for vulnerabilities on the default branch ([#779](https://github.com/devantler-tech/actions/issues/779)) ([b557930](https://github.com/devantler-tech/actions/commit/b557930029076b42fcdacdae59514ac08612f83c))
+
 ## [10.2.9](https://github.com/devantler-tech/actions/compare/v10.2.8...v10.2.9) (2026-07-28)
 
 
