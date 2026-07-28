@@ -197,32 +197,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
-        run: |
-          set -euo pipefail
-          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,updatedAt)
-          LIVE_HEAD=$(jq -r .headRefOid <<<"$pr_json")
-          LIVE_UPDATED_AT=$(jq -r .updatedAt <<<"$pr_json")
-
-          if [[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]; then
-            # Scheduling order is not event order. Prove the newest later
-            # pull_request run of THIS caller workflow before allowing an
-            # older rejection to stand down. An unrelated workflow from a
-            # trusted actor, comments/reviews, and later untrusted events do
-            # not count as reauthorization and still revoke fail-closed.
-            WORKFLOW_ID=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq .workflow_id)
-            run_pages=$(gh api --method GET "repos/$REPOSITORY/actions/runs" --paginate \
-              -f event=pull_request -f per_page=100 -f created=">=${EVENT_UPDATED_AT}" | jq -s .)
-
-            if LATEST_ACTOR=$(bash .devantler-tech-actions/.scripts/find-trusted-superseding-pr-run.sh \
-              "$RUN_ID" "$WORKFLOW_ID" "$PR_NUMBER" "$TRUSTED_TRIGGER_ACTORS" <<<"$run_pages"); then
-              echo "::notice::PR #${PR_NUMBER}: rejected event was superseded by a newer trusted pull_request run from ${LATEST_ACTOR}; skipping stale revocation."
-              exit 0
-            fi
-
-            echo "::notice::PR #${PR_NUMBER}: live state changed without a newer trusted pull_request reauthorization; revoking fail-closed."
-          fi
-
-          bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
+        run: >-
+          bash .devantler-tech-actions/.scripts/disarm-untrusted-event.sh
+          "$REPOSITORY" "$PR_NUMBER" "$RUN_ID" "$EVENT_HEAD"
+          "$EVENT_UPDATED_AT" "$TRUSTED_TRIGGER_ACTORS"
 
   auto-merge:
     needs: eligibility

@@ -185,8 +185,8 @@ if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c1
   echo "::error file=$workflow::rejected updates must run the disarm script from the trusted base/called-workflow commit without persisted credentials"
   status=1
 fi
-if ! grep -Fq 'disarm-auto-merge.sh' <<<"$disarm_job"; then
-  echo "::error file=$workflow::rejected updates must revoke both classic auto-merge and merge-queue state"
+if ! grep -Fq 'disarm-untrusted-event.sh' <<<"$disarm_job"; then
+  echo "::error file=$workflow::rejected updates must use the tested fail-closed ordering wrapper"
   status=1
 fi
 
@@ -203,13 +203,11 @@ disarm_step_run="$(yq -r '
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.head.sha }}' ||
   "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
-  "$disarm_step_run" != *"headRefOid,updatedAt"* ||
-  "$disarm_step_run" != *'[[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]'* ||
-  "$disarm_step_run" != *'actions/runs/$RUN_ID'* ||
-  "$disarm_step_run" != *"find-trusted-superseding-pr-run.sh"* ||
-  "$disarm_step_run" != *"LATEST_ACTOR"* ||
+  "$disarm_step_run" != *"disarm-untrusted-event.sh"* ||
+  "$disarm_step_run" != *'"$RUN_ID" "$EVENT_HEAD"'* ||
+  "$disarm_step_run" != *'"$EVENT_UPDATED_AT"'* ||
   "$disarm_step_run" != *"TRUSTED_TRIGGER_ACTORS"* ]]; then
-  echo "::error file=$workflow::rejected events must still match the live head and lifecycle timestamp before revocation"
+  echo "::error file=$workflow::rejected events must pass complete event identity to the tested fail-closed wrapper"
   status=1
 fi
 
