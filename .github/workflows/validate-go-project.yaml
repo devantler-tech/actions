@@ -72,6 +72,10 @@ jobs:
               - 'go.sum'
               - '.golangci.yml'
               - '.golangci.yaml'
+              # The allowlist decides which advisories the vuln scan accepts, so a
+              # change to it changes the gate's verdict on unchanged code. Without
+              # this entry, editing the allowlist skips the very scan that reads it.
+              - '.govulncheck-allow.txt'
             # Files lintable by MegaLinter Go flavor (excluding Go files which are covered above)
             lintable:
               # Languages
@@ -366,11 +370,14 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo; only on PRs
+    # Skip if no Go files changed or on reusable-workflows repo.
+    # Gated on the same events as the test job — deliberately NOT pull_request-only.
+    # A vulnerability scan's verdict depends on the vulnerability DATABASE as well as
+    # the diff, so advisories published after a merge make unchanged code vulnerable.
+    # While this ran on pull_request only, the default branch could never report that.
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
       && needs.changes.outputs.go == 'true'
-      && github.event_name == 'pull_request'
     permissions:
       contents: read
     # govulncheck's default symbol scan builds a whole-program call graph in memory,
