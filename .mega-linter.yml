@@ -5,3 +5,12 @@ DISABLE_LINTERS:
   - GO_GOLANGCI_LINT
   - REPOSITORY_GRYPE
   - SPELL_CSPELL
+
+# .github/tests/megalinter-bad-fixture/ holds a deliberately-invalid file that the
+# lint.yaml failure-mode self-test (test-lint-blocks) points MegaLinter at, to prove the
+# gate still BITES. Every other gate's fixture escapes its scanner by living outside that
+# scanner's discovery path; MegaLinter scans the whole tree, so this exclusion is how the
+# same separation is achieved here. Without it the repo's own MegaLinter run would fail on
+# the fixture. Keep the exclusion this narrow — never widen it to the whole tests folder,
+# which would silently stop linting real fixtures.
+FILTER_REGEX_EXCLUDE: (\.github/tests/megalinter-bad-fixture/.*)

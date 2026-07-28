@@ -1,5 +1,75 @@
 # Changelog
 
+## [10.2.9](https://github.com/devantler-tech/actions/compare/v10.2.8...v10.2.9) (2026-07-28)
+
+
+### Bug Fixes
+
+* stop persisting Go module tokens ([#675](https://github.com/devantler-tech/actions/issues/675)) ([4541f1d](https://github.com/devantler-tech/actions/commit/4541f1d7ee69d95d02a63c774a76dcff7dbbc732))
+
+## [10.2.8](https://github.com/devantler-tech/actions/compare/v10.2.7...v10.2.8) (2026-07-28)
+
+
+### Bug Fixes
+
+* prevent dotnet tests from reading package token ([#668](https://github.com/devantler-tech/actions/issues/668)) ([1ecf910](https://github.com/devantler-tech/actions/commit/1ecf91010b5e30f70ffbbf5c63486d2097b62df4))
+
+## [10.2.7](https://github.com/devantler-tech/actions/compare/v10.2.6...v10.2.7) (2026-07-28)
+
+
+### Bug Fixes
+
+* **ci:** withhold app credentials from approve-pr tests ([#672](https://github.com/devantler-tech/actions/issues/672)) ([79e64a2](https://github.com/devantler-tech/actions/commit/79e64a211e5b79fde9b489ce0d04a6c218dd1712))
+
+## [10.2.6](https://github.com/devantler-tech/actions/compare/v10.2.5...v10.2.6) (2026-07-28)
+
+
+### Bug Fixes
+
+* **upsert-issue:** prevent jq injection through titles ([#676](https://github.com/devantler-tech/actions/issues/676)) ([55fa940](https://github.com/devantler-tech/actions/commit/55fa940ecddbbf4262a24ac07f9a5ed538d6ae50))
+
+## [10.2.5](https://github.com/devantler-tech/actions/compare/v10.2.4...v10.2.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* isolate MegaLinter from write credentials ([#706](https://github.com/devantler-tech/actions/issues/706)) ([8a14ca2](https://github.com/devantler-tech/actions/commit/8a14ca27e2e1103f722306e377640c9269f8e3c4))
+
+## [10.2.4](https://github.com/devantler-tech/actions/compare/v10.2.3...v10.2.4) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ci:** pin CodeRabbit fail_commit_status false ([#747](https://github.com/devantler-tech/actions/issues/747)) ([97a2379](https://github.com/devantler-tech/actions/commit/97a2379a4ab4dd1e3fdd4de2e1fd6d4231023653))
+
+## [10.2.3](https://github.com/devantler-tech/actions/compare/v10.2.2...v10.2.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* keep tokens out of pull request tests ([#665](https://github.com/devantler-tech/actions/issues/665)) ([ee6a2f9](https://github.com/devantler-tech/actions/commit/ee6a2f9ceb11ff1f88f02349d43a0906b8f8cf5c))
+
+## [10.2.2](https://github.com/devantler-tech/actions/compare/v10.2.1...v10.2.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **template-sync:** default App-authored PRs off ([#707](https://github.com/devantler-tech/actions/issues/707)) ([fbf3d61](https://github.com/devantler-tech/actions/commit/fbf3d61a3f6847231441248878643536b328e37c))
+
+## [10.2.1](https://github.com/devantler-tech/actions/compare/v10.2.0...v10.2.1) (2026-07-21)
+
+
+### Continuous Integration
+
+* **coderabbit:** keep docstring coverage advisory instead of merge-blocking ([#661](https://github.com/devantler-tech/actions/issues/661)) ([6b063f9](https://github.com/devantler-tech/actions/commit/6b063f9608a49bc9cd0e0f1856192dd0d49fab12))
+
+## [10.2.0](https://github.com/devantler-tech/actions/compare/v10.1.4...v10.2.0) (2026-07-20)
+
+
+### Features
+
+* add a repo-wide MegaLinter reusable workflow for non-Go-module repos ([#663](https://github.com/devantler-tech/actions/issues/663)) ([92201ce](https://github.com/devantler-tech/actions/commit/92201ceff336fd833b6a46cec42e715935eec4f3))
+
 ## [10.1.4](https://github.com/devantler-tech/actions/compare/v10.1.3...v10.1.4) (2026-07-18)
 
 
