@@ -242,7 +242,8 @@ edits create no replacement run. Before mutation, a live reopen/ready-for-review
 binding rejects later events (including a head that moves away and returns) and treats any equal-time
 sequence it cannot uniquely identify as superseded. Arming and revocation share one mutation lane;
 a delayed rejected event preserves only auto-merge state whose authorization time is provably newer
-than that rejected run.
+than that rejected run attempt. Default-off review/comment no-ops skip the mutation lane entirely, so
+they cannot replace a queued revocation.
 Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
 ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
 safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.
@@ -305,13 +306,13 @@ jobs:
 > only for the reusable lane that actually executes; skipped or unrelated caller runs do not
 > reauthorize or supersede it.
 > Both the original and rerun-triggering actors must be trusted for every privileged event. The
-> read scope binds stale-revocation decisions to the rejected run's durable creation time; the
+> read scope binds stale-revocation decisions to the rejected run attempt's durable start time; the
 > write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
 > App private key. Missing lookup or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants the documented minimum above with or without enforcement.
 > Actor trust uses its caller `Actions: read` scope only to bind stale revocation to the
-> rejected run's creation time. Review enforcement uses a separate App token and additionally
+> rejected run attempt's start time. Review enforcement uses a separate App token and additionally
 > requires the GitHub App installation to grant **Actions: read**, **Checks: read**, and
 > **Contents: read**. If a required scope is missing, the workflow fails closed rather than
 > approving or arming on unproven evidence.

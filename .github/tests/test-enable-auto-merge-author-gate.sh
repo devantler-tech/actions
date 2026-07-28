@@ -108,9 +108,11 @@ fi
 
 auto_merge_needs="$(yq -r '.jobs."auto-merge".needs // ""' "$workflow")"
 auto_merge_condition="$(yq -r '.jobs."auto-merge".if // ""' "$workflow")"
+normalized_auto_merge_condition="$(tr -d '[:space:]' <<<"$auto_merge_condition")"
+expected_auto_merge_condition="needs.eligibility.outputs.eligible=='true'&&(github.event_name=='pull_request'||inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='true')"
 if [[ "$auto_merge_needs" != "eligibility" ||
-  "$auto_merge_condition" != "needs.eligibility.outputs.eligible == 'true'" ]]; then
-  echo "::error file=$workflow::privileged auto-merge job must depend only on an exactly-true eligibility output"
+  "$normalized_auto_merge_condition" != "$expected_auto_merge_condition" ]]; then
+  echo "::error file=$workflow::privileged auto-merge job must require exact eligibility and keep default-off review/comment no-ops outside the mutation lane"
   status=1
 fi
 
@@ -274,11 +276,12 @@ disarm_step_run="$(yq -r '
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.PR_NUMBER // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.number || github.event.issue.number }}' ||
   "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
+  "$(yq -r '.RUN_ATTEMPT // ""' <<<"$disarm_step_env")" != '${{ github.run_attempt }}' ||
   "$disarm_step_run" != *"disarm-auto-merge.sh"* ||
-  "$disarm_step_run" != *'actions/runs/$RUN_ID'* ||
-  "$disarm_step_run" != *".created_at"* ||
-  "$disarm_step_run" != *'"$REPOSITORY" "$PR_NUMBER" "$event_created_at"'* ]]; then
-  echo "::error file=$workflow::rejected events must pass their durable run-creation time and target PR to the serialized revocation helper"
+  "$disarm_step_run" != *'actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT'* ||
+  "$disarm_step_run" != *".run_started_at"* ||
+  "$disarm_step_run" != *'"$REPOSITORY" "$PR_NUMBER" "$attempt_started_at"'* ]]; then
+  echo "::error file=$workflow::rejected events must pass their durable current-attempt start time and target PR to the serialized revocation helper"
   status=1
 fi
 

@@ -368,18 +368,28 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          event_created_at=
-          if ! event_created_at=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq .created_at); then
-            echo "::warning::Unable to resolve rejected-event run creation time; revoking fail-closed."
+          attempt_started_at=
+          if ! attempt_started_at=$(gh api \
+            "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT" \
+            --jq .run_started_at); then
+            echo "::warning::Unable to resolve rejected-event attempt start time; revoking fail-closed."
           fi
           bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh \
-            "$REPOSITORY" "$PR_NUMBER" "$event_created_at"
+            "$REPOSITORY" "$PR_NUMBER" "$attempt_started_at"
 
   auto-merge:
     needs: eligibility
-    if: needs.eligibility.outputs.eligible == 'true'
+    # Default-off review/comment events are deliberate no-ops. Skipping this
+    # job keeps them outside the single-pending mutation lane, where they could
+    # otherwise replace a queued rejected-event revocation.
+    if: >-
+      needs.eligibility.outputs.eligible == 'true' &&
+      (github.event_name == 'pull_request' ||
+       inputs.enforce-review-gates ||
+       vars.ENFORCE_MERGE_GATES == 'true')
     # Legacy documented minimum ONLY — a called workflow's GITHUB_TOKEN
     # permissions must be a subset of what every caller grants (they can only
     # be downgraded, never elevated), so adding scopes here would fail

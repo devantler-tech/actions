@@ -13,18 +13,18 @@
 # merge-queue authorization is preserved. Callers using that mode must
 # serialize this read/decision/mutation with the arming path.
 #
-# Usage: disarm-auto-merge.sh <repository> <pr-number> [rejected-run-created-at]
+# Usage: disarm-auto-merge.sh <repository> <pr-number> [rejected-attempt-started-at]
 
 set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
-  echo "usage: $0 <repository> <pr-number> [rejected-run-created-at]" >&2
+  echo "usage: $0 <repository> <pr-number> [rejected-attempt-started-at]" >&2
   exit 2
 fi
 
 repository="$1"
 pr_number="$2"
-rejected_run_created_at="${3-}"
+rejected_attempt_started_at="${3-}"
 owner="${repository%%/*}"
 name="${repository#*/}"
 
@@ -35,9 +35,9 @@ state="$(gh api graphql \
   --jq '.data.repository.pullRequest | "\(.id) \(.autoMergeRequest != null) \(.isInMergeQueue) \(.autoMergeRequest.enabledAt // "null") \(.mergeQueueEntry.enqueuedAt // "null")"')"
 read -r pr_id armed queued auto_merge_enabled_at queue_enqueued_at <<<"$state"
 
-if [[ -n "$rejected_run_created_at" ]]; then
+if [[ -n "$rejected_attempt_started_at" ]]; then
   timestamps_valid=true
-  if ! jq -en --arg value "$rejected_run_created_at" '$value | fromdateiso8601' >/dev/null 2>&1; then
+  if ! jq -en --arg value "$rejected_attempt_started_at" '$value | fromdateiso8601' >/dev/null 2>&1; then
     timestamps_valid=false
   fi
   for authorization_time in "$auto_merge_enabled_at" "$queue_enqueued_at"; do
@@ -48,8 +48,8 @@ if [[ -n "$rejected_run_created_at" ]]; then
   done
 
   if [[ "$timestamps_valid" == "true" ]] &&
-    { [[ "$auto_merge_enabled_at" != "null" && "$auto_merge_enabled_at" > "$rejected_run_created_at" ]] ||
-      [[ "$queue_enqueued_at" != "null" && "$queue_enqueued_at" > "$rejected_run_created_at" ]]; }; then
+    { [[ "$auto_merge_enabled_at" != "null" && "$auto_merge_enabled_at" > "$rejected_attempt_started_at" ]] ||
+      [[ "$queue_enqueued_at" != "null" && "$queue_enqueued_at" > "$rejected_attempt_started_at" ]]; }; then
     echo "::notice::PR #${pr_number}: rejected event predates the current newer authorization; skipping stale revocation."
     exit 0
   fi
