@@ -471,13 +471,47 @@ jobs:
       - name: 🧪 Restore and test with caller source mapping
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Exercise the credential-bearing branch without exposing a real token to PR-controlled restore code.
+          github-token: credential-boundary-sentinel
           working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
 
       - name: 🔒 Verify caller NuGet configuration is byte-identical
         run: >-
           git diff --exit-code --
           .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+        shell: bash
+
+      - name: 🧪 Configure the canonical caller-owned GitHub Packages source
+        id: canonical-source
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          cp "$config" "$RUNNER_TEMP/source-mapping-NuGet.Config"
+          dotnet nuget add source \
+            --configfile "$config" \
+            --name github \
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          echo "sha=$(sha256sum "$config" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore with the canonical caller-owned source
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: 🔒 Verify the canonical caller-owned source is byte-identical
+        env:
+          EXPECTED_SHA: ${{ steps.canonical-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          actual_sha="$(sha256sum "$config" | cut -d ' ' -f 1)"
+          if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Authenticated restore changed the caller-owned GitHub Packages source"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/source-mapping-NuGet.Config" "$config"
         shell: bash
 
       - name: 🧪 Configure an untrusted source with the credential-bearing name
@@ -493,7 +527,7 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: credential-boundary-sentinel
           working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
 
       - name: ✅ Verify the untrusted credential target was rejected
@@ -1605,28 +1639,39 @@ jobs:
             exit 1
           fi
 
-          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source is ephemeral") | .if' "$WORKFLOW")"
-          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source is ephemeral") | .run' "$WORKFLOW")"
-          for required_guard in \
-            "inputs.enable-github-packages" \
-            "github.event.pull_request.head.repo.full_name" \
-            "github.repository" \
-            "github.event.pull_request.user.login" \
-            "[bot]"; do
-            if [[ "$verify_if" != *"$required_guard"* ]]; then
-              echo "::error::$WORKFLOW authenticated-source assertion is missing the '$required_guard' trust guard"
+          for source_step in \
+            "🔎 Snapshot authenticated GitHub Packages source" \
+            "🔒 Verify authenticated GitHub Packages source state is preserved"; do
+            source_if="$(SOURCE_STEP="$source_step" yq -r '.jobs.test.steps[] | select(.name == strenv(SOURCE_STEP)) | .if' "$WORKFLOW")"
+            for required_guard in \
+              "inputs.enable-github-packages" \
+              "github.event.pull_request.head.repo.full_name" \
+              "github.repository" \
+              "github.event.pull_request.user.login" \
+              "[bot]"; do
+              if [[ "$source_if" != *"$required_guard"* ]]; then
+                echo "::error::$WORKFLOW '$source_step' is missing the '$required_guard' trust guard"
+                exit 1
+              fi
+            done
+            if [[ "$source_if" == *"github.actor"* ]]; then
+              echo "::error::$WORKFLOW '$source_step' must trust the pull-request author, not the event actor"
               exit 1
             fi
           done
-          if [[ "$verify_if" == *"github.actor"* ]]; then
-            echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
+
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .run' "$WORKFLOW")"
+          verify_before_state="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .env.BEFORE_STATE' "$WORKFLOW")"
+          expected_comparison="if [[ \"\$after_state\" != \"\$BEFORE_STATE\" ]]; then"
+          if [[ "$verify_run" != *'after_state'* || "$verify_run" != *"$expected_comparison"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must compare the post-action state with its snapshot"
             exit 1
           fi
-          if [[ "$verify_run" != *"if dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
-            echo "::error::$WORKFLOW enabled-state test must prove the authenticated GitHub Packages source is ephemeral"
+          if [[ "$verify_before_state" != *"steps.github-source-before.outputs.state"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must consume the pre-action snapshot"
             exit 1
           fi
-          echo "Only an explicit same-repository non-bot pull request can receive the ephemeral restore token ✅"
+          echo "Only an explicit same-repository non-bot pull request can receive the ephemeral restore token, and its source state is preserved ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
@@ -2737,6 +2782,7 @@ jobs:
       - test-aggregate-job-checks-failure
       - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
+      - test-run-dotnet-tests-preserves-source-mapping
       - test-setup-agent-skills-inline
       - test-setup-agent-skills-pinned
       - test-setup-agent-skills-missing-input
@@ -2827,6 +2873,7 @@ jobs:
             ${{ needs.test-aggregate-job-checks-failure.result }}
             ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
+            ${{ needs.test-run-dotnet-tests-preserves-source-mapping.result }}
             ${{ needs.test-setup-agent-skills-inline.result }}
             ${{ needs.test-setup-agent-skills-pinned.result }}
             ${{ needs.test-setup-agent-skills-missing-input.result }}
