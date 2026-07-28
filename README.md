@@ -230,11 +230,14 @@ commit it checked.
 or comment trigger on an allowlisted bot-authored PR must come from an allowlisted bot or the
 explicit `devantler` maintainer actor. Workflow reruns also require the initiating
 `github.triggering_actor` to be allowlisted; a trusted original event cannot be replayed by an
-untrusted collaborator. A rejected pull-request trigger receives no App token and actively revokes
-both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`. Pull-request
-arming additionally proves that no later run of the same workflow and PR exists before any PR
-state mutation. This run-ID proof orders same-second lifecycle events; unrelated title, label, or
-assignment edits create no replacement run and do not suppress arming.
+untrusted collaborator. A rejected pull-request lifecycle trigger—or, when review gates are also
+enforced, an untrusted dismissal/deletion of trusted review evidence—receives no App token and
+actively revokes both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`.
+These state-removal runs arbitrate at workflow creation, so they cancel an older privileged run
+before its jobs can mutate the PR. Pull-request
+arming additionally checks a bounded, fail-closed snapshot for later runs of the same workflow and
+PR before minting write access. This run-ID proof orders same-second lifecycle events; unrelated
+title, label, or assignment edits create no replacement run and do not suppress arming.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's

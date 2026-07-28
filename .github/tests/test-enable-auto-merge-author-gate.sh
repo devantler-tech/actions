@@ -121,12 +121,16 @@ if [[ "$event_order_permissions" != "permission-actions:read" ||
   "$event_order_run" != *"is-current-pull-request-workflow-run.sh"* ||
   "$event_order_run" != *'actions/workflows/$workflow_id/runs'* ||
   "$event_order_run" != *'page="$page"'* ||
+  "$event_order_run" != *'created="$created_window"'* ||
+  "$event_order_run" != *"total_count"* ||
+  "$event_order_run" != *'[[ "$expected_total" -ge 1000 ]]'* ||
+  "$event_order_run" != *"collected_total"* ||
+  "$event_order_run" != *"snapshot_at"* ||
   "$event_order_run" != *"current_seen"* ||
   "$event_order_run" != *'pages_jsonl="$RUNNER_TEMP/'* ||
   "$event_order_run" != *'jq -s . "$pages_jsonl" > "$pages_json"'* ||
   "$event_order_run" != *'< "$pages_json"'* ||
   "$event_order_run" == *"--paginate"* ||
-  "$event_order_run" == *"created="* ||
   "$event_order_run" == *"-f event="* ||
   "$event_order_run" == *"--argjson pages"* ||
   "$event_order_run" == *"--argjson page"* ||
@@ -180,9 +184,9 @@ disarm_condition="$(yq -r '
    | .if // ""]
   | join("\n")' "$workflow")"
 normalized_disarm_condition="$(tr -d '[:space:]' <<<"$disarm_condition")"
-expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)||!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))}}"
+expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='true')&&((github.event_name=='pull_request_review'&&github.event.action=='dismissed'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.action=='deleted'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))))&&(!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)||!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))}}"
 if [[ "$normalized_disarm_condition" != "$expected_disarm_condition" ]]; then
-  echo "::error file=$workflow::rejected trusted-author pull_request events must be classified for fail-closed disarm"
+  echo "::error file=$workflow::rejected trusted-author lifecycle and evidence-removal events must be classified for fail-closed disarm"
   echo "expected: $expected_disarm_condition"
   echo "actual:   $normalized_disarm_condition"
   status=1
@@ -190,7 +194,7 @@ fi
 
 disarm_job_condition="$(yq -r '.jobs."disarm-untrusted-update".if // ""' "$workflow")"
 if [[ "$disarm_job_condition" != "needs.eligibility.outputs.disarm == 'true'" ]]; then
-  echo "::error file=$workflow::the disarm job must run only for exactly-true rejected pull_request events"
+  echo "::error file=$workflow::the disarm job must run only for exactly-true rejected lifecycle or evidence-removal events"
   status=1
 fi
 
@@ -206,17 +210,13 @@ if grep -Fq 'APP_PRIVATE_KEY' <<<"$disarm_job" ||
   echo "::error file=$workflow::rejected updates must disarm with GITHUB_TOKEN and never receive the App private key"
   status=1
 fi
-disarm_concurrency_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
-disarm_cancel_in_progress="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
-auto_merge_concurrency_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
-auto_merge_cancel_in_progress="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" // ""' "$workflow")"
-expected_auto_merge_cancel="\${{ github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') }}"
+workflow_concurrency_group="$(yq -r '.concurrency.group // ""' "$workflow")"
+workflow_cancel_in_progress="$(yq -r '.concurrency."cancel-in-progress" // ""' "$workflow")"
+expected_workflow_cancel="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$disarm_concurrency_group" != 'enable-auto-merge-actor-${{ github.event.pull_request.number }}' ||
-  "$disarm_cancel_in_progress" != "true" ||
-  "$auto_merge_concurrency_group" != "enable-auto-merge-\${{ github.event_name == 'pull_request' && 'actor' || 'review' }}-\${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}" ||
-  "$auto_merge_cancel_in_progress" != "$expected_auto_merge_cancel" ]]; then
-  echo "::error file=$workflow::pull_request arming and rejection must share a newest-event-wins actor concurrency group"
+if [[ "$workflow_concurrency_group" != 'enable-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}' ||
+  "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ]]; then
+  echo "::error file=$workflow::lifecycle and evidence-removal runs must arbitrate at workflow creation before any privileged job can mutate the PR"
   status=1
 fi
 disarm_checkout_uses="$(yq -r '
@@ -242,7 +242,7 @@ disarm_checkout_persist="$(yq -r '
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" ||
   "$disarm_checkout_repository" != '${{ job.workflow_repository }}' ||
-  "$disarm_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
+  "$disarm_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && (github.event.pull_request.base.sha || github.event.repository.default_branch) || job.workflow_sha }}' ||
   "$disarm_checkout_persist" != "false" ]]; then
   echo "::error file=$workflow::rejected updates must run the disarm script from the trusted base/called-workflow commit without persisted credentials"
   status=1
@@ -254,18 +254,22 @@ fi
 
 disarm_step_env="$(yq -r '
   [.jobs."disarm-untrusted-update".steps[]
-   | select(.name == "🔒 Disarm auto-merge after rejected pull request trigger")
+   | select(.name == "🔒 Disarm auto-merge after rejected event")
    | .env // {}][0]' "$workflow")"
 disarm_step_run="$(yq -r '
   [.jobs."disarm-untrusted-update".steps[]
-   | select(.name == "🔒 Disarm auto-merge after rejected pull request trigger")
+   | select(.name == "🔒 Disarm auto-merge after rejected event")
    | .run // ""]
   | join("\n")' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.head.sha }}' ||
+if [[ "$(yq -r '.EVENT_NAME // ""' <<<"$disarm_step_env")" != '${{ github.event_name }}' ||
+  "$(yq -r '.PR_NUMBER // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.number || github.event.issue.number }}' ||
+  "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.head.sha }}' ||
   "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
   "$disarm_step_run" != *"disarm-untrusted-event.sh"* ||
+  "$disarm_step_run" != *"disarm-auto-merge.sh"* ||
+  "$disarm_step_run" != *'[[ "$EVENT_NAME" == "pull_request" ]]'* ||
   "$disarm_step_run" != *'"$RUN_ID" "$EVENT_HEAD"'* ||
   "$disarm_step_run" != *'"$EVENT_UPDATED_AT"'* ||
   "$disarm_step_run" != *"TRUSTED_TRIGGER_ACTORS"* ]]; then
@@ -309,6 +313,7 @@ fi
 while IFS= read -r fixture; do
   name="$(jq -r '.name' <<<"$fixture")"
   event_name="$(jq -r '.event_name' <<<"$fixture")"
+  action="$(jq -r '.action // ""' <<<"$fixture")"
   draft="$(jq -r '.draft' <<<"$fixture")"
   login="$(jq -r '.login' <<<"$fixture")"
   actor="$(jq -r '.actor' <<<"$fixture")"
@@ -317,6 +322,7 @@ while IFS= read -r fixture; do
   issue_open="$(jq -r '.issue_open // true' <<<"$fixture")"
   has_pull_request="$(jq -r '.has_pull_request // true' <<<"$fixture")"
   enforce="$(jq -r 'if has("enforce") then .enforce else true end' <<<"$fixture")"
+  review_enforce="$(jq -r '.review_enforce // false' <<<"$fixture")"
   expected="$(jq -r '.eligible' <<<"$fixture")"
   expected_disarm="$(jq -r '.disarm // false' <<<"$fixture")"
   actual=false
@@ -343,8 +349,21 @@ while IFS= read -r fixture; do
     actual=true
   fi
 
-  if [[ "$enforce" == "true" && "$event_name" == "pull_request" && "$draft" == "false" ]] &&
+  base_disarm=false
+  if [[ "$event_name" == "pull_request" && "$draft" == "false" ]] &&
+    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null; then
+    base_disarm=true
+  elif [[ "$review_enforce" == "true" && "$event_name" == "pull_request_review" && "$action" == "dismissed" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
+    jq -e --arg reviewer "$reviewer" 'index($reviewer) != null' <<<"$reviewers_json" >/dev/null; then
+    base_disarm=true
+  elif [[ "$review_enforce" == "true" && "$event_name" == "issue_comment" && "$action" == "deleted" && "$issue_open" == "true" && "$has_pull_request" == "true" ]] &&
+    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
+    jq -e --arg reviewer "$reviewer" 'index($reviewer) != null' <<<"$reviewers_json" >/dev/null; then
+    base_disarm=true
+  fi
+
+  if [[ "$enforce" == "true" && "$base_disarm" == "true" ]] &&
     { ! jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null ||
       ! jq -e --arg actor "$triggering_actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; then
     actual_disarm=true
