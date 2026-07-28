@@ -5,6 +5,7 @@ set -euo pipefail
 workflow="${1:-.github/workflows/enable-auto-merge.yaml}"
 fixtures="${2:-.github/tests/enable-auto-merge-authors.json}"
 ci_workflow="${3:-.github/workflows/ci.yaml}"
+readme="${4:-README.md}"
 condition="$(yq -r '
   [(.jobs.eligibility.steps // [])[]
    | select(.id == "classify")
@@ -82,19 +83,26 @@ if [[ "$ineligible_condition" != *"steps.classify.outputs.eligible != 'true'"* ]
 fi
 configuration_condition="$(yq -r '
   [(.jobs.eligibility.steps // [])[]
-   | select(.id == "require-concurrency-key")
+   | select(.id == "legacy-concurrency-key")
    | .if // ""]
   | join("\n")' "$workflow")"
 configuration_run="$(yq -r '
   [(.jobs.eligibility.steps // [])[]
-   | select(.id == "require-concurrency-key")
+   | select(.id == "legacy-concurrency-key")
    | .run // ""]
   | join("\n")' "$workflow")"
 expected_configuration_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&job.workflow_ref!=github.workflow_ref&&inputs.concurrency-key==''}}"
 normalized_configuration_condition="$(tr -d '[:space:]' <<<"$configuration_condition")"
 if [[ "$normalized_configuration_condition" != "$expected_configuration_condition" ||
-  "$configuration_run" != *"exit 1"* ]]; then
-  echo "::error file=$workflow::actor-enforced reusable calls must fail closed unless they provide a stable caller-unique concurrency key"
+  "$configuration_run" != *"repository-wide compatibility lane"* ||
+  "$configuration_run" == *"exit 1"* ]]; then
+  echo "::error file=$workflow::actor-enforced legacy callers must retain a safe repository-wide compatibility lane while explicit keys remain isolated"
+  status=1
+fi
+
+# shellcheck disable=SC2016 # Backticks are literal Markdown in this regex.
+if ! grep -Eq '^\| `concurrency-key` +\| Input +\| `""` +\| No +\|.*[Rr]ecommended.*actor trust' "$readme"; then
+  echo "::error file=$readme::the public inputs table must document concurrency-key and its actor-trust compatibility contract"
   status=1
 fi
 
@@ -158,7 +166,7 @@ if [[ "$reviewers_json" != "$expected_reviewers_json" ]]; then
   status=1
 fi
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))&&(env.ACTOR_TRUST_ENFORCED!='true'||((job.workflow_ref==github.workflow_ref||inputs.concurrency-key!='')&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor)))}}"
+expected_condition="\${{((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor)))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"
@@ -172,7 +180,7 @@ disarm_condition="$(yq -r '
    | .if // ""]
   | join("\n")' "$workflow")"
 normalized_disarm_condition="$(tr -d '[:space:]' <<<"$disarm_condition")"
-expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&(job.workflow_ref==github.workflow_ref||inputs.concurrency-key!='')&&((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='true')&&((github.event_name=='pull_request_review'&&github.event.action=='dismissed'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.action=='deleted'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))))&&(!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)||!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))}}"
+expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='true')&&((github.event_name=='pull_request_review'&&github.event.action=='dismissed'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.action=='deleted'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))))&&(!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)||!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))}}"
 if [[ "$normalized_disarm_condition" != "$expected_disarm_condition" ]]; then
   echo "::error file=$workflow::rejected trusted-author lifecycle and evidence-removal events must be classified for fail-closed disarm"
   echo "expected: $expected_disarm_condition"
@@ -202,12 +210,12 @@ workflow_concurrency_group="$(yq -r '.concurrency.group // ""' "$workflow")"
 workflow_cancel_in_progress="$(yq -r '.concurrency."cancel-in-progress" // ""' "$workflow")"
 expected_workflow_cancel="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-expected_workflow_group='enable-auto-merge-${{github.repository}}-${{inputs.concurrency-key||(startsWith(github.workflow_ref,format('"'"'{0}/.github/workflows/enable-auto-merge.yaml@'"'"',github.repository))&&'"'"'direct'"'"')||github.workflow_ref}}-${{github.event.pull_request.number||github.event.issue.number||github.run_id}}-${{((inputs.concurrency-key!='"'"''"'"'||startsWith(github.workflow_ref,format('"'"'{0}/.github/workflows/enable-auto-merge.yaml@'"'"',github.repository)))&&((github.event_name=='"'"'pull_request'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request_review'"'"'&&github.event.action=='"'"'dismissed'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.review.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||(github.event_name=='"'"'issue_comment'"'"'&&github.event.action=='"'"'deleted'"'"'&&github.event.issue.pull_request&&github.event.issue.state=='"'"'open'"'"'&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.comment.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.issue.user.login))))))&&'"'"'state'"'"'||github.run_id}}'
+expected_workflow_group='enable-auto-merge-${{github.repository}}-${{inputs.concurrency-key||(startsWith(github.workflow_ref,'"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"')&&'"'"'direct'"'"')||((inputs.enforce-actor-trust||vars.ENFORCE_ACTOR_TRUST=='"'"'true'"'"')&&'"'"'actor-trust-legacy'"'"')||github.workflow_ref}}-${{github.event.pull_request.number||github.event.issue.number||github.run_id}}-${{((inputs.concurrency-key!='"'"''"'"'||startsWith(github.workflow_ref,'"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"')||inputs.enforce-actor-trust||vars.ENFORCE_ACTOR_TRUST=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request_review'"'"'&&github.event.action=='"'"'dismissed'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.review.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||(github.event_name=='"'"'issue_comment'"'"'&&github.event.action=='"'"'deleted'"'"'&&github.event.issue.pull_request&&github.event.issue.state=='"'"'open'"'"'&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.comment.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.issue.user.login))))))&&'"'"'state'"'"'||github.run_id}}'
 normalized_workflow_group="$(tr -d '[:space:]' <<<"$workflow_concurrency_group")"
 review_job_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
 review_job_cancel="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-expected_review_job_group='enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('"'"'{0}/.github/workflows/enable-auto-merge.yaml@'"'"', github.repository)) && '"'"'direct'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == '"'"'pull_request'"'"' && github.run_id || '"'"'review'"'"' }}'
+expected_review_job_group='enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, '"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"') && '"'"'direct'"'"') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == '"'"'true'"'"') && '"'"'actor-trust-legacy'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == '"'"'pull_request'"'"' && github.run_id || '"'"'review'"'"' }}'
 disarm_job_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
 disarm_job_cancel="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
@@ -283,13 +291,15 @@ resolve_run="$(yq -r '
 expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
-  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != "" ||
+  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
   "$resolve_run" != *"headRefOid"* ||
-  "$resolve_run" == *"updatedAt"* ||
+  "$resolve_run" != *"timelineItems(first:100,after:\$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT])"* ||
+  "$resolve_run" != *"pageInfo{hasNextPage endCursor}"* ||
+  "$resolve_run" != *"is-current-pull-request-lifecycle.sh"* ||
   "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
   "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
-  echo "::error file=$workflow::actor enforcement must reject a moved head without treating unrelated PR edits as supersession"
+  echo "::error file=$workflow::actor enforcement must reject a moved head or a later same-head lifecycle event without treating unrelated PR edits as supersession"
   status=1
 fi
 

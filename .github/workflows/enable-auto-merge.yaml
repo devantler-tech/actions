@@ -32,17 +32,17 @@ on:
           removals of trusted review/comment evidence actively revoke stale
           auto-merge and merge-queue state when review gates are also
           enforced. Direct/required-workflow runs can opt in with the
-          ENFORCE_ACTOR_TRUST repository or organization variable;
-          workflow_call callers must also provide concurrency-key.
+          ENFORCE_ACTOR_TRUST repository or organization variable.
       concurrency-key:
         type: string
         required: false
         default: ""
         description: >-
-          Stable caller-unique key for workflow-level arbitration. Required
-          for every workflow_call invocation that enables actor trust; legacy
-          default-off callers can omit it without gaining privileged actor
-          enforcement.
+          Stable caller-unique key for workflow-level arbitration. Strongly
+          recommended for every workflow_call invocation that enables actor
+          trust. Existing opted-in callers that omit it remain safe in a
+          repository-wide compatibility lane; callers with distinct keys do
+          not cancel one another.
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -68,7 +68,11 @@ on:
 # A rejected lifecycle event or removal of trusted review evidence must cancel
 # an older privileged run before that run can reach a PR mutation. Other
 # review/comment updates serialize without cancelling the legacy default-off
-# pull_request arming path.
+# pull_request arming path. Cross-repository required workflows retain this
+# file's source in github.workflow_ref while github.repository names the
+# consumer, so direct identity is matched against the reviewed source path.
+# Actor-enforced reusable callers without the newly added key share one stable
+# repository-wide compatibility lane rather than breaking on a patch update.
 concurrency:
   group: >-
     enable-auto-merge-${{ github.repository }}-${{
@@ -76,12 +80,16 @@ concurrency:
       (
         startsWith(
           github.workflow_ref,
-          format(
-            '{0}/.github/workflows/enable-auto-merge.yaml@',
-            github.repository
-          )
+          'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'
         ) &&
         'direct'
+      ) ||
+      (
+        (
+          inputs.enforce-actor-trust ||
+          vars.ENFORCE_ACTOR_TRUST == 'true'
+        ) &&
+        'actor-trust-legacy'
       ) ||
       github.workflow_ref
     }}-${{
@@ -94,11 +102,10 @@ concurrency:
           inputs.concurrency-key != '' ||
           startsWith(
             github.workflow_ref,
-            format(
-              '{0}/.github/workflows/enable-auto-merge.yaml@',
-              github.repository
-            )
-          )
+            'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'
+          ) ||
+          inputs.enforce-actor-trust ||
+          vars.ENFORCE_ACTOR_TRUST == 'true'
         ) &&
         (
           (
@@ -224,10 +231,6 @@ jobs:
             (
               env.ACTOR_TRUST_ENFORCED != 'true' ||
               (
-                (
-                  job.workflow_ref == github.workflow_ref ||
-                  inputs.concurrency-key != ''
-                ) &&
                 contains(
                   fromJSON(env.TRUSTED_TRIGGER_ACTORS),
                   github.actor
@@ -246,10 +249,6 @@ jobs:
         if: >-
           ${{
             env.ACTOR_TRUST_ENFORCED == 'true' &&
-            (
-              job.workflow_ref == github.workflow_ref ||
-              inputs.concurrency-key != ''
-            ) &&
             (
               (
                 github.event_name == 'pull_request' &&
@@ -306,8 +305,8 @@ jobs:
           }}
         run: echo "disarm=true" >> "$GITHUB_OUTPUT"
 
-      - name: ❌ Reject missing reusable caller concurrency key
-        id: require-concurrency-key
+      - name: ℹ️ Identify legacy actor-trust compatibility lane
+        id: legacy-concurrency-key
         if: >-
           ${{
             env.ACTOR_TRUST_ENFORCED == 'true' &&
@@ -315,8 +314,7 @@ jobs:
             inputs.concurrency-key == ''
           }}
         run: |
-          echo "::error::Actor-enforced workflow_call invocations must provide a stable caller-unique concurrency-key."
-          exit 1
+          echo "::notice::This actor-enforced reusable call omitted concurrency-key and is using the safe repository-wide compatibility lane. Add a stable caller-unique key to isolate independent call sites."
 
       - name: ✅ Complete ineligible required-workflow run
         id: ineligible
@@ -344,7 +342,7 @@ jobs:
     # run-unique suffix because workflow-level state arbitration already
     # orders those lifecycle events.
     concurrency:
-      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('{0}/.github/workflows/enable-auto-merge.yaml@', github.repository)) && 'direct') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
@@ -391,7 +389,7 @@ jobs:
     # because it reads the same current state. Pull-request runs already hold
     # the earlier workflow-level state lease and use a run-unique job suffix.
     concurrency:
-      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('{0}/.github/workflows/enable-auto-merge.yaml@', github.repository)) && 'direct') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
 
@@ -466,6 +464,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
         run: |
           set -euo pipefail
@@ -476,13 +475,54 @@ jobs:
           eligible=$(jq -r 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end' <<<"$pr_json")
           superseded=false
 
-          # Workflow-level caller-keyed arbitration runs before any job and the
-          # live head binding remains an independent fail-closed defense. Do
-          # not treat unrelated title/label edits as supersession.
+          # Concurrency cancels active/queued older runs, while GitHub does not
+          # promise start order across the group. Keep durable live bindings
+          # for both changed heads and same-head lifecycle events without
+          # treating unrelated title/label edits as supersession.
           if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]; then
             eligible=false
             superseded=true
             echo "::notice::PR #${PR_NUMBER} head changed after this event (${EVENT_HEAD} -> ${HEAD_SHA}); the newer event's run decides."
+          fi
+
+          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$superseded" != "true" ]]; then
+            OWNER="${REPOSITORY%%/*}"
+            NAME="${REPOSITORY#*/}"
+            lifecycle_file="$RUNNER_TEMP/pull-request-lifecycle-${GITHUB_RUN_ID}.json"
+            # shellcheck disable=SC2016 # GraphQL $variables, not shell expansion.
+            gh api graphql --paginate \
+              -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
+                repository(owner:$owner,name:$name){pullRequest(number:$number){
+                  timelineItems(first:100,after:$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT]){
+                    nodes{
+                      __typename
+                      ... on ReopenedEvent{createdAt}
+                      ... on ReadyForReviewEvent{createdAt}
+                    }
+                    pageInfo{hasNextPage endCursor}
+                  }
+                }}
+              }' \
+              -f owner="$OWNER" -f name="$NAME" -F number="$PR_NUMBER" |
+              jq -s '[.[].data.repository.pullRequest.timelineItems.nodes[]? | {
+                type: .__typename,
+                createdAt: .createdAt
+              }]' > "$lifecycle_file"
+
+            if bash .devantler-tech-actions/.scripts/is-current-pull-request-lifecycle.sh \
+              "$EVENT_UPDATED_AT" < "$lifecycle_file"; then
+              :
+            else
+              lifecycle_status=$?
+              if [[ "$lifecycle_status" -eq 1 ]]; then
+                eligible=false
+                superseded=true
+                echo "::notice::A later same-head pull-request lifecycle event exists; that event's run decides."
+              else
+                echo "::error::Unable to prove pull-request lifecycle order."
+                exit "$lifecycle_status"
+              fi
+            fi
           fi
 
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"

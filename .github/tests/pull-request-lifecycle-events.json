@@ -1,0 +1,41 @@
+[
+  {
+    "name": "no lifecycle events",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [],
+    "expected_exit": 0
+  },
+  {
+    "name": "current and older events do not supersede",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {"type": "ReopenedEvent", "createdAt": "2026-07-28T19:59:59Z"},
+      {"type": "ReadyForReviewEvent", "createdAt": "2026-07-28T20:00:00Z"}
+    ],
+    "expected_exit": 0
+  },
+  {
+    "name": "later reopen supersedes",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:01Z"}
+    ],
+    "expected_exit": 1
+  },
+  {
+    "name": "later ready-for-review supersedes",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {"type": "ReadyForReviewEvent", "createdAt": "2026-07-28T20:00:02Z"}
+    ],
+    "expected_exit": 1
+  },
+  {
+    "name": "malformed timeline fails closed",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {"type": "ReopenedEvent"}
+    ],
+    "expected_exit": 2
+  }
+]

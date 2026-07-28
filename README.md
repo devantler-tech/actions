@@ -239,10 +239,11 @@ This caller-keyed state lease is acquired only when the reusable auto-merge lane
 so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
 arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
 edits create no replacement run.
-Every `workflow_call` invocation that enables actor trust must provide a globally caller-unique,
-ref-independent `concurrency-key`; a missing key fails the required workflow before any privileged
-job can start. The direct workflow has a built-in stable identity. Legacy default-off callers can
-omit the key and retain their existing behavior without gaining privileged actor enforcement.
+Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
+ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
+safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.
+The direct and cross-repository required-workflow paths have a built-in stable source identity.
+Legacy default-off callers retain their existing behavior.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
@@ -291,12 +292,15 @@ jobs:
 ```
 
 > **Actor-trust note:** Callers that enable actor trust must grant `contents: write` and
-> `pull-requests: write` as shown above and pass a stable, globally caller-unique
-> `concurrency-key`. Workflow-level arbitration orders lifecycle state only for the reusable lane
-> that actually executes; skipped or unrelated caller runs do not reauthorize or supersede it.
+> `pull-requests: write` as shown above and should pass a stable, globally caller-unique
+> `concurrency-key`. An omitted key uses a safe repository-wide compatibility lane, which can
+> cancel independent actor-trust call sites for the same PR but cannot let stale authority proceed;
+> explicit keys avoid that availability tradeoff. Workflow-level arbitration orders lifecycle state
+> only for the reusable lane that actually executes; skipped or unrelated caller runs do not
+> reauthorize or supersede it.
 > Both the original and rerun-triggering actors must be trusted for every privileged event. The
 > write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
-> App private key. Missing caller identity or revoke authority fails the required workflow closed.
+> App private key. Missing revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without
 > enforcement — the enforced paths' read-only lookups run on separate App
@@ -307,11 +311,12 @@ jobs:
 
 #### Secrets and Inputs
 
-| Key                    | Type   | Default | Required | Description                                                           |
-|------------------------|--------|---------|----------|-----------------------------------------------------------------------|
-| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                |
-| `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation        |
-| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad |
+| Key                    | Type   | Default | Required | Description                                                               |
+|------------------------|--------|---------|----------|---------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                    |
+| `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation            |
+| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad     |
+| `concurrency-key`      | Input  | `""`    | No       | Recommended with actor trust; omitted calls share a safe fallback lane    |
 
 </details>
 
