@@ -32,15 +32,17 @@ on:
           removals of trusted review/comment evidence actively revoke stale
           auto-merge and merge-queue state when review gates are also
           enforced. Direct/required-workflow runs can opt in with the
-          ENFORCE_ACTOR_TRUST repository or organization variable.
+          ENFORCE_ACTOR_TRUST repository or organization variable;
+          workflow_call callers must also provide concurrency-key.
       concurrency-key:
         type: string
         required: false
         default: ""
         description: >-
-          Stable caller-unique key for workflow-level arbitration. Set a
-          distinct value on each job when one caller workflow invokes this
-          reusable workflow more than once; a single invocation can omit it.
+          Stable caller-unique key for workflow-level arbitration. Required
+          for every workflow_call invocation that enables actor trust; legacy
+          default-off callers can omit it without gaining privileged actor
+          enforcement.
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -68,7 +70,85 @@ on:
 # review/comment updates serialize without cancelling the legacy default-off
 # pull_request arming path.
 concurrency:
-  group: enable-auto-merge-${{ github.workflow }}-${{ inputs.concurrency-key || 'default' }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ ((github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.pull_request.user.login)) || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && ((github.event_name == 'pull_request_review' && github.event.action == 'dismissed' && !github.event.pull_request.draft && contains(fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'), github.event.review.user.login) && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.pull_request.user.login)) || (github.event_name == 'issue_comment' && github.event.action == 'deleted' && github.event.issue.pull_request && github.event.issue.state == 'open' && contains(fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'), github.event.comment.user.login) && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.issue.user.login))))) && 'state' || github.run_id }}
+  group: >-
+    enable-auto-merge-${{ github.repository }}-${{
+      inputs.concurrency-key ||
+      (
+        startsWith(
+          github.workflow_ref,
+          format(
+            '{0}/.github/workflows/enable-auto-merge.yaml@',
+            github.repository
+          )
+        ) &&
+        'direct'
+      ) ||
+      github.workflow_ref
+    }}-${{
+      github.event.pull_request.number ||
+      github.event.issue.number ||
+      github.run_id
+    }}-${{
+      (
+        (
+          inputs.concurrency-key != '' ||
+          startsWith(
+            github.workflow_ref,
+            format(
+              '{0}/.github/workflows/enable-auto-merge.yaml@',
+              github.repository
+            )
+          )
+        ) &&
+        (
+          (
+            github.event_name == 'pull_request' &&
+            !github.event.pull_request.draft &&
+            contains(
+              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              github.event.pull_request.user.login
+            )
+          ) ||
+          (
+            (
+              inputs.enforce-review-gates ||
+              vars.ENFORCE_MERGE_GATES == 'true'
+            ) &&
+            (
+              (
+                github.event_name == 'pull_request_review' &&
+                github.event.action == 'dismissed' &&
+                !github.event.pull_request.draft &&
+                contains(
+                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  github.event.review.user.login
+                ) &&
+                contains(
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  github.event.pull_request.user.login
+                )
+              ) ||
+              (
+                github.event_name == 'issue_comment' &&
+                github.event.action == 'deleted' &&
+                github.event.issue.pull_request &&
+                github.event.issue.state == 'open' &&
+                contains(
+                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  github.event.comment.user.login
+                ) &&
+                contains(
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  github.event.issue.user.login
+                )
+              )
+            )
+          )
+        )
+      ) &&
+      'state' ||
+      github.run_id
+    }}
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
 
 permissions: {}
@@ -144,6 +224,10 @@ jobs:
             (
               env.ACTOR_TRUST_ENFORCED != 'true' ||
               (
+                (
+                  job.workflow_ref == github.workflow_ref ||
+                  inputs.concurrency-key != ''
+                ) &&
                 contains(
                   fromJSON(env.TRUSTED_TRIGGER_ACTORS),
                   github.actor
@@ -162,6 +246,10 @@ jobs:
         if: >-
           ${{
             env.ACTOR_TRUST_ENFORCED == 'true' &&
+            (
+              job.workflow_ref == github.workflow_ref ||
+              inputs.concurrency-key != ''
+            ) &&
             (
               (
                 github.event_name == 'pull_request' &&
@@ -217,6 +305,18 @@ jobs:
             )
           }}
         run: echo "disarm=true" >> "$GITHUB_OUTPUT"
+
+      - name: ❌ Reject missing reusable caller concurrency key
+        id: require-concurrency-key
+        if: >-
+          ${{
+            env.ACTOR_TRUST_ENFORCED == 'true' &&
+            job.workflow_ref != github.workflow_ref &&
+            inputs.concurrency-key == ''
+          }}
+        run: |
+          echo "::error::Actor-enforced workflow_call invocations must provide a stable caller-unique concurrency-key."
+          exit 1
 
       - name: ✅ Complete ineligible required-workflow run
         id: ineligible
@@ -293,7 +393,7 @@ jobs:
     # because it reads the same current state. Pull-request runs already hold
     # the earlier workflow-level state lease and use a run-unique job suffix.
     concurrency:
-      group: enable-auto-merge-review-${{ github.workflow }}-${{ inputs.concurrency-key || 'default' }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('{0}/.github/workflows/enable-auto-merge.yaml@', github.repository)) && 'direct') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
 
