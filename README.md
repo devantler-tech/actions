@@ -233,8 +233,9 @@ explicit `devantler` maintainer actor. Workflow reruns also require the initiati
 untrusted collaborator. A rejected pull-request lifecycle trigger—or, when review gates are also
 enforced, an untrusted dismissal/deletion of trusted review evidence—receives no App token and
 actively revokes both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`.
-These state-removal runs arbitrate at workflow creation, so they cancel an older privileged run
-before its jobs can mutate the PR. Pull-request
+These state-removal runs arbitrate within each caller workflow at run creation, so they cancel an
+older privileged run before its jobs can mutate the PR without cancelling another caller's run.
+Pull-request
 arming additionally checks a bounded, fail-closed snapshot for later runs of the same workflow and
 PR before minting write access. This run-ID proof orders same-second lifecycle events; unrelated
 title, label, or assignment edits create no replacement run and do not suppress arming.

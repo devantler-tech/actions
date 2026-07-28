@@ -60,7 +60,7 @@ on:
 # review/comment updates serialize without cancelling the legacy default-off
 # pull_request arming path.
 concurrency:
-  group: enable-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: enable-auto-merge-${{ github.workflow_ref }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
 
 permissions: {}

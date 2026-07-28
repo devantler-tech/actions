@@ -214,7 +214,7 @@ workflow_concurrency_group="$(yq -r '.concurrency.group // ""' "$workflow")"
 workflow_cancel_in_progress="$(yq -r '.concurrency."cancel-in-progress" // ""' "$workflow")"
 expected_workflow_cancel="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$workflow_concurrency_group" != 'enable-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}' ||
+if [[ "$workflow_concurrency_group" != 'enable-auto-merge-${{ github.workflow_ref }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}' ||
   "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ]]; then
   echo "::error file=$workflow::lifecycle and evidence-removal runs must arbitrate at workflow creation before any privileged job can mutate the PR"
   status=1
