@@ -154,9 +154,14 @@ if [[ "$allowlist_json" != "$expected_allowlist_json" ||
   echo "::error file=$workflow::trusted bot authors and triggering actors must be defined once in the eligibility job"
   status=1
 fi
-reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
+reviewers_json="$(yq -r '.env.TRUSTED_REVIEW_ACTORS' "$workflow" | jq -c .)"
+expected_reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
+if [[ "$reviewers_json" != "$expected_reviewers_json" ]]; then
+  echo "::error file=$workflow::trusted review and comment actors must be defined once in the workflow environment"
+  status=1
+fi
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor)))}}"
+expected_condition="\${{((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON(env.TRUSTED_REVIEW_ACTORS),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor)))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"

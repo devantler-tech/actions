@@ -58,6 +58,7 @@ permissions: {}
 env:
   TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
   TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","chatgpt-codex-connector[bot]","devantler"]'
+  TRUSTED_REVIEW_ACTORS: '["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 
 jobs:
   # Required-workflow rules treat a workflow whose only job is SKIPPED as
@@ -99,7 +100,7 @@ jobs:
               (
                 github.event_name == 'pull_request_review' &&
                 contains(
-                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  fromJSON(env.TRUSTED_REVIEW_ACTORS),
                   github.event.review.user.login
                 ) &&
                 !github.event.pull_request.draft &&
@@ -113,7 +114,7 @@ jobs:
                 github.event.issue.pull_request &&
                 github.event.issue.state == 'open' &&
                 contains(
-                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  fromJSON(env.TRUSTED_REVIEW_ACTORS),
                   github.event.comment.user.login
                 ) &&
                 contains(
