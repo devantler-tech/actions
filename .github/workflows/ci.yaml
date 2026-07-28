@@ -469,6 +469,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
 
+      - name: 🔒 Verify caller NuGet configuration is byte-identical
+        run: >-
+          git diff --exit-code --
+          .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+        shell: bash
+
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"

@@ -26,13 +26,16 @@ runs:
       run: |
         set -euo pipefail
         source_cleanup=none
+        config_path=
+        config_backup=
         cleanup_source() {
           case "$source_cleanup" in
-            added)
-              dotnet nuget remove source github
+            created)
+              rm -f "$config_path"
               ;;
-            re-disable)
-              dotnet nuget disable source github
+            restore)
+              cp "$config_backup" "$config_path"
+              rm -f "$config_backup"
               ;;
           esac
         }
@@ -42,13 +45,32 @@ runs:
         if grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Enabled\]' <<<"$source_listing"; then
           :
         elif grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Disabled\]' <<<"$source_listing"; then
-          dotnet nuget enable source github
-          source_cleanup=re-disable
+          echo "::error::The existing NuGet source named 'github' is disabled; enable or rename it before authenticated restore"
+          exit 1
         else
-          dotnet nuget add source \
-            --name github \
-            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-          source_cleanup=added
+          config_path="$(find . -maxdepth 1 -type f -iname 'nuget.config' -print -quit)"
+          if [[ -n "$config_path" ]]; then
+            config_backup="$(mktemp)"
+            cp "$config_path" "$config_backup"
+            chmod 600 "$config_backup"
+            source_cleanup=restore
+            dotnet nuget add source \
+              --configfile "$config_path" \
+              --name github \
+              "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          else
+            config_path="$PWD/NuGet.Config"
+            source_cleanup=created
+            umask 077
+            cat >"$config_path" <<'EOF'
+            <?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
+              </packageSources>
+            </configuration>
+            EOF
+          fi
         fi
 
         dotnet restore
