@@ -239,6 +239,9 @@ Pull-request
 arming additionally checks a bounded, fail-closed snapshot for later runs of the same workflow and
 PR before minting write access. This run-ID proof orders same-second lifecycle events; unrelated
 title, label, or assignment edits create no replacement run and do not suppress arming.
+Caller workflow identity is ref-independent, so pull-request and review/comment events share the
+same arbitration scope. If one caller workflow invokes Enable Auto-Merge from multiple jobs, give
+each invocation a distinct, stable `concurrency-key`; single-invocation callers can omit it.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's

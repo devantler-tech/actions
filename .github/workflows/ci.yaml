@@ -2087,6 +2087,8 @@ jobs:
     # enabled-state gate decisions are covered by the script-level fixture
     # tests (test-enable-auto-merge-pentad-gate) and the wiring flips live
     # per repo via ENFORCE_MERGE_GATES after validation.
+    with:
+      concurrency-key: default-self-test
     permissions:
       pull-requests: write
       contents: write
@@ -2110,6 +2112,7 @@ jobs:
     # changes without competing with bot auto-merge. The author-gate fixtures
     # below cover trusted/untrusted actor decisions and pin the disarm wiring.
     with:
+      concurrency-key: actor-trust-self-test
       enforce-actor-trust: true
     permissions:
       actions: read

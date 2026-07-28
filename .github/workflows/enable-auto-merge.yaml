@@ -33,6 +33,14 @@ on:
           auto-merge and merge-queue state when review gates are also
           enforced. Direct/required-workflow runs can opt in with the
           ENFORCE_ACTOR_TRUST repository or organization variable.
+      concurrency-key:
+        type: string
+        required: false
+        default: ""
+        description: >-
+          Stable caller-unique key for workflow-level arbitration. Set a
+          distinct value on each job when one caller workflow invokes this
+          reusable workflow more than once; a single invocation can omit it.
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -60,7 +68,7 @@ on:
 # review/comment updates serialize without cancelling the legacy default-off
 # pull_request arming path.
 concurrency:
-  group: enable-auto-merge-${{ github.workflow_ref }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  group: enable-auto-merge-${{ github.workflow }}-${{ inputs.concurrency-key || 'default' }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ ((github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.pull_request.user.login)) || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && ((github.event_name == 'pull_request_review' && github.event.action == 'dismissed' && !github.event.pull_request.draft && contains(fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'), github.event.review.user.login) && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.pull_request.user.login)) || (github.event_name == 'issue_comment' && github.event.action == 'deleted' && github.event.issue.pull_request && github.event.issue.state == 'open' && contains(fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'), github.event.comment.user.login) && contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'), github.event.issue.user.login))))) && 'state' || github.run_id }}
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
 
 permissions: {}
@@ -280,6 +288,13 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
+    # Review/comment runs re-evaluate complete live gate state, so serializing
+    # them preserves the prior contract; a superseding pending run is safe
+    # because it reads the same current state. Pull-request runs already hold
+    # the earlier workflow-level state lease and use a run-unique job suffix.
+    concurrency:
+      group: enable-auto-merge-review-${{ github.workflow }}-${{ inputs.concurrency-key || 'default' }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
 
     steps:
@@ -377,11 +392,16 @@ jobs:
             echo "::error::Workflow-run ordering snapshot count was inconsistent."
             exit 2
           fi
+          jq -s . "$pages_jsonl" > "$pages_json"
+          unique_total=$(jq -er '[.[].workflow_runs[].id] | unique | length' "$pages_json")
+          if [[ "$unique_total" -ne "$expected_total" ]]; then
+            echo "::error::Workflow-run ordering snapshot repeated or omitted run IDs."
+            exit 2
+          fi
           if [[ "$current_seen" != "true" ]]; then
             echo "::error::Current run was absent from the bounded workflow-run snapshot."
             exit 2
           fi
-          jq -s . "$pages_jsonl" > "$pages_json"
 
           if bash .devantler-tech-actions-order/.scripts/is-current-pull-request-workflow-run.sh \
             "$RUN_ID" "$workflow_id" "$PR_NUMBER" < "$pages_json"; then

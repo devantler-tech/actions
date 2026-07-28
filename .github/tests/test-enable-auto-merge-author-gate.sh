@@ -14,18 +14,23 @@ condition="$(yq -r '
 status=0
 
 actor_gate_default="$(yq -r '.on.workflow_call.inputs."enforce-actor-trust".default | tostring' "$workflow")"
-if [[ "$actor_gate_default" != "false" ]]; then
+concurrency_key_default="$(yq -r '.on.workflow_call.inputs."concurrency-key".default // ""' "$workflow")"
+if [[ "$actor_gate_default" != "false" || -n "$concurrency_key_default" ]]; then
   echo "::error file=$workflow::actor-trust enforcement must ship as a default-off workflow_call input"
   status=1
 fi
 
+default_test_key="$(yq -r '.jobs."test-enable-auto-merge".with."concurrency-key" // ""' "$ci_workflow")"
 enabled_test_uses="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".uses // ""' "$ci_workflow")"
 enabled_test_flag="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".with."enforce-actor-trust" | tostring' "$ci_workflow")"
+enabled_test_key="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".with."concurrency-key" // ""' "$ci_workflow")"
 enabled_test_permissions="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$ci_workflow")"
 if [[ "$enabled_test_uses" != "./.github/workflows/enable-auto-merge.yaml" ||
   "$enabled_test_flag" != "true" ||
+  "$default_test_key" != "default-self-test" ||
+  "$enabled_test_key" != "actor-trust-self-test" ||
   "$enabled_test_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
-  echo "::error file=$ci_workflow::CI must invoke the reusable workflow with actor trust enabled and its exact revoke permissions"
+  echo "::error file=$ci_workflow::CI must isolate its two reusable invocations and exercise actor trust with exact revoke permissions"
   status=1
 fi
 
@@ -125,6 +130,8 @@ if [[ "$event_order_permissions" != "permission-actions:read" ||
   "$event_order_run" != *"total_count"* ||
   "$event_order_run" != *'[[ "$expected_total" -ge 1000 ]]'* ||
   "$event_order_run" != *"collected_total"* ||
+  "$event_order_run" != *"unique_total"* ||
+  "$event_order_run" != *"unique | length"* ||
   "$event_order_run" != *"snapshot_at"* ||
   "$event_order_run" != *"current_seen"* ||
   "$event_order_run" != *'pages_jsonl="$RUNNER_TEMP/'* ||
@@ -214,8 +221,17 @@ workflow_concurrency_group="$(yq -r '.concurrency.group // ""' "$workflow")"
 workflow_cancel_in_progress="$(yq -r '.concurrency."cancel-in-progress" // ""' "$workflow")"
 expected_workflow_cancel="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$workflow_concurrency_group" != 'enable-auto-merge-${{ github.workflow_ref }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}' ||
-  "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ]]; then
+expected_workflow_group='enable-auto-merge-${{github.workflow}}-${{inputs.concurrency-key||'"'"'default'"'"'}}-${{github.repository}}-${{github.event.pull_request.number||github.event.issue.number||github.run_id}}-${{((github.event_name=='"'"'pull_request'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request_review'"'"'&&github.event.action=='"'"'dismissed'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.review.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.pull_request.user.login))||(github.event_name=='"'"'issue_comment'"'"'&&github.event.action=='"'"'deleted'"'"'&&github.event.issue.pull_request&&github.event.issue.state=='"'"'open'"'"'&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.comment.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'"'"'),github.event.issue.user.login)))))&&'"'"'state'"'"'||github.run_id}}'
+normalized_workflow_group="$(tr -d '[:space:]' <<<"$workflow_concurrency_group")"
+review_job_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
+review_job_cancel="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" | tostring' "$workflow")"
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+expected_review_job_group='enable-auto-merge-review-${{ github.workflow }}-${{ inputs.concurrency-key || '"'"'default'"'"' }}-${{ github.repository }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == '"'"'pull_request'"'"' && github.run_id || '"'"'review'"'"' }}'
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+if [[ "$normalized_workflow_group" != "$expected_workflow_group" ||
+  "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ||
+  "$review_job_group" != "$expected_review_job_group" ||
+  "$review_job_cancel" != "false" ]]; then
   echo "::error file=$workflow::lifecycle and evidence-removal runs must arbitrate at workflow creation before any privileged job can mutate the PR"
   status=1
 fi
