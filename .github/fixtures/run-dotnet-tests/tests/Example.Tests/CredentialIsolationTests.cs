@@ -13,43 +13,56 @@ public class CredentialIsolationTests
   [Fact]
   public void GitHubPackagesCredential_IsUnavailableToRepositoryTests()
   {
-    string? configPath = Environment.GetEnvironmentVariable("RUN_DOTNET_TESTS_CREDENTIAL_CONFIG");
-    if (string.IsNullOrWhiteSpace(configPath))
+    string? configOverride = Environment.GetEnvironmentVariable("RUN_DOTNET_TESTS_CREDENTIAL_CONFIG");
+    string[] configPaths;
+    if (!string.IsNullOrWhiteSpace(configOverride))
     {
-      if (!string.Equals(
-          Environment.GetEnvironmentVariable("GITHUB_ACTIONS"),
-          "true",
-          StringComparison.OrdinalIgnoreCase))
-      {
-        return;
-      }
-
-      configPath = OperatingSystem.IsWindows()
-        ? Path.Combine(
-          Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-          "NuGet",
-          "NuGet.Config")
-        : Path.Combine(
-          Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-          ".nuget",
-          "NuGet",
-          "NuGet.Config");
+      configPaths = [configOverride];
     }
-
-    Assert.Null(Environment.GetEnvironmentVariable("NuGetPackageSourceCredentials_github"));
-
-    if (!File.Exists(configPath))
+    else if (string.Equals(
+      Environment.GetEnvironmentVariable("GITHUB_ACTIONS"),
+      "true",
+      StringComparison.OrdinalIgnoreCase))
+    {
+      configPaths = OperatingSystem.IsWindows()
+        ? [
+          Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "NuGet",
+            "NuGet.Config"),
+        ]
+        : [
+          Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".nuget",
+            "NuGet",
+            "NuGet.Config"),
+          Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".config",
+            "NuGet",
+            "NuGet.Config"),
+        ];
+    }
+    else
     {
       return;
     }
 
-    var config = XDocument.Load(configPath);
-    var githubCredentials = config
-      .Descendants("packageSourceCredentials")
-      .Elements()
-      .FirstOrDefault(element =>
-        string.Equals(element.Name.LocalName, "github", StringComparison.OrdinalIgnoreCase));
+    Assert.Null(Environment.GetEnvironmentVariable("NuGetPackageSourceCredentials_github"));
 
-    Assert.Null(githubCredentials);
+    foreach (string configPath in configPaths.Where(File.Exists))
+    {
+      var config = XDocument.Load(configPath);
+      var githubCredentials = config
+        .Descendants("packageSourceCredentials")
+        .Elements()
+        .FirstOrDefault(element =>
+          string.Equals(element.Name.LocalName, "github", StringComparison.OrdinalIgnoreCase));
+
+      Assert.False(
+        githubCredentials is not null,
+        "GitHub Packages credentials must not be persisted where repository tests can read them.");
+    }
   }
 }
