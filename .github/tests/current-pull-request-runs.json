@@ -1,0 +1,45 @@
+[
+  {
+    "name": "current run remains authoritative",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_exit": 0,
+    "runs": [{"workflow_runs": [{"id": 100, "workflow_id": 7, "pull_requests": [{"number": 42}]}]}]
+  },
+  {
+    "name": "later same-second lifecycle run supersedes",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_exit": 1,
+    "runs": [{"workflow_runs": [
+      {"id": 100, "workflow_id": 7, "created_at": "2026-07-28T20:00:02Z", "pull_requests": [{"number": 42}]},
+      {"id": 101, "workflow_id": 7, "created_at": "2026-07-28T20:00:02Z", "pull_requests": [{"number": 42}]}
+    ]}]
+  },
+  {
+    "name": "later run of another workflow does not supersede",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_exit": 0,
+    "runs": [{"workflow_runs": [{"id": 101, "workflow_id": 8, "pull_requests": [{"number": 42}]}]}]
+  },
+  {
+    "name": "later run for another pull request does not supersede",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_exit": 0,
+    "runs": [{"workflow_runs": [{"id": 101, "workflow_id": 7, "pull_requests": [{"number": 43}]}]}]
+  },
+  {
+    "name": "malformed pages fail closed",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_exit": 2,
+    "runs": {"workflow_runs": []}
+  }
+]

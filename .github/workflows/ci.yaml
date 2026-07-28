@@ -2144,6 +2144,9 @@ jobs:
       - name: 🧪 Verify stale rejected-event ordering
         run: bash .github/tests/test-find-trusted-superseding-pr-run.sh
 
+      - name: 🧪 Verify privileged event ordering
+        run: bash .github/tests/test-is-current-pull-request-workflow-run.sh
+
       - name: 🧪 Verify stale rejected-event lookup failures revoke
         run: bash .github/tests/test-disarm-untrusted-event.sh
 

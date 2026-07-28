@@ -84,6 +84,47 @@ if [[ "$auto_merge_needs" != "eligibility" ||
   status=1
 fi
 
+event_order_token="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "event-order-token")][0] // {}' "$workflow")"
+event_order_step="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "event-order")][0] // {}' "$workflow")"
+event_order_permissions="$(yq -r '.with | to_entries | map(select(.key != "client-id" and .key != "private-key")) | sort_by(.key) | map(.key + ":" + .value) | join(",")' <<<"$event_order_token")"
+event_order_condition="$(yq -r '.if // ""' <<<"$event_order_token")"
+event_order_run="$(yq -r '.run // ""' <<<"$event_order_step")"
+event_order_checkout="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "📥 Checkout trusted event-order script")][0] // {}' "$workflow")"
+event_order_checkout_ref="$(yq -r '.with.ref // ""' <<<"$event_order_checkout")"
+event_order_checkout_path="$(yq -r '.with.path // ""' <<<"$event_order_checkout")"
+app_token_condition="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token")
+   | .if // ""][0]' "$workflow")"
+app_token_base_condition="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.id == "app-token-base")
+   | .if // ""][0]' "$workflow")"
+resolve_condition="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "🔎 Resolve target pull request")
+   | .if // ""][0]' "$workflow")"
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+if [[ "$event_order_permissions" != "permission-actions:read" ||
+  "$event_order_condition" != "github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true')" ||
+  "$event_order_run" != *"is-current-pull-request-workflow-run.sh"* ||
+  "$event_order_run" != *'created=">='* ||
+  "$event_order_run" != *'echo "current=false"'* ||
+  "$event_order_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
+  "$event_order_checkout_path" != ".devantler-tech-actions-order" ||
+  "$app_token_condition" != "steps.event-order.outputs.current != 'false'" ||
+  "$app_token_base_condition" != "steps.event-order.outputs.current != 'false' && steps.app-token.outcome == 'failure'" ||
+  "$resolve_condition" != "steps.event-order.outputs.current != 'false'" ]]; then
+  echo "::error file=$workflow::the serialized privileged job must prove strict run-ID order from trusted code before minting write access or mutating the PR"
+  status=1
+fi
+
 eligibility_uses="$(yq -r '[(.jobs.eligibility.steps // [])[] | .uses // ""] | join("\n")' "$workflow")"
 if [[ "$eligibility_uses" == *"create-github-app-token"* ]]; then
   echo "::error file=$workflow::ineligible events must not mint a privileged GitHub App token"
@@ -96,7 +137,7 @@ fi
 allowlist_json="$(yq -r '.env.TRUSTED_BOT_AUTHORS' "$workflow" | jq -c .)"
 trigger_actors_json="$(yq -r '.env.TRUSTED_TRIGGER_ACTORS' "$workflow" | jq -c .)"
 expected_allowlist_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
-expected_trigger_actors_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
+expected_trigger_actors_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","chatgpt-codex-connector[bot]","devantler"]'
 if [[ "$allowlist_json" != "$expected_allowlist_json" ||
   "$trigger_actors_json" != "$expected_trigger_actors_json" ]]; then
   echo "::error file=$workflow::trusted bot authors and triggering actors must be defined once in the eligibility job"
@@ -104,7 +145,7 @@ if [[ "$allowlist_json" != "$expected_allowlist_json" ||
 fi
 reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login))}}"
+expected_condition="\${{((github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login)))&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor)))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"
@@ -223,13 +264,13 @@ resolve_run="$(yq -r '
 expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
-  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.updated_at }}' ||
+  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != "" ||
   "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
   "$resolve_run" != *"headRefOid"* ||
-  "$resolve_run" != *"updatedAt"* ||
+  "$resolve_run" == *"updatedAt"* ||
   "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
-  "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && ( "$HEAD_SHA" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ) ]]'* ]]; then
-  echo "::error file=$workflow::actor enforcement must reject pull_request runs superseded by a newer head or lifecycle event"
+  "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
+  echo "::error file=$workflow::actor enforcement must reject a moved head without treating unrelated PR edits as supersession"
   status=1
 fi
 
@@ -251,14 +292,30 @@ while IFS= read -r fixture; do
   login="$(jq -r '.login' <<<"$fixture")"
   actor="$(jq -r '.actor' <<<"$fixture")"
   triggering_actor="$(jq -r '.triggering_actor // .actor' <<<"$fixture")"
+  reviewer="$(jq -r '.reviewer // ""' <<<"$fixture")"
+  issue_open="$(jq -r '.issue_open // true' <<<"$fixture")"
+  has_pull_request="$(jq -r '.has_pull_request // true' <<<"$fixture")"
   enforce="$(jq -r 'if has("enforce") then .enforce else true end' <<<"$fixture")"
   expected="$(jq -r '.eligible' <<<"$fixture")"
   expected_disarm="$(jq -r '.disarm // false' <<<"$fixture")"
   actual=false
   actual_disarm=false
 
+  base_eligible=false
   if [[ "$event_name" == "pull_request" && "$draft" == "false" ]] &&
+    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null; then
+    base_eligible=true
+  elif [[ "$event_name" == "pull_request_review" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
+    jq -e --arg reviewer "$reviewer" 'index($reviewer) != null' <<<"$reviewers_json" >/dev/null; then
+    base_eligible=true
+  elif [[ "$event_name" == "issue_comment" && "$issue_open" == "true" && "$has_pull_request" == "true" ]] &&
+    jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
+    jq -e --arg reviewer "$reviewer" 'index($reviewer) != null' <<<"$reviewers_json" >/dev/null; then
+    base_eligible=true
+  fi
+
+  if [[ "$base_eligible" == "true" ]] &&
     { [[ "$enforce" != "true" ]] ||
       { jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null &&
         jq -e --arg actor "$triggering_actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; }; then

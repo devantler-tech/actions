@@ -226,14 +226,15 @@ click.
 commit it checked.
 
 **With actor-trust enforcement turned on** — the `enforce-actor-trust` input, or the
-`ENFORCE_ACTOR_TRUST` repository/organization variable — every `pull_request` trigger on an
-allowlisted bot-authored PR must come from an allowlisted bot or the explicit `devantler`
-maintainer actor. Workflow reruns also require the initiating `github.triggering_actor` to be
-allowlisted; a trusted original event cannot be replayed by an untrusted collaborator. A rejected
-trigger receives no App token and actively revokes both classic auto-merge and merge-queue state
-with the caller's `GITHUB_TOKEN`. Pull-request arming and revocation use a newest-event-wins
-critical section: a newer rejected event cancels older arming, while a later trusted maintainer
-event is an explicit reauthorization.
+`ENFORCE_ACTOR_TRUST` repository/organization variable — every privileged pull-request, review,
+or comment trigger on an allowlisted bot-authored PR must come from an allowlisted bot or the
+explicit `devantler` maintainer actor. Workflow reruns also require the initiating
+`github.triggering_actor` to be allowlisted; a trusted original event cannot be replayed by an
+untrusted collaborator. A rejected pull-request trigger receives no App token and actively revokes
+both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`. Pull-request
+arming additionally proves that no later run of the same workflow and PR exists before any PR
+state mutation. This run-ID proof orders same-second lifecycle events; unrelated title, label, or
+assignment edits create no replacement run and do not suppress arming.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
@@ -285,18 +286,21 @@ jobs:
 > **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
 > `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
 > delayed rejected event was superseded by a newer trusted run of the same caller workflow for that
-> PR, created strictly after the observed live PR update; same-second timestamps are ambiguous and
-> revoke fail-closed. Both the original and rerun-triggering actors must be trusted, and unrelated
-> workflows do not reauthorize. The write scopes revoke classic auto-merge or merge-queue state.
+> PR, created strictly after the observed live PR update. Before arming, a separate read-only App
+> token proves by run ID that the current pull-request event has no later same-workflow run for that
+> PR, including events created in the same timestamp second. Actor-trust opt-in therefore also
+> requires the GitHub App installation to grant **Actions: read**. Both the original and
+> rerun-triggering actors must be trusted for every privileged event, and unrelated workflows do not
+> reauthorize. The write scopes revoke classic auto-merge or merge-queue state.
 > Rejected events never receive the App private key.
 > Missing proof or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without
-> enforcement — the enforced gate's read-only lookups run on a separate App
-> token minted only on enforced runs, so opting in requires the GitHub App
-> installation (not the caller's `GITHUB_TOKEN`) to include **Checks: read**,
-> **Actions: read**, and **Contents: read**. If the installation lacks them,
-> the gate fails closed (approval is withheld and stale arming is revoked) rather than open.
+> enforcement — the enforced paths' read-only lookups run on separate App
+> tokens minted only when needed. Actor trust requires **Actions: read**;
+> review enforcement additionally requires **Checks: read** and **Contents:
+> read**. If the installation lacks a required scope, the workflow fails
+> closed rather than approving or arming on unproven evidence.
 
 #### Secrets and Inputs
 

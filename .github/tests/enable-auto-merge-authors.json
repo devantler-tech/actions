@@ -153,5 +153,45 @@
     "enforce": true,
     "disarm": true,
     "eligible": false
+  },
+  {
+    "name": "trusted CodeRabbit review event",
+    "event_name": "pull_request_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "coderabbitai[bot]",
+    "eligible": true
+  },
+  {
+    "name": "untrusted collaborator reruns CodeRabbit review event",
+    "event_name": "pull_request_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "octocat",
+    "eligible": false
+  },
+  {
+    "name": "trusted Codex comment event",
+    "event_name": "issue_comment",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "chatgpt-codex-connector[bot]",
+    "eligible": true
+  },
+  {
+    "name": "untrusted collaborator reruns Codex comment event",
+    "event_name": "issue_comment",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "octocat",
+    "eligible": false
   }
 ]
