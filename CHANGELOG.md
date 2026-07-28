@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.9](https://github.com/devantler-tech/actions/compare/v10.2.8...v10.2.9) (2026-07-28)
+
+
+### Bug Fixes
+
+* stop persisting Go module tokens ([#675](https://github.com/devantler-tech/actions/issues/675)) ([4541f1d](https://github.com/devantler-tech/actions/commit/4541f1d7ee69d95d02a63c774a76dcff7dbbc732))
+
 ## [10.2.8](https://github.com/devantler-tech/actions/compare/v10.2.7...v10.2.8) (2026-07-28)
 
 
