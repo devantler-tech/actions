@@ -384,10 +384,15 @@ jobs:
     #     newly-published advisory already applies to it.
     # On the default branch the scan therefore runs on every invocation; on pull requests
     # and topic branches the path filter still applies, so per-PR cost is unchanged.
+    # The default-branch arm tests `go == 'false'` rather than being unconditional: an
+    # EMPTY output means the `changes` job did not run at all (it is itself gated), and
+    # only an explicit 'false' proves the filter ran and found no Go paths. Keying on the
+    # explicit value keeps this independent of how skipped-`needs` propagate.
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
       && (needs.changes.outputs.go == 'true'
-      || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      || (needs.changes.outputs.go == 'false'
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))
     permissions:
       contents: read
     # govulncheck's default symbol scan builds a whole-program call graph in memory,

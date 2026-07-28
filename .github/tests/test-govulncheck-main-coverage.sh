@@ -96,10 +96,33 @@ else
   # still has to hold, which is exactly the state check 2 exists to prevent.
   if grep -qF 'needs.changes.outputs.go' <<<"$top_level"; then
     fail "govulncheck AND-s the path filter (needs.changes.outputs.go) at the top level, so a default-branch run with no Go paths changed is still skipped. The path filter must be OR-ed with the default-branch clause, not AND-ed alongside it — see ksail#6373."
+  elif grep -qE 'github\.(ref|ref_name|head_ref|base_ref)' <<<"$top_level"; then
+    # The legitimate default-branch clause lives inside the OR-group and has already been
+    # stripped by now, so any ref predicate still standing here is an ADDITIONAL top-level
+    # conjunct. `&& github.ref != 'refs/heads/main'` would satisfy checks 1-3 while making
+    # default-branch runs unreachable — the state this file exists to prevent, and the one
+    # its own header claims to catch.
+    fail "govulncheck AND-s a top-level ref predicate, which can exclude the default branch no matter what the OR-ed default-branch clause says. A ref condition belongs inside that OR-group, not alongside it — see ksail#6373."
   else
-    # `|| true`: an unmatched grep is a real outcome here (the term is not grouped at
-    # all), not a reason for `set -e` to abort the run before the message is printed.
-    group="$(grep -oE '\([^()]*needs\.changes\.outputs\.go[^()]*\)' <<<"$normalized" | head -1 || true)"
+    # Extract the OUTERMOST parenthesised group containing the path-filter term, by
+    # balance-scanning rather than by regex. A regex bounded with `[^()]*` can only match a
+    # group with no nesting, so it silently returns the INNERMOST group — and the gate's
+    # OR-arm may legitimately nest (`(go=='true' || (go=='false' && ref==...))`), whose
+    # inner group holds no `||` and would be misreported as "grouped but not OR-ed".
+    group="$(awk '
+      { s = $0; depth = 0; start = 0
+        for (i = 1; i <= length(s); i++) {
+          c = substr(s, i, 1)
+          if (c == "(") { if (depth == 0) start = i; depth++ }
+          else if (c == ")") {
+            depth--
+            if (depth == 0 && start > 0) {
+              g = substr(s, start, i - start + 1)
+              if (index(g, "needs.changes.outputs.go") > 0) { print g; exit }
+            }
+          }
+        }
+      }' <<<"$normalized" || true)"
     if [[ -z "$group" ]]; then
       fail "could not find the parenthesised group holding the path-filter term; the gate's structure is not what this guard can verify — see ksail#6373."
     elif ! grep -qF 'default_branch' <<<"$group"; then

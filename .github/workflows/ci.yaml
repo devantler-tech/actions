@@ -2252,6 +2252,33 @@ jobs:
       - name: 🧪 Assert govulncheck runs on the default branch and on allowlist edits
         run: bash .github/tests/test-govulncheck-main-coverage.sh
 
+  # ── Failing-input counterpart to the job above (the both-tests convention) ──
+  # The trigger guard is itself a gate, and its checks are structural string analysis over
+  # a GitHub expression — unusually easy to make silently vacuous (a `strip_groups`
+  # regression that empties `$top_level` satisfies every assertion). The happy-path job
+  # above cannot catch that. This one points the SAME guard at deliberately-bad fixtures
+  # and asserts it fails WITH THE EXPECTED MESSAGE, plus that it still passes the real
+  # workflow — so neither an accept-everything nor a reject-everything guard passes.
+  test-govulncheck-main-coverage-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck Trigger Guard - Blocks On Bad Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the trigger guard blocks every bad-input fixture
+        run: bash .github/tests/test-govulncheck-main-coverage-blocks.sh
+
   # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
   # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
   # when a workflow has a finding. The happy-path test-zizmor job only proves the gate
@@ -2743,6 +2770,7 @@ jobs:
       - test-govulncheck-action-lockstep
       - test-govulncheck-timeout
       - test-govulncheck-main-coverage
+      - test-govulncheck-main-coverage-blocks
       - test-zizmor-blocks
       - test-zizmor-action-lockstep
       - test-validate-go-lint-blocks
@@ -2834,6 +2862,7 @@ jobs:
             ${{ needs.test-govulncheck-action-lockstep.result }}
             ${{ needs.test-govulncheck-timeout.result }}
             ${{ needs.test-govulncheck-main-coverage.result }}
+            ${{ needs.test-govulncheck-main-coverage-blocks.result }}
             ${{ needs.test-zizmor-blocks.result }}
             ${{ needs.test-zizmor-action-lockstep.result }}
             ${{ needs.test-validate-go-lint-blocks.result }}
