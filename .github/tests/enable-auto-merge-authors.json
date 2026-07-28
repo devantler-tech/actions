@@ -175,6 +175,17 @@
     "eligible": false
   },
   {
+    "name": "actor enforcement off preserves review rerun behavior",
+    "event_name": "pull_request_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "octocat",
+    "enforce": false,
+    "eligible": true
+  },
+  {
     "name": "trusted Codex comment event",
     "event_name": "issue_comment",
     "draft": false,
@@ -193,5 +204,16 @@
     "actor": "chatgpt-codex-connector[bot]",
     "triggering_actor": "octocat",
     "eligible": false
+  },
+  {
+    "name": "actor enforcement off preserves comment rerun behavior",
+    "event_name": "issue_comment",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "octocat",
+    "enforce": false,
+    "eligible": true
   }
 ]
