@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.0.1](https://github.com/devantler-tech/actions/compare/v11.0.0...v11.0.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **auto-merge:** harden trusted actor enforcement ([b87e2e1](https://github.com/devantler-tech/actions/commit/b87e2e15556e8bc7ac03199e8f50d621c7f6d9e1))
+
 ## [11.0.0](https://github.com/devantler-tech/actions/compare/v10.2.10...v11.0.0) (2026-07-28)
 
 
