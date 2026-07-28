@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.0.2](https://github.com/devantler-tech/actions/compare/v11.0.1...v11.0.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* **auto-merge:** close residual event-order gaps ([c77a014](https://github.com/devantler-tech/actions/commit/c77a0143a1d95c18adbab2d5920165d0d3cdba08))
+
 ## [11.0.1](https://github.com/devantler-tech/actions/compare/v11.0.0...v11.0.1) (2026-07-28)
 
 
