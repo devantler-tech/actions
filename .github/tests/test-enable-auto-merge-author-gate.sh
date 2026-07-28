@@ -205,7 +205,8 @@ if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.
   "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
   "$disarm_step_run" != *"headRefOid,updatedAt"* ||
   "$disarm_step_run" != *'[[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]'* ||
-  "$disarm_step_run" != *"actions/runs"* ||
+  "$disarm_step_run" != *'actions/runs/$RUN_ID'* ||
+  "$disarm_step_run" != *"find-trusted-superseding-pr-run.sh"* ||
   "$disarm_step_run" != *"LATEST_ACTOR"* ||
   "$disarm_step_run" != *"TRUSTED_TRIGGER_ACTORS"* ]]; then
   echo "::error file=$workflow::rejected events must still match the live head and lifecycle timestamp before revocation"

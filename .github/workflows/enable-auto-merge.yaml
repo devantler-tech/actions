@@ -205,24 +205,16 @@ jobs:
 
           if [[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]; then
             # Scheduling order is not event order. Prove the newest later
-            # pull_request workflow run before allowing an older rejection to
-            # stand down; comments/reviews and later untrusted events do not
-            # count as reauthorization and therefore still revoke fail-closed.
+            # pull_request run of THIS caller workflow before allowing an
+            # older rejection to stand down. An unrelated workflow from a
+            # trusted actor, comments/reviews, and later untrusted events do
+            # not count as reauthorization and still revoke fail-closed.
+            WORKFLOW_ID=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq .workflow_id)
             run_pages=$(gh api --method GET "repos/$REPOSITORY/actions/runs" --paginate \
               -f event=pull_request -f per_page=100 -f created=">=${EVENT_UPDATED_AT}" | jq -s .)
-            LATEST_ACTOR=$(jq -r --argjson current "$RUN_ID" --argjson pr "$PR_NUMBER" '
-              [
-                .[].workflow_runs[]?
-                | select(
-                    (.id > $current) and
-                    any(.pull_requests[]?; .number == $pr)
-                  )
-              ]
-              | if length == 0 then "" else (max_by(.id).actor.login // "") end
-            ' <<<"$run_pages")
 
-            if jq -e --arg actor "$LATEST_ACTOR" 'index($actor) != null' \
-              <<<"$TRUSTED_TRIGGER_ACTORS" >/dev/null; then
+            if LATEST_ACTOR=$(bash .devantler-tech-actions/.scripts/find-trusted-superseding-pr-run.sh \
+              "$RUN_ID" "$WORKFLOW_ID" "$PR_NUMBER" "$TRUSTED_TRIGGER_ACTORS" <<<"$run_pages"); then
               echo "::notice::PR #${PR_NUMBER}: rejected event was superseded by a newer trusted pull_request run from ${LATEST_ACTOR}; skipping stale revocation."
               exit 0
             fi

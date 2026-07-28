@@ -282,8 +282,9 @@ jobs:
 
 > **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
 > `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
-> delayed rejected event was superseded by a newer trusted pull-request run; the write scopes revoke
-> classic auto-merge or merge-queue state. Rejected events never receive the App private key.
+> delayed rejected event was superseded by a newer trusted run of the same caller workflow for that
+> PR; unrelated workflows do not reauthorize it. The write scopes revoke classic auto-merge or
+> merge-queue state. Rejected events never receive the App private key.
 > Missing proof or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without

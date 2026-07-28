@@ -1,0 +1,103 @@
+[
+  {
+    "name": "later trusted run of the same workflow reauthorizes",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_actor": "devantler",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 110,
+            "workflow_id": 7,
+            "actor": {"login": "devantler"},
+            "pull_requests": [{"number": 42}]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "trusted run of another workflow does not reauthorize",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_actor": "",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 120,
+            "workflow_id": 8,
+            "actor": {"login": "devantler"},
+            "pull_requests": [{"number": 42}]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "later untrusted run of the same workflow does not reauthorize",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_actor": "",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 120,
+            "workflow_id": 7,
+            "actor": {"login": "octocat"},
+            "pull_requests": [{"number": 42}]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "newest matching run decides",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_actor": "",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 110,
+            "workflow_id": 7,
+            "actor": {"login": "devantler"},
+            "pull_requests": [{"number": 42}]
+          },
+          {
+            "id": 120,
+            "workflow_id": 7,
+            "actor": {"login": "octocat"},
+            "pull_requests": [{"number": 42}]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "trusted run for another pull request does not reauthorize",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "expected_actor": "",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 120,
+            "workflow_id": 7,
+            "actor": {"login": "devantler"},
+            "pull_requests": [{"number": 43}]
+          }
+        ]
+      }
+    ]
+  }
+]

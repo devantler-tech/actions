@@ -2116,6 +2116,9 @@ jobs:
       - name: 🧪 Verify rejected-event revocation behavior
         run: bash .github/tests/test-disarm-auto-merge.sh
 
+      - name: 🧪 Verify stale rejected-event ordering
+        run: bash .github/tests/test-find-trusted-superseding-pr-run.sh
+
   test-enable-auto-merge-pentad-gate:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge - Pentad Gate"
