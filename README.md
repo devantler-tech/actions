@@ -235,9 +235,10 @@ enforced, an untrusted dismissal/deletion of trusted review evidence—receives 
 actively revokes both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`.
 These state-removal runs arbitrate within each caller workflow at run creation, so they cancel an
 older privileged run before its jobs can mutate the PR without cancelling another caller's run.
-Pull-request arming additionally checks a bounded, fail-closed snapshot for later runs of the same
-workflow and PR before minting write access. This run-ID proof orders same-second lifecycle events;
-unrelated title, label, or assignment edits create no replacement run and do not suppress arming.
+This caller-keyed state lease is acquired only when the reusable auto-merge lane actually executes,
+so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
+arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
+edits create no replacement run.
 Every `workflow_call` invocation that enables actor trust must provide a globally caller-unique,
 ref-independent `concurrency-key`; a missing key fails the required workflow before any privileged
 job can start. The direct workflow has a built-in stable identity. Legacy default-off callers can
@@ -280,7 +281,6 @@ jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
     permissions:
-      actions: read
       pull-requests: write
       contents: write
     with:
@@ -290,23 +290,19 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
-> `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
-> delayed rejected event was superseded by a newer trusted run of the same caller workflow for that
-> PR, created strictly after the observed live PR update. Before arming, a separate read-only App
-> token proves by run ID that the current pull-request event has no later same-workflow run for that
-> PR, including events created in the same timestamp second. Actor-trust opt-in therefore also
-> requires the GitHub App installation to grant **Actions: read**. Both the original and
-> rerun-triggering actors must be trusted for every privileged event, and unrelated workflows do not
-> reauthorize. The write scopes revoke classic auto-merge or merge-queue state.
-> Rejected events never receive the App private key.
-> Missing proof or revoke authority fails the required workflow closed.
+> **Actor-trust note:** Callers that enable actor trust must grant `contents: write` and
+> `pull-requests: write` as shown above and pass a stable, globally caller-unique
+> `concurrency-key`. Workflow-level arbitration orders lifecycle state only for the reusable lane
+> that actually executes; skipped or unrelated caller runs do not reauthorize or supersede it.
+> Both the original and rerun-triggering actors must be trusted for every privileged event. The
+> write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
+> App private key. Missing caller identity or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without
 > enforcement — the enforced paths' read-only lookups run on separate App
-> tokens minted only when needed. Actor trust requires **Actions: read**;
-> review enforcement additionally requires **Checks: read** and **Contents:
-> read**. If the installation lacks a required scope, the workflow fails
+> tokens minted only when needed. Review enforcement additionally requires
+> the GitHub App installation to grant **Actions: read**, **Checks: read**,
+> and **Contents: read**. If the installation lacks a required scope, the workflow fails
 > closed rather than approving or arming on unproven evidence.
 
 #### Secrets and Inputs

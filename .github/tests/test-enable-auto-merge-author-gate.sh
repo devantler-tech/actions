@@ -29,7 +29,7 @@ if [[ "$enabled_test_uses" != "./.github/workflows/enable-auto-merge.yaml" ||
   "$enabled_test_flag" != "true" ||
   "$default_test_key" != "default-self-test" ||
   "$enabled_test_key" != "actor-trust-self-test" ||
-  "$enabled_test_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
+  "$enabled_test_permissions" != "contents:write,pull-requests:write" ]]; then
   echo "::error file=$ci_workflow::CI must isolate its two reusable invocations and exercise actor trust with exact revoke permissions"
   status=1
 fi
@@ -106,20 +106,7 @@ if [[ "$auto_merge_needs" != "eligibility" ||
   status=1
 fi
 
-event_order_token="$(yq -r '
-  [.jobs."auto-merge".steps[]
-   | select(.id == "event-order-token")][0] // {}' "$workflow")"
-event_order_step="$(yq -r '
-  [.jobs."auto-merge".steps[]
-   | select(.id == "event-order")][0] // {}' "$workflow")"
-event_order_permissions="$(yq -r '.with | to_entries | map(select(.key != "client-id" and .key != "private-key")) | sort_by(.key) | map(.key + ":" + .value) | join(",")' <<<"$event_order_token")"
-event_order_condition="$(yq -r '.if // ""' <<<"$event_order_token")"
-event_order_run="$(yq -r '.run // ""' <<<"$event_order_step")"
-event_order_checkout="$(yq -r '
-  [.jobs."auto-merge".steps[]
-   | select(.name == "📥 Checkout trusted event-order script")][0] // {}' "$workflow")"
-event_order_checkout_ref="$(yq -r '.with.ref // ""' <<<"$event_order_checkout")"
-event_order_checkout_path="$(yq -r '.with.path // ""' <<<"$event_order_checkout")"
+workflow_text="$(yq -r '.' "$workflow")"
 app_token_condition="$(yq -r '
   [.jobs."auto-merge".steps[]
    | select(.id == "app-token")
@@ -136,36 +123,13 @@ resolve_condition="$(yq -r '
   [.jobs."auto-merge".steps[]
    | select(.name == "🔎 Resolve target pull request")
    | .if // ""][0]' "$workflow")"
-expected_order_authorized="github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')"
-# shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$event_order_permissions" != "permission-actions:read" ||
-  "$event_order_condition" != "github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true')" ||
-  "$event_order_run" != *"is-current-pull-request-workflow-run.sh"* ||
-  "$event_order_run" != *'actions/workflows/$workflow_id/runs'* ||
-  "$event_order_run" != *'page="$page"'* ||
-  "$event_order_run" != *'created="$created_window"'* ||
-  "$event_order_run" != *"total_count"* ||
-  "$event_order_run" != *'[[ "$expected_total" -ge 1000 ]]'* ||
-  "$event_order_run" != *"collected_total"* ||
-  "$event_order_run" != *"unique_total"* ||
-  "$event_order_run" != *"unique | length"* ||
-  "$event_order_run" != *"snapshot_at"* ||
-  "$event_order_run" != *"current_seen"* ||
-  "$event_order_run" != *'pages_jsonl="$RUNNER_TEMP/'* ||
-  "$event_order_run" != *'jq -s . "$pages_jsonl" > "$pages_json"'* ||
-  "$event_order_run" != *'< "$pages_json"'* ||
-  "$event_order_run" == *"--paginate"* ||
-  "$event_order_run" == *"-f event="* ||
-  "$event_order_run" == *"--argjson pages"* ||
-  "$event_order_run" == *"--argjson page"* ||
-  "$event_order_run" != *'echo "current=false"'* ||
-  "$event_order_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
-  "$event_order_checkout_path" != ".devantler-tech-actions-order" ||
-  "$app_token_condition" != "$expected_order_authorized" ||
-  "$app_token_base_condition" != "($expected_order_authorized) && steps.app-token.outcome == 'failure'" ||
-  "$write_checkout_condition" != "$expected_order_authorized" ||
-  "$resolve_condition" != "$expected_order_authorized" ]]; then
-  echo "::error file=$workflow::the serialized privileged job must prove strict run-ID order from trusted code before minting write access or mutating the PR"
+if [[ "$workflow_text" == *"event-order-token"* ||
+  "$workflow_text" == *"is-current-pull-request-workflow-run.sh"* ||
+  -n "$app_token_condition" ||
+  "$app_token_base_condition" != "steps.app-token.outcome == 'failure'" ||
+  -n "$write_checkout_condition" ||
+  -n "$resolve_condition" ]]; then
+  echo "::error file=$workflow::caller-keyed workflow concurrency must be the sole lifecycle arbiter; surrounding caller-run history must not suppress this lane"
   status=1
 fi
 
@@ -223,8 +187,8 @@ if [[ "$disarm_job_condition" != "needs.eligibility.outputs.disarm == 'true'" ]]
 fi
 
 disarm_job_permissions="$(yq -r '.jobs."disarm-untrusted-update".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$workflow")"
-if [[ "$disarm_job_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
-  echo "::error file=$workflow::the rejected-update disarm path must grant only revocation writes plus run-order read access"
+if [[ "$disarm_job_permissions" != "contents:write,pull-requests:write" ]]; then
+  echo "::error file=$workflow::the rejected-update disarm path must grant only revocation writes"
   status=1
 fi
 
@@ -244,11 +208,15 @@ review_job_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflo
 review_job_cancel="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 expected_review_job_group='enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('"'"'{0}/.github/workflows/enable-auto-merge.yaml@'"'"', github.repository)) && '"'"'direct'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == '"'"'pull_request'"'"' && github.run_id || '"'"'review'"'"' }}'
+disarm_job_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
+disarm_job_cancel="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$normalized_workflow_group" != "$expected_workflow_group" ||
   "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ||
   "$review_job_group" != "$expected_review_job_group" ||
-  "$review_job_cancel" != "false" ]]; then
+  "$review_job_cancel" != "false" ||
+  "$disarm_job_group" != "$expected_review_job_group" ||
+  "$disarm_job_cancel" != "false" ]]; then
   echo "::error file=$workflow::lifecycle and evidence-removal runs must arbitrate at workflow creation before any privileged job can mutate the PR"
   status=1
 fi
@@ -280,8 +248,9 @@ if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c1
   echo "::error file=$workflow::rejected updates must run the disarm script from the trusted base/called-workflow commit without persisted credentials"
   status=1
 fi
-if ! grep -Fq 'disarm-untrusted-event.sh' <<<"$disarm_job"; then
-  echo "::error file=$workflow::rejected updates must use the tested fail-closed ordering wrapper"
+if ! grep -Fq 'disarm-auto-merge.sh' <<<"$disarm_job" ||
+  grep -Fq 'disarm-untrusted-event.sh' <<<"$disarm_job"; then
+  echo "::error file=$workflow::workflow-serialized rejected updates must invoke only the shared revocation helper"
   status=1
 fi
 
@@ -295,18 +264,10 @@ disarm_step_run="$(yq -r '
    | .run // ""]
   | join("\n")' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$(yq -r '.EVENT_NAME // ""' <<<"$disarm_step_env")" != '${{ github.event_name }}' ||
-  "$(yq -r '.PR_NUMBER // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.number || github.event.issue.number }}' ||
-  "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.head.sha }}' ||
-  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.updated_at }}' ||
-  "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
-  "$disarm_step_run" != *"disarm-untrusted-event.sh"* ||
+if [[ "$(yq -r '.PR_NUMBER // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.number || github.event.issue.number }}' ||
   "$disarm_step_run" != *"disarm-auto-merge.sh"* ||
-  "$disarm_step_run" != *'[[ "$EVENT_NAME" == "pull_request" ]]'* ||
-  "$disarm_step_run" != *'"$RUN_ID" "$EVENT_HEAD"'* ||
-  "$disarm_step_run" != *'"$EVENT_UPDATED_AT"'* ||
-  "$disarm_step_run" != *"TRUSTED_TRIGGER_ACTORS"* ]]; then
-  echo "::error file=$workflow::rejected events must pass complete event identity to the tested fail-closed wrapper"
+  "$disarm_step_run" != *'"$REPOSITORY" "$PR_NUMBER"'* ]]; then
+  echo "::error file=$workflow::rejected events must pass the target PR to the shared revocation helper"
   status=1
 fi
 

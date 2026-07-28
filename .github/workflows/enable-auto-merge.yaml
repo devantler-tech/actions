@@ -335,9 +335,17 @@ jobs:
     needs: eligibility
     if: needs.eligibility.outputs.disarm == 'true'
     permissions:
-      actions: read
       contents: write
       pull-requests: write
+    # Evidence-removal disarms share the serialized review lane with later
+    # trusted replacement evidence. A stale deletion therefore either runs
+    # first and is followed by a live re-evaluation, or is replaced while
+    # pending by that newer re-evaluation. Pull-request disarms use a
+    # run-unique suffix because workflow-level state arbitration already
+    # orders those lifecycle events.
+    concurrency:
+      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, format('{0}/.github/workflows/enable-auto-merge.yaml@', github.repository)) && 'direct') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -361,20 +369,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
-          EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            bash .devantler-tech-actions/.scripts/disarm-untrusted-event.sh \
-              "$REPOSITORY" "$PR_NUMBER" "$RUN_ID" "$EVENT_HEAD" \
-              "$EVENT_UPDATED_AT" "$TRUSTED_TRIGGER_ACTORS"
-          else
-            bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh \
-              "$REPOSITORY" "$PR_NUMBER"
-          fi
+          bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh \
+            "$REPOSITORY" "$PR_NUMBER"
 
   auto-merge:
     needs: eligibility
@@ -403,123 +401,6 @@ jobs:
         with:
           egress-policy: audit
 
-      # Concurrency cancels an older job while a newer event is active, but an
-      # older job can reach this critical section after the newer run has
-      # already finished. Under actor enforcement, resolve that inversion with
-      # a trusted selector and read-only App token before minting write access.
-      - name: 📥 Checkout trusted event-order script
-        if: >-
-          github.event_name == 'pull_request' &&
-          (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true')
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}
-          path: .devantler-tech-actions-order
-          persist-credentials: false
-
-      - name: 🔑 Generate event-order token (actor enforcement only)
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: event-order-token
-        if: >-
-          github.event_name == 'pull_request' &&
-          (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true')
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-actions: read
-
-      - name: 🔎 Prove this is the newest pull request event
-        id: event-order
-        if: steps.event-order-token.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ steps.event-order-token.outputs.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          run_json=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")
-          workflow_id=$(jq -er '.workflow_id | select(type == "number")' <<<"$run_json")
-          run_created_at=$(jq -er '.created_at | select(type == "string" and length > 0)' <<<"$run_json")
-          snapshot_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          created_window="${run_created_at}..${snapshot_at}"
-          page_file="$RUNNER_TEMP/auto-merge-order-page-${RUN_ID}.json"
-          pages_jsonl="$RUNNER_TEMP/auto-merge-order-pages-${RUN_ID}.jsonl"
-          pages_json="$RUNNER_TEMP/auto-merge-order-pages-${RUN_ID}.json"
-          : > "$pages_jsonl"
-          page=1
-          current_seen=false
-          expected_total=
-          collected_total=0
-          while :; do
-            gh api "repos/$REPOSITORY/actions/workflows/$workflow_id/runs" \
-              --method GET -f per_page=100 -f page="$page" \
-              -f created="$created_window" > "$page_file"
-            page_total=$(jq -er '.total_count | select(type == "number" and . >= 0)' "$page_file")
-            if [[ -z "$expected_total" ]]; then
-              expected_total="$page_total"
-              # GitHub caps filtered workflow-run searches at 1,000 results.
-              # At the cap the response may be truncated, so ordering cannot
-              # be proven and the privileged path must fail closed.
-              if [[ "$expected_total" -ge 1000 ]]; then
-                echo "::error::Workflow-run ordering snapshot reached GitHub's 1,000-result search cap."
-                exit 2
-              fi
-            elif [[ "$page_total" -ne "$expected_total" ]]; then
-              echo "::error::Workflow-run ordering snapshot changed while it was being read."
-              exit 2
-            fi
-            cat "$page_file" >> "$pages_jsonl"
-            printf '\n' >> "$pages_jsonl"
-            if jq -e --argjson current "$RUN_ID" \
-              'any(.workflow_runs[]?; .id == $current)' \
-              "$page_file" >/dev/null; then
-              current_seen=true
-            fi
-            page_size=$(jq -er '.workflow_runs | length' "$page_file")
-            collected_total=$((collected_total + page_size))
-            if [[ "$collected_total" -ge "$expected_total" ]]; then
-              break
-            fi
-            if [[ "$page_size" -eq 0 || "$page" -ge 10 ]]; then
-              echo "::error::Workflow-run ordering snapshot was incomplete."
-              exit 2
-            fi
-            page=$((page + 1))
-          done
-          if [[ "$collected_total" -ne "$expected_total" ]]; then
-            echo "::error::Workflow-run ordering snapshot count was inconsistent."
-            exit 2
-          fi
-          jq -s . "$pages_jsonl" > "$pages_json"
-          unique_total=$(jq -er '[.[].workflow_runs[].id] | unique | length' "$pages_json")
-          if [[ "$unique_total" -ne "$expected_total" ]]; then
-            echo "::error::Workflow-run ordering snapshot repeated or omitted run IDs."
-            exit 2
-          fi
-          if [[ "$current_seen" != "true" ]]; then
-            echo "::error::Current run was absent from the bounded workflow-run snapshot."
-            exit 2
-          fi
-
-          if bash .devantler-tech-actions-order/.scripts/is-current-pull-request-workflow-run.sh \
-            "$RUN_ID" "$workflow_id" "$PR_NUMBER" < "$pages_json"; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          else
-            selector_exit=$?
-          fi
-
-          if [[ "$selector_exit" -eq 1 ]]; then
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::A later pull_request run of this workflow and PR exists; that run decides."
-            exit 0
-          fi
-
-          echo "::error::Unable to prove pull_request event order."
-          exit "$selector_exit"
-
       # Primary mint requests Workflows: write so a PR that modifies
       # .github/workflows/ can be armed — GitHub treats
       # enablePullRequestAutoMerge as updating the workflow and refuses it
@@ -534,7 +415,6 @@ jobs:
       - name: 🔑 Generate GitHub App Token (Workflows-scoped)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
-        if: github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')
         continue-on-error: true
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
@@ -555,7 +435,7 @@ jobs:
       - name: 🔑 Generate GitHub App Token (base scope fallback)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token-base
-        if: (github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')) && steps.app-token.outcome == 'failure'
+        if: steps.app-token.outcome == 'failure'
         with:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -569,7 +449,6 @@ jobs:
       # self-checkouts (dependency-review.yaml).
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -581,7 +460,6 @@ jobs:
       # every event shape (fail-closed: an ineligible PR is never gated on).
       - name: 🔎 Resolve target pull request
         id: pr
-        if: github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
@@ -598,9 +476,9 @@ jobs:
           eligible=$(jq -r 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end' <<<"$pr_json")
           superseded=false
 
-          # Strict run-ID ordering was proven before this privileged job. Keep
-          # the live head binding as an independent fail-closed defense, but
-          # do not treat unrelated title/label edits as supersession.
+          # Workflow-level caller-keyed arbitration runs before any job and the
+          # live head binding remains an independent fail-closed defense. Do
+          # not treat unrelated title/label edits as supersession.
           if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]; then
             eligible=false
             superseded=true
