@@ -286,6 +286,51 @@ jobs:
 
 </details>
 
+### 🧹 Lint
+
+<details>
+<summary>Click to expand</summary>
+
+[.github/workflows/lint.yaml](.github/workflows/lint.yaml) lints a whole repository with [MegaLinter](https://megalinter.io) (Go flavor), auto-fixing what it can and committing the result back to the pull request.
+
+**Which one do I want?** If your repository *is* a Go module, use [✅ Validate Go Project](#-validate-go-project) — it already runs MegaLinter as one stage of a full Go pipeline. Reach for this workflow when Go is only part of a larger tree (a game client plus a Go server, for example): it lints everything and leaves the Go build and tests to your own job.
+
+The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile, Kubernetes, spelling, secrets and copy-paste. It has no GDScript, Python or Terraform linters — see [MegaLinter's flavor list](https://megalinter.io/latest/flavors/) if you need those.
+
+Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
+
+MegaLinter always runs read-only, without a GitHub token or persisted checkout credentials. When auto-fixing is enabled, the lint job exports a patch and a separate job on a fresh runner mints the write-scoped App token, applies that patch, and commits it. This isolation prevents pull-request-controlled MegaLinter configuration from accessing repository write credentials.
+
+**Fork pull requests lint read-only, automatically.** GitHub withholds secrets from forks, so fixes could never be committed back; auto-fixing there would only produce a failure an outside contributor cannot resolve. Real lint errors still fail on forks — only the auto-fix half is skipped.
+
+#### Usage
+
+```yaml
+jobs:
+  lint:
+    uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
+    permissions:
+      contents: read
+    with:
+      apply-fixes: false
+```
+
+To enable pull-request auto-fixes, set `apply-fixes: true` and pass
+`APP_PRIVATE_KEY`. MegaLinter still runs without that secret; only the separate
+patch-application job can access it.
+
+#### Secrets and Inputs
+
+| Key                 | Type            | Default | Required | Description                                                                                                          |
+|---------------------|-----------------|---------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`   | Secret          | -       | No       | GitHub App private key. Needed only to commit auto-fixes; without it a fixable finding fails the build instead        |
+| `working-directory` | Input           | `""`    | No       | Directory to lint. Empty lints the whole repository                                                                   |
+| `go-version-file`   | Input           | `""`    | No       | Path to a `go.mod`. When set, Go is installed first so the Go linters use the module's toolchain, not the container's |
+| `apply-fixes`       | Input (boolean) | `true`  | No       | Auto-fix and commit back to the pull request. Set `false` for a read-only gate                                        |
+| `pr-owner`          | Input           | `""`    | No       | Pull request author login. Auto-fix commits are suppressed for dependency-bot pull requests                           |
+
+</details>
+
 ### 📦 Publish App
 
 <details>
@@ -395,7 +440,7 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. Coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
+[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. On authenticated runs, coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
 
 #### Usage
 
@@ -409,11 +454,21 @@ jobs:
       code-quality: write # required for GitHub Code Quality coverage upload
 ```
 
-> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
+> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_) and is skipped on credential-free pull-request runs.
 
 #### Secrets and Inputs
 
-This workflow needs no caller-provided secrets or inputs — it authenticates to the GHCR NuGet feed with the automatic `GITHUB_TOKEN` (requires the `packages: read` permission shown above).
+| Key                        | Type            | Default | Required | Description                                                                 |
+|----------------------------|-----------------|---------|----------|-----------------------------------------------------------------------------|
+| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private packages and Code Quality on trusted same-repository non-bot pull-request code |
+| `working-directory`        | Input (string)  | `""`    | No       | Directory containing the .NET solution or project                           |
+
+Pull-request runs are credential-free by default. A trusted same-repository human-authored
+pull request that needs private GitHub Packages can set `enable-github-packages: true`.
+The workflow ignores that input for fork and bot pull requests, so their code cannot opt
+itself back into the token-bearing path. Merge-group and direct non-pull-request runs
+authenticate with the automatic `GITHUB_TOKEN` when the calling job grants `packages: read`.
+The same explicit token boundary keeps the Code Quality uploader out of credential-free runs.
 
 </details>
 
@@ -522,11 +577,32 @@ jobs:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
       source-repo-path: devantler-tech/gitops-tenant-template
+```
+
+By default the sync PR is opened with `GITHUB_TOKEN`, so GitHub does not trigger
+`on: pull_request` or `on: push` workflows for the resulting branch or PR. This
+prevents content copied from a compromised or malicious template from reaching a
+caller's CI trust boundary before review.
+
+Set `use-app-token: true` and pass `APP_PRIVATE_KEY` only when CI must run before
+the sync PR is reviewed. This opt-in mints a write-scoped App token and permits
+workflow-file updates, but it also causes the template-controlled PR content to
+trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
+expose secrets or write-scoped tokens to jobs that check out or execute its
+content, including local actions and scripts.
+
+An opt-in caller must wire both the input and the corresponding secret:
+
+```yaml
+jobs:
+  template-sync:
+    uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
+    with:
+      source-repo-path: devantler-tech/gitops-tenant-template
+      use-app-token: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
-
-By default the sync PR is opened with a GitHub App token (`use-app-token: true`) so it triggers the caller's CI; this needs the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret. Set `use-app-token: false` to fall back to `GITHUB_TOKEN` (the PR then will not trigger `on: pull_request` checks).
 
 #### Secrets and Inputs
 
@@ -540,7 +616,7 @@ By default the sync PR is opened with a GitHub App token (`use-app-token: true`)
 | `pr-labels`                      | Input (string)  | `dependencies,automation`                        | No       | Comma-separated labels for the sync PR                                      |
 | `pr-branch-name-prefix`          | Input (string)  | `chore/template-sync`                            | No       | Prefix for the branch the sync PR is opened from                            |
 | `template-sync-ignore-file-path` | Input (string)  | `.templatesyncignore`                            | No       | Path to the file listing consumer-owned (non-synced) files                  |
-| `use-app-token`                  | Input (boolean) | `true`                                           | No       | Open the sync PR with a GitHub App token so it triggers the caller's CI     |
+| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to an App-authored sync PR that triggers the caller's CI             |
 | `dry-run`                        | Input (boolean) | `false`                                          | No       | Skip the sync and PR creation (validate workflow interface only)            |
 
 > **Note:** The calling workflow runs the sync job with `contents: write` and `pull-requests: write` (declared by the reusable workflow).

@@ -57,7 +57,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -162,13 +162,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -234,13 +234,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -318,12 +318,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -399,7 +399,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -493,13 +493,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -566,7 +566,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -594,7 +594,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -622,7 +622,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -650,7 +650,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -711,7 +711,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -739,7 +739,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -784,7 +784,7 @@ jobs:
       # `go test ./...` so the extra tree never enters the caller's test scope.
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         continue-on-error: true
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}

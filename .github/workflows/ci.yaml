@@ -38,7 +38,7 @@ jobs:
       )
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -57,7 +57,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -78,7 +78,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -125,7 +125,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -156,7 +156,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -204,7 +204,7 @@ jobs:
       )
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -222,7 +222,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -257,7 +257,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -303,7 +303,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -323,7 +323,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -339,7 +339,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -355,7 +355,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -383,7 +383,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -417,15 +417,24 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: .github/fixtures/run-dotnet-tests
+
+      - name: 🔒 Verify pull-request tests received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Pull-request tests configured the authenticated GHCR feed"
+            exit 1
+          fi
 
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
@@ -439,7 +448,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -483,7 +492,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -523,7 +532,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -551,7 +560,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -580,7 +589,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -625,7 +634,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -657,7 +666,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -687,7 +696,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -706,7 +715,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -797,7 +806,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -989,7 +998,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1005,7 +1014,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1027,7 +1036,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1075,7 +1084,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1124,7 +1133,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1154,7 +1163,7 @@ jobs:
       code-quality: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1178,7 +1187,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1212,7 +1221,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1233,7 +1242,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1262,7 +1271,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1291,7 +1300,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1319,7 +1328,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1350,7 +1359,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1359,8 +1368,17 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: does-not-exist
+
+      - name: 🔒 Verify negative pull-request test received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Negative pull-request test configured the authenticated GHCR feed"
+            exit 1
+          fi
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -1392,12 +1410,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           # Match run-dotnet-tests/action.yaml's SDK provisioning (previous STS + current LTS).
           dotnet-version: |
@@ -1451,7 +1469,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1475,6 +1493,70 @@ jobs:
           fi
           echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
 
+      - name: 🔒 Assert credential-free tests skip coverage upload
+        shell: bash
+        env:
+          GATE: run-dotnet-tests/action.yaml
+        run: |
+          set -euo pipefail
+          upload_if="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .if' "$GATE")"
+          upload_token="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .with.token' "$GATE")"
+          if [[ "$upload_if" != *"inputs.github-token != ''"* ]]; then
+            echo "::error::$GATE must skip coverage upload when github-token is empty"
+            exit 1
+          fi
+          if [[ "$upload_token" != *"inputs.github-token"* || "$upload_token" == *"github.token"* ]]; then
+            echo "::error::$GATE coverage upload must use only the explicit github-token input"
+            exit 1
+          fi
+          echo "Credential-free tests cannot reach the token-bearing coverage upload ✅"
+
+      - name: 🔒 Assert the authenticated opt-in rejects fork and bot pull requests
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/run-dotnet-tests.yaml
+        run: |
+          set -euo pipefail
+          token_expr="$(yq -r '.jobs.test.steps[] | select(.name == "🧪 Test .NET solution or project") | .with.github-token' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$token_expr" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated pull-request path is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$token_expr" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW must trust the immutable pull-request author, not the actor who triggered this event"
+            exit 1
+          fi
+
+          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .if' "$WORKFLOW")"
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$verify_if" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated-source assertion is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$verify_if" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
+            exit 1
+          fi
+          if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
+            echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
+            exit 1
+          fi
+          echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
+
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
   # definitions together. This guard treats upload-coverage/action.yaml as the source of
@@ -1494,7 +1576,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1532,7 +1614,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1621,7 +1703,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1787,6 +1869,26 @@ jobs:
       packages: read
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  test-run-dotnet-tests-workflow-authenticated:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Run .NET Tests - Authenticated Packages"
+    uses: ./.github/workflows/run-dotnet-tests.yaml
+    # Exercise the opt-in state only for the maintainer-authored code from this repository.
+    with:
+      working-directory: .github/fixtures/run-dotnet-tests
+      enable-github-packages: true
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-enable-auto-merge:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge"
@@ -1819,7 +1921,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1839,7 +1941,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1878,7 +1980,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1996,7 +2098,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2026,7 +2128,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2079,7 +2181,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2118,7 +2220,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2151,7 +2253,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2166,7 +2268,7 @@ jobs:
       - name: 🌈 Scan vulnerable fixture (expected to fail)
         id: scan
         continue-on-error: true
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
         with:
           inputs: .github/tests/zizmor-fixture/template-injection.yml
           advanced-security: false
@@ -2204,7 +2306,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2218,7 +2320,7 @@ jobs:
           # Match the full `uses:` line, not the bare ref — the ref also appears in
           # comments, so a bare-ref grep could false-pass if the real `uses:` SHA changed
           # while a comment still mentioned the old ref.
-          EXPECTED: "uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa"
+          EXPECTED: "uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02"
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED" .github/workflows/scan-for-workflow-vulnerabilities.yaml; then
@@ -2248,12 +2350,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .github/tests/golangci-lint-fixture/go.mod
 
@@ -2304,12 +2406,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .github/tests/go-test-fixture/go.mod
 
@@ -2359,7 +2461,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2403,7 +2505,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2428,6 +2530,121 @@ jobs:
             exit 1
           fi
           echo "validate-go-project.yaml concurrency group is invocation-aware ✅"
+
+  # ── lint.yaml self-tests ─────────────────────────────────────────────────────
+  # lint.yaml is a GATING reusable workflow (it fails a PR on a lint finding), so per the
+  # AGENTS.md convention it carries BOTH a passes-on-good-input and a blocks-on-bad-input
+  # self-test — a happy-path test alone cannot catch a gate that silently stopped biting.
+  # apply-fixes is false here: the self-test must never commit to the branch under test.
+  test-lint-workflow:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Passes On Clean Fixture"
+    # This is the real read-only consumer proof: GitHub rejects a called workflow at
+    # startup if any job tries to elevate beyond these caller permissions.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/lint.yaml
+    with:
+      working-directory: .github/tests/megalinter-clean-fixture
+      apply-fixes: false
+
+  test-lint-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Blocks On Invalid Fixture"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same MegaLinter image SHA as lint.yaml's gate (guarded by test-lint-gate-lockstep),
+      # pointed at a fixture whose JSON has a syntax error no formatter can auto-fix — so
+      # APPLY_FIXES cannot mask it and the run must exit non-zero. continue-on-error lets
+      # the next step assert the failure. Reports go to a dedicated folder the assertion
+      # reads, which distinguishes a real lint block from an operational failure (e.g. an
+      # image pull error), which would leave no report at all.
+      - name: 🧹 Lint invalid fixture (expected to fail)
+        id: ml
+        continue-on-error: true
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
+        env:
+          DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
+          REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
+          VALIDATE_ALL_CODEBASE: true
+          APPLY_FIXES: none
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ✅ Assert the lint gate blocked on the invalid fixture
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.ml.outcome }}
+        run: |
+          set -euo pipefail
+          REPORTS="${GITHUB_WORKSPACE}/megalinter-bad-fixture-reports"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::MegaLinter should FAIL on the deliberately-invalid JSON in .github/tests/megalinter-bad-fixture, but its outcome was '$OUTCOME'. lint.yaml's gate is no longer blocking on lint findings."
+            exit 1
+          fi
+          if ! grep -rqF "bad.json" "$REPORTS" 2>/dev/null; then
+            echo "::error::MegaLinter failed, but no report named the bad.json fixture — the failure was operational (e.g. an image pull error), not a real lint block. Reports:"
+            ls -R "$REPORTS" 2>/dev/null || echo "(no reports captured)"
+            exit 1
+          fi
+          echo "Lint gate correctly blocked on the invalid JSON fixture ✅"
+
+  test-lint-gate-lockstep:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Gate Pins Self-Tested Image"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔐 Assert the lint credential boundary
+        shell: bash
+        run: bash .github/tests/test-lint-credential-boundary.sh
+
+      # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
+      # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
+      # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
+      # If any of the three is bumped alone, this goes red and forces them to move together.
+      - name: 🔒 Assert both gates pin the self-tested MegaLinter image
+        shell: bash
+        env:
+          # Match the full `uses:` line, not the bare SHA — the SHA also appears in
+          # comments, so a bare grep could false-pass if the real `uses:` changed while a
+          # comment still named the old one.
+          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc"
+        run: |
+          set -euo pipefail
+          status=0
+          for gate in .github/workflows/lint.yaml .github/workflows/validate-go-project.yaml; do
+            if ! grep -qF "$EXPECTED" "$gate"; then
+              echo "::error::$gate no longer pins '$EXPECTED'. If the MegaLinter image was bumped intentionally, update test-lint-blocks, both gates and this EXPECTED value together so the failure-mode self-test keeps exercising the real gate."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Both MegaLinter gates pin the self-tested image ✅"
 
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
@@ -2480,6 +2697,7 @@ jobs:
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
       - test-run-dotnet-tests-workflow
+      - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-pentad-gate
@@ -2504,6 +2722,9 @@ jobs:
       - test-validate-go-test-blocks
       - test-validate-go-gate-lockstep
       - test-validate-go-project-concurrency-key
+      - test-lint-workflow
+      - test-lint-blocks
+      - test-lint-gate-lockstep
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -2512,7 +2733,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2565,6 +2786,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
+            ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
@@ -2589,6 +2811,9 @@ jobs:
             ${{ needs.test-validate-go-test-blocks.result }}
             ${{ needs.test-validate-go-gate-lockstep.result }}
             ${{ needs.test-validate-go-project-concurrency-key.result }}
+            ${{ needs.test-lint-workflow.result }}
+            ${{ needs.test-lint-blocks.result }}
+            ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
