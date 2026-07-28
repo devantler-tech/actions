@@ -153,5 +153,123 @@
     "enforce": true,
     "disarm": true,
     "eligible": false
+  },
+  {
+    "name": "trusted CodeRabbit review event",
+    "event_name": "pull_request_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "coderabbitai[bot]",
+    "eligible": true
+  },
+  {
+    "name": "untrusted collaborator reruns CodeRabbit review event",
+    "event_name": "pull_request_review",
+    "action": "submitted",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "octocat",
+    "eligible": false
+  },
+  {
+    "name": "untrusted collaborator dismisses CodeRabbit review",
+    "event_name": "pull_request_review",
+    "action": "dismissed",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "review_enforce": true,
+    "disarm": true,
+    "eligible": false
+  },
+  {
+    "name": "review gate off leaves dismissed review outside actor revocation",
+    "event_name": "pull_request_review",
+    "action": "dismissed",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "review_enforce": false,
+    "disarm": false,
+    "eligible": false
+  },
+  {
+    "name": "actor enforcement off preserves review rerun behavior",
+    "event_name": "pull_request_review",
+    "action": "submitted",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "coderabbitai[bot]",
+    "actor": "coderabbitai[bot]",
+    "triggering_actor": "octocat",
+    "enforce": false,
+    "eligible": true
+  },
+  {
+    "name": "trusted Codex comment event",
+    "event_name": "issue_comment",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "chatgpt-codex-connector[bot]",
+    "eligible": true
+  },
+  {
+    "name": "untrusted collaborator reruns Codex comment event",
+    "event_name": "issue_comment",
+    "action": "created",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "octocat",
+    "eligible": false
+  },
+  {
+    "name": "untrusted collaborator deletes Codex comment",
+    "event_name": "issue_comment",
+    "action": "deleted",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "review_enforce": true,
+    "disarm": true,
+    "eligible": false
+  },
+  {
+    "name": "review gate off leaves deleted comment outside actor revocation",
+    "event_name": "issue_comment",
+    "action": "deleted",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "review_enforce": false,
+    "disarm": false,
+    "eligible": false
+  },
+  {
+    "name": "actor enforcement off preserves comment rerun behavior",
+    "event_name": "issue_comment",
+    "action": "created",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "reviewer": "chatgpt-codex-connector[bot]",
+    "actor": "chatgpt-codex-connector[bot]",
+    "triggering_actor": "octocat",
+    "enforce": false,
+    "eligible": true
   }
 ]

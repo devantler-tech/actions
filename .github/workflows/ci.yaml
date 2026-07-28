@@ -2087,6 +2087,8 @@ jobs:
     # enabled-state gate decisions are covered by the script-level fixture
     # tests (test-enable-auto-merge-pentad-gate) and the wiring flips live
     # per repo via ENFORCE_MERGE_GATES after validation.
+    with:
+      concurrency-key: default-self-test
     permissions:
       pull-requests: write
       contents: write
@@ -2110,6 +2112,7 @@ jobs:
     # changes without competing with bot auto-merge. The author-gate fixtures
     # below cover trusted/untrusted actor decisions and pin the disarm wiring.
     with:
+      concurrency-key: actor-trust-self-test
       enforce-actor-trust: true
     permissions:
       actions: read
@@ -2141,11 +2144,8 @@ jobs:
       - name: 🧪 Verify rejected-event revocation behavior
         run: bash .github/tests/test-disarm-auto-merge.sh
 
-      - name: 🧪 Verify stale rejected-event ordering
-        run: bash .github/tests/test-find-trusted-superseding-pr-run.sh
-
-      - name: 🧪 Verify stale rejected-event lookup failures revoke
-        run: bash .github/tests/test-disarm-untrusted-event.sh
+      - name: 🧪 Verify durable pull-request lifecycle ordering
+        run: bash .github/tests/test-is-current-pull-request-lifecycle.sh
 
   test-enable-auto-merge-pentad-gate:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"

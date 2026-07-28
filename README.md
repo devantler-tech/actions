@@ -226,14 +226,29 @@ click.
 commit it checked.
 
 **With actor-trust enforcement turned on** — the `enforce-actor-trust` input, or the
-`ENFORCE_ACTOR_TRUST` repository/organization variable — every `pull_request` trigger on an
-allowlisted bot-authored PR must come from an allowlisted bot or the explicit `devantler`
-maintainer actor. Workflow reruns also require the initiating `github.triggering_actor` to be
-allowlisted; a trusted original event cannot be replayed by an untrusted collaborator. A rejected
-trigger receives no App token and actively revokes both classic auto-merge and merge-queue state
-with the caller's `GITHUB_TOKEN`. Pull-request arming and revocation use a newest-event-wins
-critical section: a newer rejected event cancels older arming, while a later trusted maintainer
-event is an explicit reauthorization.
+`ENFORCE_ACTOR_TRUST` repository/organization variable — every privileged pull-request, review,
+or comment trigger on an allowlisted bot-authored PR must come from an allowlisted bot or the
+explicit `devantler` maintainer actor. Workflow reruns also require the initiating
+`github.triggering_actor` to be allowlisted; a trusted original event cannot be replayed by an
+untrusted collaborator. A rejected pull-request lifecycle trigger—or, when review gates are also
+enforced, an untrusted dismissal/deletion of trusted review evidence—receives no App token and
+actively revokes both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`.
+These state-removal runs arbitrate within each caller workflow at run creation, so they cancel an
+older privileged run before its jobs can mutate the PR without cancelling another caller's run.
+This caller-keyed state lease is acquired only when the reusable auto-merge lane actually executes,
+so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
+arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
+edits create no replacement run. Before mutation, a live reopen/ready-for-review/force-push timeline
+binding rejects later events (including a head that moves away and returns) and treats any equal-time
+sequence it cannot uniquely identify as superseded. Arming and revocation share one mutation lane;
+a delayed rejected event preserves only auto-merge state whose authorization time is provably newer
+than that rejected run attempt. Default-off review/comment no-ops skip the mutation lane entirely, so
+they cannot replace a queued revocation.
+Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
+ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
+safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.
+The direct and cross-repository required-workflow paths have a built-in stable source identity.
+Legacy default-off callers retain their existing behavior.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
@@ -283,28 +298,33 @@ jobs:
 ```
 
 > **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
-> `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
-> delayed rejected event was superseded by a newer trusted run of the same caller workflow for that
-> PR, created strictly after the observed live PR update; same-second timestamps are ambiguous and
-> revoke fail-closed. Both the original and rerun-triggering actors must be trusted, and unrelated
-> workflows do not reauthorize. The write scopes revoke classic auto-merge or merge-queue state.
-> Rejected events never receive the App private key.
-> Missing proof or revoke authority fails the required workflow closed.
+> `contents: write`, and `pull-requests: write` as shown above and should pass a stable,
+> globally caller-unique `concurrency-key`. An omitted key uses a safe repository-wide
+> compatibility lane, which can
+> cancel independent actor-trust call sites for the same PR but cannot let stale authority proceed;
+> explicit keys avoid that availability tradeoff. Workflow-level arbitration orders lifecycle state
+> only for the reusable lane that actually executes; skipped or unrelated caller runs do not
+> reauthorize or supersede it.
+> Both the original and rerun-triggering actors must be trusted for every privileged event. The
+> read scope binds stale-revocation decisions to the rejected run attempt's durable start time; the
+> write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
+> App private key. Missing lookup or revoke authority fails the required workflow closed.
 >
-> **Note:** The caller grants only the legacy minimum above, with or without
-> enforcement — the enforced gate's read-only lookups run on a separate App
-> token minted only on enforced runs, so opting in requires the GitHub App
-> installation (not the caller's `GITHUB_TOKEN`) to include **Checks: read**,
-> **Actions: read**, and **Contents: read**. If the installation lacks them,
-> the gate fails closed (approval is withheld and stale arming is revoked) rather than open.
+> **Note:** The caller grants the documented minimum above with or without enforcement.
+> Actor trust uses its caller `Actions: read` scope only to bind stale revocation to the
+> rejected run attempt's start time. Review enforcement uses a separate App token and additionally
+> requires the GitHub App installation to grant **Actions: read**, **Checks: read**, and
+> **Contents: read**. If a required scope is missing, the workflow fails closed rather than
+> approving or arming on unproven evidence.
 
 #### Secrets and Inputs
 
-| Key                    | Type   | Default | Required | Description                                                           |
-|------------------------|--------|---------|----------|-----------------------------------------------------------------------|
-| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                |
-| `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation        |
-| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad |
+| Key                    | Type   | Default | Required | Description                                                               |
+|------------------------|--------|---------|----------|---------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                    |
+| `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation            |
+| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad     |
+| `concurrency-key`      | Input  | `""`    | No       | Recommended with actor trust; omitted calls share a safe fallback lane    |
 
 </details>
 

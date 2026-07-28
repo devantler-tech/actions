@@ -9,26 +9,51 @@
 # exits 0 when nothing was pending. Fail-closed callers treat any error as a
 # failed disarm.
 #
-# Usage: disarm-auto-merge.sh <repository> <pr-number>
+# When an optional rejected-event timestamp is supplied, a newer auto-merge or
+# merge-queue authorization is preserved. Callers using that mode must
+# serialize this read/decision/mutation with the arming path.
+#
+# Usage: disarm-auto-merge.sh <repository> <pr-number> [rejected-attempt-started-at]
 
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <repository> <pr-number>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "usage: $0 <repository> <pr-number> [rejected-attempt-started-at]" >&2
   exit 2
 fi
 
 repository="$1"
 pr_number="$2"
+rejected_attempt_started_at="${3-}"
 owner="${repository%%/*}"
 name="${repository#*/}"
 
 # shellcheck disable=SC2016  # GraphQL $variables, not shell expansion
 state="$(gh api graphql \
-  -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id isInMergeQueue autoMergeRequest{enabledAt}}}}' \
+  -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id isInMergeQueue autoMergeRequest{enabledAt} mergeQueueEntry{enqueuedAt}}}}' \
   -f owner="$owner" -f name="$name" -F number="$pr_number" \
-  --jq '.data.repository.pullRequest | "\(.id) \(.autoMergeRequest != null) \(.isInMergeQueue)"')"
-read -r pr_id armed queued <<<"$state"
+  --jq '.data.repository.pullRequest | "\(.id) \(.autoMergeRequest != null) \(.isInMergeQueue) \(.autoMergeRequest.enabledAt // "null") \(.mergeQueueEntry.enqueuedAt // "null")"')"
+read -r pr_id armed queued auto_merge_enabled_at queue_enqueued_at <<<"$state"
+
+if [[ -n "$rejected_attempt_started_at" ]]; then
+  timestamps_valid=true
+  if ! jq -en --arg value "$rejected_attempt_started_at" '$value | fromdateiso8601' >/dev/null 2>&1; then
+    timestamps_valid=false
+  fi
+  for authorization_time in "$auto_merge_enabled_at" "$queue_enqueued_at"; do
+    if [[ "$authorization_time" != "null" ]] &&
+      ! jq -en --arg value "$authorization_time" '$value | fromdateiso8601' >/dev/null 2>&1; then
+      timestamps_valid=false
+    fi
+  done
+
+  if [[ "$timestamps_valid" == "true" ]] &&
+    { [[ "$auto_merge_enabled_at" != "null" && "$auto_merge_enabled_at" > "$rejected_attempt_started_at" ]] ||
+      [[ "$queue_enqueued_at" != "null" && "$queue_enqueued_at" > "$rejected_attempt_started_at" ]]; }; then
+    echo "::notice::PR #${pr_number}: rejected event predates the current newer authorization; skipping stale revocation."
+    exit 0
+  fi
+fi
 
 if [[ "$armed" == "true" ]]; then
   gh pr merge "$pr_number" --disable-auto --repo "$repository"
