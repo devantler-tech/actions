@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: "${MOCK_GH_LOG:?MOCK_GH_LOG is required}"
+: "${MOCK_GH_STATE:?MOCK_GH_STATE is required}"
+
+{
+  printf "%s" "$1"
+  shift
+  for argument in "$@"; do
+    printf "\t%s" "$argument"
+  done
+  printf "\n"
+} >>"$MOCK_GH_LOG"
+
+if [[ "${1:-}" == "graphql" && "$*" == *"dequeuePullRequest"* ]]; then
+  exit 0
+fi
+
+if [[ "${1:-}" == "graphql" ]]; then
+  printf "%s\n" "$MOCK_GH_STATE"
+  exit 0
+fi
+
+if [[ "${1:-}" == "merge" ]]; then
+  exit 0
+fi
+
+echo "unexpected mocked gh invocation" >&2
+exit 1
