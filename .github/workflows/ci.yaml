@@ -478,14 +478,14 @@ jobs:
       - name: 🔒 Verify caller NuGet configuration is byte-identical
         run: >-
           git diff --exit-code --
-          .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
         shell: bash
 
       - name: 🧪 Configure the canonical caller-owned GitHub Packages source
         id: canonical-source
         run: |
           set -euo pipefail
-          config=.github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
           cp "$config" "$RUNNER_TEMP/source-mapping-NuGet.Config"
           dotnet nuget add source \
             --configfile "$config" \
@@ -505,7 +505,7 @@ jobs:
           EXPECTED_SHA: ${{ steps.canonical-source.outputs.sha }}
         run: |
           set -euo pipefail
-          config=.github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
           actual_sha="$(sha256sum "$config" | cut -d ' ' -f 1)"
           if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
             echo "::error::Authenticated restore changed the caller-owned GitHub Packages source"
@@ -517,7 +517,7 @@ jobs:
       - name: 🧪 Configure an untrusted source with the credential-bearing name
         run: >-
           dotnet nuget add source
-          --configfile .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          --configfile .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
           --name github
           ../local-packages
         shell: bash

@@ -25,71 +25,184 @@ runs:
       if: inputs.github-token != ''
       run: |
         set -euo pipefail
-        source_cleanup=none
-        config_path=
-        config_backup=
-        cleanup_source() {
-          case "$source_cleanup" in
-            created)
-              rm -f "$config_path"
-              ;;
-            restore)
-              cp "$config_backup" "$config_path"
-              rm -f "$config_backup"
-              ;;
-          esac
-        }
-        trap cleanup_source EXIT
+        expected_source_url="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+        # A sentinel keeps indexed arrays compatible with the Bash 3.2 shipped on macOS
+        # when nounset is enabled; empty-array expansion otherwise raises an error.
+        cleanup_modes=("none")
+        cleanup_paths=("")
+        cleanup_backups=("")
+        restore_configs=("")
+        needs_default_config=false
 
-        source_listing="$(dotnet nuget list source --format Detailed)"
-        if grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Enabled\]' <<<"$source_listing"; then
-          expected_source_url="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-          github_source_url="$(
-            awk '
-              tolower($0) ~ /^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[enabled\][[:space:]]*$/ {
-                getline
-                sub(/^[[:space:]]+/, "")
-                print
-                exit
-              }
-            ' <<<"$source_listing"
-          )"
-          if [[ "$github_source_url" != "$expected_source_url" ]]; then
-            echo "::error::The existing NuGet source named 'github' does not target $expected_source_url"
+        cleanup_sources() {
+          local cleanup_status=0
+          local i
+          for ((i = ${#cleanup_modes[@]} - 1; i >= 0; i--)); do
+            case "${cleanup_modes[$i]}" in
+              created)
+                rm -f "${cleanup_paths[$i]}" || cleanup_status=1
+                ;;
+              restore)
+                if cp "${cleanup_backups[$i]}" "${cleanup_paths[$i]}"; then
+                  rm -f "${cleanup_backups[$i]}"
+                else
+                  echo "::error::Failed to restore ${cleanup_paths[$i]}; backup retained at ${cleanup_backups[$i]}"
+                  cleanup_status=1
+                fi
+                ;;
+            esac
+          done
+          return "$cleanup_status"
+        }
+        on_exit() {
+          local original_status=$?
+          trap - EXIT
+          if cleanup_sources; then
+            exit "$original_status"
+          fi
+          exit 1
+        }
+        trap on_exit EXIT
+
+        add_restore_config() {
+          local project_path="$1"
+          local config_value="$2"
+          local config_dir
+          local existing
+
+          config_value="${config_value//\\//}"
+          if [[ "$config_value" =~ ^[[:alpha:]]:/ ]] && command -v cygpath >/dev/null 2>&1; then
+            config_value="$(cygpath -u "$config_value")"
+          elif [[ "$config_value" != /* ]]; then
+            config_value="$(dirname "$project_path")/$config_value"
+          fi
+          if [[ ! -f "$config_value" ]]; then
+            echo "::error::RestoreConfigFile does not exist: $config_value"
             exit 1
           fi
-        elif grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Disabled\]' <<<"$source_listing"; then
-          echo "::error::The existing NuGet source named 'github' is disabled; enable or rename it before authenticated restore"
-          exit 1
-        else
-          config_path="$(find . -maxdepth 1 -type f -iname 'nuget.config' -print -quit)"
-          if [[ -n "$config_path" ]]; then
-            config_backup="$(mktemp)"
-            cp "$config_path" "$config_backup"
-            chmod 600 "$config_backup"
-            source_cleanup=restore
-            dotnet nuget add source \
-              --configfile "$config_path" \
-              --name github \
-              "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          config_dir="$(cd "$(dirname "$config_value")" && pwd -P)"
+          config_value="$config_dir/$(basename "$config_value")"
+
+          for existing in "${restore_configs[@]}"; do
+            [[ -z "$existing" ]] && continue
+            if [[ "$existing" == "$config_value" ]]; then
+              return
+            fi
+          done
+          restore_configs+=("$config_value")
+        }
+
+        inspect_project_config() {
+          local project_path="$1"
+          local config_value
+          if [[ "$project_path" == "." ]]; then
+            config_value="$(dotnet msbuild -getProperty:RestoreConfigFile)"
           else
-            config_path="$PWD/NuGet.Config"
-            source_cleanup=created
-            umask 077
-            printf '%s\n' \
-              '<?xml version="1.0" encoding="utf-8"?>' \
-              '<configuration>' \
-              '  <packageSources>' \
-              '    <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />' \
-              '  </packageSources>' \
-              '</configuration>' \
-              >"$config_path"
+            config_value="$(dotnet msbuild "$project_path" -getProperty:RestoreConfigFile)"
           fi
+          config_value="${config_value%$'\r'}"
+          if [[ -n "$config_value" ]]; then
+            add_restore_config "$project_path" "$config_value"
+          else
+            needs_default_config=true
+          fi
+        }
+
+        solution_listing=
+        found_solution_project=false
+        if solution_listing="$(dotnet sln list 2>/dev/null)"; then
+          while IFS= read -r project_path; do
+            project_path="${project_path%$'\r'}"
+            case "$project_path" in
+              *.csproj|*.fsproj|*.vbproj)
+                found_solution_project=true
+                project_path="${project_path//\\//}"
+                inspect_project_config "$project_path"
+                ;;
+            esac
+          done <<<"$solution_listing"
+          if [[ "$found_solution_project" == false ]]; then
+            needs_default_config=true
+          fi
+        else
+          inspect_project_config "."
+        fi
+
+        configure_source() {
+          local selected_config="${1:-}"
+          local source_listing
+          local github_source_url
+          local config_path
+          local config_backup
+
+          if [[ -n "$selected_config" ]]; then
+            source_listing="$(dotnet nuget list source --configfile "$selected_config" --format Detailed)"
+          else
+            source_listing="$(dotnet nuget list source --format Detailed)"
+          fi
+          if grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Enabled\]' <<<"$source_listing"; then
+            github_source_url="$(
+              awk '
+                tolower($0) ~ /^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[enabled\][[:space:]]*$/ {
+                  getline
+                  sub(/^[[:space:]]+/, "")
+                  print
+                  exit
+                }
+              ' <<<"$source_listing"
+            )"
+            if [[ "$github_source_url" != "$expected_source_url" ]]; then
+              echo "::error::The existing NuGet source named 'github' does not target $expected_source_url"
+              exit 1
+            fi
+          elif grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Disabled\]' <<<"$source_listing"; then
+            echo "::error::The existing NuGet source named 'github' is disabled; enable or rename it before authenticated restore"
+            exit 1
+          else
+            config_path="$selected_config"
+            if [[ -z "$config_path" ]]; then
+              config_path="$(find . -maxdepth 1 -type f -iname 'nuget.config' -print -quit)"
+            fi
+            if [[ -n "$config_path" ]]; then
+              config_backup="$(mktemp)"
+              cp "$config_path" "$config_backup"
+              chmod 600 "$config_backup"
+              cleanup_modes+=("restore")
+              cleanup_paths+=("$config_path")
+              cleanup_backups+=("$config_backup")
+              dotnet nuget add source \
+                --configfile "$config_path" \
+                --name github \
+                "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+            else
+              config_path="$PWD/NuGet.Config"
+              cleanup_modes+=("created")
+              cleanup_paths+=("$config_path")
+              cleanup_backups+=("")
+              umask 077
+              printf '%s\n' \
+                '<?xml version="1.0" encoding="utf-8"?>' \
+                '<configuration>' \
+                '  <packageSources>' \
+                '    <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />' \
+                '  </packageSources>' \
+                '</configuration>' \
+                >"$config_path"
+            fi
+          fi
+        }
+
+        for restore_config in "${restore_configs[@]}"; do
+          [[ -z "$restore_config" ]] && continue
+          configure_source "$restore_config"
+        done
+        if [[ "$needs_default_config" == true ]]; then
+          configure_source
         fi
 
         dotnet restore
         trap - EXIT
-        cleanup_source
+        cleanup_sources
       env:
         # NuGet reads source credentials from this process-only environment variable, so the
         # token is neither written to NuGet.Config nor exposed to repository-controlled tests.

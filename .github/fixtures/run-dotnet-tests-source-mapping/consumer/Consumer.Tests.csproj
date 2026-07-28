@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)../restore-config/NuGet.Config</RestoreConfigFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,4 +18,15 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <Target Name="VerifySelectedRestoreConfigHasGitHubSource" BeforeTargets="Restore">
+    <XmlPeek
+      XmlInputPath="$(RestoreConfigFile)"
+      Query="/configuration/packageSources/add[@key='github']/@value">
+      <Output TaskParameter="Result" PropertyName="FixtureGitHubSource" />
+    </XmlPeek>
+    <Error
+      Condition="'$(FixtureGitHubSource)' != 'https://nuget.pkg.github.com/devantler-tech/index.json'"
+      Text="The explicitly selected RestoreConfigFile did not receive the temporary GitHub Packages source." />
+  </Target>
 </Project>
