@@ -286,23 +286,23 @@ jobs:
           set -euo pipefail
           run_json=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")
           workflow_id=$(jq -er '.workflow_id | select(type == "number")' <<<"$run_json")
-          run_pages='[]'
+          page_file="$RUNNER_TEMP/auto-merge-order-page-${RUN_ID}.json"
+          pages_jsonl="$RUNNER_TEMP/auto-merge-order-pages-${RUN_ID}.jsonl"
+          pages_json="$RUNNER_TEMP/auto-merge-order-pages-${RUN_ID}.json"
+          : > "$pages_jsonl"
           page=1
           current_seen=false
           while :; do
-            page_json=$(
-              gh api "repos/$REPOSITORY/actions/workflows/$workflow_id/runs" \
-                --method GET -f per_page=100 -f page="$page"
-            )
-            run_pages=$(jq -cn \
-              --argjson pages "$run_pages" --argjson page "$page_json" \
-              '$pages + [$page]')
+            gh api "repos/$REPOSITORY/actions/workflows/$workflow_id/runs" \
+              --method GET -f per_page=100 -f page="$page" > "$page_file"
+            cat "$page_file" >> "$pages_jsonl"
+            printf '\n' >> "$pages_jsonl"
             if jq -e --argjson current "$RUN_ID" \
               'any(.workflow_runs[]?; .id == $current)' \
-              <<<"$page_json" >/dev/null; then
+              "$page_file" >/dev/null; then
               current_seen=true
             fi
-            page_size=$(jq -er '.workflow_runs | length' <<<"$page_json")
+            page_size=$(jq -er '.workflow_runs | length' "$page_file")
             if [[ "$page_size" -lt 100 ]]; then
               break
             fi
@@ -312,9 +312,10 @@ jobs:
             echo "::error::Current run was absent from the complete workflow-run history."
             exit 2
           fi
+          jq -s . "$pages_jsonl" > "$pages_json"
 
           if bash .devantler-tech-actions-order/.scripts/is-current-pull-request-workflow-run.sh \
-            "$RUN_ID" "$workflow_id" "$PR_NUMBER" <<<"$run_pages"; then
+            "$RUN_ID" "$workflow_id" "$PR_NUMBER" < "$pages_json"; then
             echo "current=true" >> "$GITHUB_OUTPUT"
             exit 0
           else

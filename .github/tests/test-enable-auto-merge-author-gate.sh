@@ -122,9 +122,14 @@ if [[ "$event_order_permissions" != "permission-actions:read" ||
   "$event_order_run" != *'actions/workflows/$workflow_id/runs'* ||
   "$event_order_run" != *'page="$page"'* ||
   "$event_order_run" != *"current_seen"* ||
+  "$event_order_run" != *'pages_jsonl="$RUNNER_TEMP/'* ||
+  "$event_order_run" != *'jq -s . "$pages_jsonl" > "$pages_json"'* ||
+  "$event_order_run" != *'< "$pages_json"'* ||
   "$event_order_run" == *"--paginate"* ||
   "$event_order_run" == *"created="* ||
   "$event_order_run" == *"-f event="* ||
+  "$event_order_run" == *"--argjson pages"* ||
+  "$event_order_run" == *"--argjson page"* ||
   "$event_order_run" != *'echo "current=false"'* ||
   "$event_order_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
   "$event_order_checkout_path" != ".devantler-tech-actions-order" ||
