@@ -8,11 +8,12 @@ status=0
 
 while IFS= read -r fixture; do
   name="$(jq -r '.name' <<<"$fixture")"
+  event_action="$(jq -r '.event_action' <<<"$fixture")"
   event_updated_at="$(jq -r '.event_updated_at' <<<"$fixture")"
   expected_exit="$(jq -r '.expected_exit' <<<"$fixture")"
 
   set +e
-  jq -c '.timeline' <<<"$fixture" | bash "$script" "$event_updated_at"
+  jq -c '.timeline' <<<"$fixture" | bash "$script" "$event_action" "$event_updated_at"
   actual_exit=$?
   set -e
 

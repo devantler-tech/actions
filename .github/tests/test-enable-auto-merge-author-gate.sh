@@ -291,12 +291,14 @@ resolve_run="$(yq -r '
 expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
+  "$(yq -r '.EVENT_ACTION // ""' <<<"$resolve_env")" != '${{ github.event.action }}' ||
   "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
   "$resolve_run" != *"headRefOid"* ||
   "$resolve_run" != *"timelineItems(first:100,after:\$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT])"* ||
   "$resolve_run" != *"pageInfo{hasNextPage endCursor}"* ||
   "$resolve_run" != *"is-current-pull-request-lifecycle.sh"* ||
+  "$resolve_run" != *'"$EVENT_ACTION" "$EVENT_UPDATED_AT"'* ||
   "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
   "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
   echo "::error file=$workflow::actor enforcement must reject a moved head or a later same-head lifecycle event without treating unrelated PR edits as supersession"

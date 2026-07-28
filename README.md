@@ -238,7 +238,8 @@ older privileged run before its jobs can mutate the PR without cancelling anothe
 This caller-keyed state lease is acquired only when the reusable auto-merge lane actually executes,
 so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
 arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
-edits create no replacement run.
+edits create no replacement run. Before mutation, a live reopen/ready-for-review timeline binding
+rejects later events and treats any equal-time sequence it cannot uniquely identify as superseded.
 Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
 ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
 safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.

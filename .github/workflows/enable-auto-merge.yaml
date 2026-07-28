@@ -463,6 +463,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
@@ -510,7 +511,7 @@ jobs:
               }]' > "$lifecycle_file"
 
             if bash .devantler-tech-actions/.scripts/is-current-pull-request-lifecycle.sh \
-              "$EVENT_UPDATED_AT" < "$lifecycle_file"; then
+              "$EVENT_ACTION" "$EVENT_UPDATED_AT" < "$lifecycle_file"; then
               :
             else
               lifecycle_status=$?
