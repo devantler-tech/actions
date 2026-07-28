@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.6](https://github.com/devantler-tech/actions/compare/v10.2.5...v10.2.6) (2026-07-28)
+
+
+### Bug Fixes
+
+* **upsert-issue:** prevent jq injection through titles ([#676](https://github.com/devantler-tech/actions/issues/676)) ([55fa940](https://github.com/devantler-tech/actions/commit/55fa940ecddbbf4262a24ac07f9a5ed538d6ae50))
+
 ## [10.2.5](https://github.com/devantler-tech/actions/compare/v10.2.4...v10.2.5) (2026-07-27)
 
 
