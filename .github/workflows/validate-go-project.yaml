@@ -75,7 +75,11 @@ jobs:
               # The allowlist decides which advisories the vuln scan accepts, so a
               # change to it changes the gate's verdict on unchanged code. Without
               # this entry, editing the allowlist skips the very scan that reads it.
+              # Both forms are listed because `working-directory` may point at a nested
+              # module, whose allowlist lives at e.g. `services/api/.govulncheck-allow.txt`
+              # — a root-only pattern would leave that edit unscanned.
               - '.govulncheck-allow.txt'
+              - '**/.govulncheck-allow.txt'
             # Files lintable by MegaLinter Go flavor (excluding Go files which are covered above)
             lintable:
               # Languages
@@ -370,14 +374,20 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo.
-    # Gated on the same events as the test job — deliberately NOT pull_request-only.
-    # A vulnerability scan's verdict depends on the vulnerability DATABASE as well as
-    # the diff, so advisories published after a merge make unchanged code vulnerable.
-    # While this ran on pull_request only, the default branch could never report that.
+    # Deliberately NOT restricted by event_name, and deliberately NOT diff-gated on the
+    # default branch. A vulnerability scan's verdict depends on the vulnerability
+    # DATABASE as well as the diff: an advisory published after a merge makes unchanged,
+    # already-merged code vulnerable. Two separate gates each hid that, and both are gone:
+    #   * `event_name == 'pull_request'` meant the default branch never scanned at all;
+    #   * the path filter alone means a default-branch push touching no Go path (a README
+    #     edit) skips the scan, so the branch keeps reporting green while a
+    #     newly-published advisory already applies to it.
+    # On the default branch the scan therefore runs on every invocation; on pull requests
+    # and topic branches the path filter still applies, so per-PR cost is unchanged.
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      && (needs.changes.outputs.go == 'true'
+      || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     permissions:
       contents: read
     # govulncheck's default symbol scan builds a whole-program call graph in memory,
