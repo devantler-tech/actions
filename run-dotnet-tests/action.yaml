@@ -62,14 +62,14 @@ runs:
             config_path="$PWD/NuGet.Config"
             source_cleanup=created
             umask 077
-            cat >"$config_path" <<'EOF'
-            <?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-              <packageSources>
-                <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />
-              </packageSources>
-            </configuration>
-            EOF
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="utf-8"?>' \
+              '<configuration>' \
+              '  <packageSources>' \
+              '    <add key="github" value="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" />' \
+              '  </packageSources>' \
+              '</configuration>' \
+              >"$config_path"
           fi
         fi
 
