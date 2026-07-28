@@ -2738,24 +2738,45 @@ jobs:
         with:
           persist-credentials: false
 
-      # The org-required direct run of validate-go-project.yaml and this repo's
-      # ci.yaml self-test (which calls it as a reusable workflow) run on the same
-      # repository + ref. If the concurrency group is not invocation-aware they share
-      # one group and cancel each other, failing CI - Required Checks nondeterministically
-      # (devantler-tech/actions#587). A reusable workflow inherits the CALLER's
-      # github.workflow, so keying the group on github.workflow keeps the two
-      # invocations in separate groups while runs of the same invocation still
-      # supersede. This guard goes red if that discriminator is ever dropped. The
-      # grep is a regex (not -F) so the group's own ${{ … }} expressions are matched
-      # as literals here rather than being evaluated in this workflow.
-      - name: 🔒 Assert the concurrency group keys on github.workflow
+      # Two invocations of validate-go-project.yaml that differ in any way must land in
+      # different concurrency groups, or the later cancels the earlier and CI - Required
+      # Checks fails nondeterministically. Both collisions below were observed live, and
+      # each needs its own discriminator:
+      #
+      #   * github.workflow — the org-required direct run vs this repo's ci.yaml
+      #     self-test, which run on the same repository + ref. A reusable workflow
+      #     inherits the CALLER's github.workflow (devantler-tech/actions#587).
+      #   * the invocation's inputs — two calls from the SAME caller on the same ref,
+      #     which github.workflow cannot tell apart. The `scan-default-branch`
+      #     both-states self-tests are exactly that: identical but for one input.
+      #
+      # This guard goes red if either discriminator is dropped. The grep is a regex (not
+      # -F) so the group's own ${{ … }} expressions are matched as literals here rather
+      # than being evaluated in this workflow.
+      - name: 🔒 Assert the concurrency group is invocation-aware
         shell: bash
         env:
           GATE: .github/workflows/validate-go-project.yaml
         run: |
           set -euo pipefail
-          if ! grep -Eq 'group: "validate-go-project-.*github\.workflow' "$GATE"; then
-            echo "::error::$GATE concurrency group is no longer invocation-aware. Keep github.workflow in the group (devantler-tech/actions#587) so the org-required direct run and the ci.yaml reusable-workflow self-test do not cancel each other."
+          group="$(grep -E 'group: "validate-go-project-' "$GATE" || true)"
+          if [[ -z "$group" ]]; then
+            echo "::error::$GATE has no recognisable validate-go-project concurrency group to verify."
+            exit 1
+          fi
+          if ! grep -Eq 'github\.workflow' <<<"$group"; then
+            echo "::error::$GATE concurrency group no longer keys on github.workflow (devantler-tech/actions#587), so the org-required direct run and the ci.yaml reusable-workflow self-test share a group and cancel each other."
+            exit 1
+          fi
+          # Every workflow_call input must appear, so a new input that distinguishes two
+          # invocations cannot be added without also distinguishing their groups.
+          missing=""
+          while IFS= read -r input; do
+            [[ -n "$input" ]] || continue
+            grep -qF "inputs.$input" <<<"$group" || missing="$missing $input"
+          done < <(yq -r '.["on"].workflow_call.inputs | keys | .[]' "$GATE")
+          if [[ -n "$missing" ]]; then
+            echo "::error::$GATE concurrency group omits workflow_call input(s):$missing. Two calls from the same caller workflow on the same ref that differ only by an input would share a group, and the later would cancel the earlier."
             exit 1
           fi
           echo "validate-go-project.yaml concurrency group is invocation-aware ✅"

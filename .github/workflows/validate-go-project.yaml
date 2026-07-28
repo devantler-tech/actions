@@ -26,15 +26,25 @@ on:
   merge_group:
   ##################################
 
-# Invocation-aware concurrency: keying on github.workflow keeps this workflow's
-# two invocations on the same ref in separate groups — the org-required direct
-# run (github.workflow == this workflow's name) versus a caller's reusable-workflow
-# self-test (a reusable workflow inherits the CALLER's github.workflow, e.g. the CI
-# workflow). Without it both share one group on the same repository+ref and
-# cancel each other, failing the aggregate required check nondeterministically
-# (devantler-tech/actions#587). Runs of the same logical invocation still supersede.
+# Invocation-aware concurrency: two invocations that differ in any way are different
+# logical invocations and must not cancel each other. Only reruns of the SAME invocation
+# supersede. Two discriminators are needed, for two separate collisions both seen live:
+#
+#   * github.workflow — separates the org-required direct run (github.workflow == this
+#     workflow's name) from a caller's reusable-workflow self-test (a reusable workflow
+#     inherits the CALLER's github.workflow, e.g. the CI workflow). Without it both share
+#     one group on the same repository+ref and cancel each other, failing the aggregate
+#     required check nondeterministically (devantler-tech/actions#587).
+#
+#   * the invocation's inputs — separates two calls from the SAME caller workflow on the
+#     same ref, which github.workflow alone cannot tell apart. The both-states self-tests
+#     for `scan-default-branch` are exactly that shape: same caller, same ref, differing
+#     only by input, so the second silently cancelled the first.
+#
+# Adding a discriminator only ever splits groups further; it cannot merge two that were
+# separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}"
   cancel-in-progress: true
 
 permissions: {}
