@@ -4,6 +4,7 @@
     "current_run_id": 100,
     "workflow_id": 7,
     "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
     "expected_actor": "devantler",
     "runs": [
       {
@@ -11,6 +12,7 @@
           {
             "id": 110,
             "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:03Z",
             "actor": {"login": "devantler"},
             "pull_requests": [{"number": 42}]
           }
@@ -23,6 +25,7 @@
     "current_run_id": 100,
     "workflow_id": 7,
     "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
     "expected_actor": "",
     "runs": [
       {
@@ -30,6 +33,7 @@
           {
             "id": 120,
             "workflow_id": 8,
+            "created_at": "2026-07-28T20:00:03Z",
             "actor": {"login": "devantler"},
             "pull_requests": [{"number": 42}]
           }
@@ -42,6 +46,7 @@
     "current_run_id": 100,
     "workflow_id": 7,
     "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
     "expected_actor": "",
     "runs": [
       {
@@ -49,6 +54,7 @@
           {
             "id": 120,
             "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:03Z",
             "actor": {"login": "octocat"},
             "pull_requests": [{"number": 42}]
           }
@@ -61,6 +67,7 @@
     "current_run_id": 100,
     "workflow_id": 7,
     "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
     "expected_actor": "",
     "runs": [
       {
@@ -68,12 +75,14 @@
           {
             "id": 110,
             "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:03Z",
             "actor": {"login": "devantler"},
             "pull_requests": [{"number": 42}]
           },
           {
             "id": 120,
             "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:04Z",
             "actor": {"login": "octocat"},
             "pull_requests": [{"number": 42}]
           }
@@ -86,6 +95,7 @@
     "current_run_id": 100,
     "workflow_id": 7,
     "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
     "expected_actor": "",
     "runs": [
       {
@@ -93,8 +103,30 @@
           {
             "id": 120,
             "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:03Z",
             "actor": {"login": "devantler"},
             "pull_requests": [{"number": 43}]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "trusted run before the live update does not mask a newer event",
+    "current_run_id": 100,
+    "workflow_id": 7,
+    "pr_number": 42,
+    "live_updated_at": "2026-07-28T20:00:02Z",
+    "expected_actor": "",
+    "runs": [
+      {
+        "workflow_runs": [
+          {
+            "id": 110,
+            "workflow_id": 7,
+            "created_at": "2026-07-28T20:00:01Z",
+            "actor": {"login": "devantler"},
+            "pull_requests": [{"number": 42}]
           }
         ]
       }

@@ -68,7 +68,8 @@ fi
 
 if latest_actor=$(
   bash "$script_dir/find-trusted-superseding-pr-run.sh" \
-    "$run_id" "$workflow_id" "$pr_number" "$trusted_actors" <<<"$run_pages"
+    "$run_id" "$workflow_id" "$pr_number" "$live_updated_at" \
+    "$trusted_actors" <<<"$run_pages"
 ); then
   echo "::notice::PR #${pr_number}: rejected event was superseded by a newer trusted pull_request run from ${latest_actor}; skipping stale revocation."
   exit 0

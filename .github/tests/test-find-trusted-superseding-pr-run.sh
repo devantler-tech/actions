@@ -12,12 +12,14 @@ while IFS= read -r fixture; do
   current_run_id="$(jq -r .current_run_id <<<"$fixture")"
   workflow_id="$(jq -r .workflow_id <<<"$fixture")"
   pr_number="$(jq -r .pr_number <<<"$fixture")"
+  live_updated_at="$(jq -r .live_updated_at <<<"$fixture")"
   expected_actor="$(jq -r .expected_actor <<<"$fixture")"
   runs="$(jq -c .runs <<<"$fixture")"
 
   set +e
   actual_actor="$(
-    bash "$selector" "$current_run_id" "$workflow_id" "$pr_number" "$trusted_actors" \
+    bash "$selector" "$current_run_id" "$workflow_id" "$pr_number" \
+      "$live_updated_at" "$trusted_actors" \
       <<<"$runs"
   )"
   selector_exit=$?

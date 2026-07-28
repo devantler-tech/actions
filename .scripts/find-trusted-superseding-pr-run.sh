@@ -6,30 +6,34 @@
 #
 # Usage:
 #   find-trusted-superseding-pr-run.sh \
-#     <current-run-id> <workflow-id> <pr-number> <trusted-actors-json>
+#     <current-run-id> <workflow-id> <pr-number> \
+#     <live-updated-at> <trusted-actors-json>
 
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "usage: $0 <current-run-id> <workflow-id> <pr-number> <trusted-actors-json>" >&2
+if [[ $# -ne 5 ]]; then
+  echo "usage: $0 <current-run-id> <workflow-id> <pr-number> <live-updated-at> <trusted-actors-json>" >&2
   exit 2
 fi
 
 current_run_id="$1"
 workflow_id="$2"
 pr_number="$3"
-trusted_actors="$4"
+live_updated_at="$4"
+trusted_actors="$5"
 
 jq -er \
   --argjson current "$current_run_id" \
   --argjson workflow "$workflow_id" \
   --argjson pr "$pr_number" \
+  --arg live "$live_updated_at" \
   --argjson trusted "$trusted_actors" '
     [
       .[].workflow_runs[]?
       | select(
           (.id > $current) and
           (.workflow_id == $workflow) and
+          ((.created_at // "") >= $live) and
           any(.pull_requests[]?; .number == $pr)
         )
     ]

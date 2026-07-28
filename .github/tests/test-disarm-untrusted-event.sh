@@ -9,8 +9,8 @@ trap 'rm -f "$mock_log"' EXIT
 
 trusted_actors='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
 live_pr='{"headRefOid":"new-head","updatedAt":"2026-07-28T20:00:02Z"}'
-trusted_same_workflow='{"workflow_runs":[{"id":110,"workflow_id":7,"actor":{"login":"devantler"},"pull_requests":[{"number":42}]}]}'
-trusted_other_workflow='{"workflow_runs":[{"id":110,"workflow_id":8,"actor":{"login":"devantler"},"pull_requests":[{"number":42}]}]}'
+trusted_same_workflow='{"workflow_runs":[{"id":110,"workflow_id":7,"created_at":"2026-07-28T20:00:03Z","actor":{"login":"devantler"},"pull_requests":[{"number":42}]}]}'
+trusted_other_workflow='{"workflow_runs":[{"id":110,"workflow_id":8,"created_at":"2026-07-28T20:00:03Z","actor":{"login":"devantler"},"pull_requests":[{"number":42}]}]}'
 
 metadata_failure_output="$(
   MOCK_GH_LOG="$mock_log" \
