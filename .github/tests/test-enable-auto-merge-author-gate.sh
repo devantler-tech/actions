@@ -30,7 +30,7 @@ if [[ "$enabled_test_uses" != "./.github/workflows/enable-auto-merge.yaml" ||
   "$enabled_test_flag" != "true" ||
   "$default_test_key" != "default-self-test" ||
   "$enabled_test_key" != "actor-trust-self-test" ||
-  "$enabled_test_permissions" != "contents:write,pull-requests:write" ]]; then
+  "$enabled_test_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
   echo "::error file=$ci_workflow::CI must isolate its two reusable invocations and exercise actor trust with exact revoke permissions"
   status=1
 fi
@@ -195,8 +195,8 @@ if [[ "$disarm_job_condition" != "needs.eligibility.outputs.disarm == 'true'" ]]
 fi
 
 disarm_job_permissions="$(yq -r '.jobs."disarm-untrusted-update".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$workflow")"
-if [[ "$disarm_job_permissions" != "contents:write,pull-requests:write" ]]; then
-  echo "::error file=$workflow::the rejected-update disarm path must grant only revocation writes"
+if [[ "$disarm_job_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
+  echo "::error file=$workflow::the rejected-update disarm path must grant only run-time lookup plus revocation writes"
   status=1
 fi
 
@@ -215,7 +215,7 @@ normalized_workflow_group="$(tr -d '[:space:]' <<<"$workflow_concurrency_group")
 review_job_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
 review_job_cancel="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-expected_review_job_group='enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, '"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"') && '"'"'direct'"'"') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == '"'"'true'"'"') && '"'"'actor-trust-legacy'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == '"'"'pull_request'"'"' && github.run_id || '"'"'review'"'"' }}'
+expected_review_job_group='enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, '"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"') && '"'"'direct'"'"') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == '"'"'true'"'"') && '"'"'actor-trust-legacy'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}'
 disarm_job_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
 disarm_job_cancel="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
@@ -251,7 +251,7 @@ disarm_checkout_persist="$(yq -r '
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" ||
   "$disarm_checkout_repository" != '${{ job.workflow_repository }}' ||
-  "$disarm_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && (github.event.pull_request.base.sha || github.event.repository.default_branch) || job.workflow_sha }}' ||
+  "$disarm_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
   "$disarm_checkout_persist" != "false" ]]; then
   echo "::error file=$workflow::rejected updates must run the disarm script from the trusted base/called-workflow commit without persisted credentials"
   status=1
@@ -273,9 +273,12 @@ disarm_step_run="$(yq -r '
   | join("\n")' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.PR_NUMBER // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.number || github.event.issue.number }}' ||
+  "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
   "$disarm_step_run" != *"disarm-auto-merge.sh"* ||
-  "$disarm_step_run" != *'"$REPOSITORY" "$PR_NUMBER"'* ]]; then
-  echo "::error file=$workflow::rejected events must pass the target PR to the shared revocation helper"
+  "$disarm_step_run" != *'actions/runs/$RUN_ID'* ||
+  "$disarm_step_run" != *".created_at"* ||
+  "$disarm_step_run" != *'"$REPOSITORY" "$PR_NUMBER" "$event_created_at"'* ]]; then
+  echo "::error file=$workflow::rejected events must pass their durable run-creation time and target PR to the serialized revocation helper"
   status=1
 fi
 
@@ -292,13 +295,15 @@ expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TR
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
   "$(yq -r '.EVENT_ACTION // ""' <<<"$resolve_env")" != '${{ github.event.action }}' ||
+  "$(yq -r '.EVENT_BEFORE // ""' <<<"$resolve_env")" != '${{ github.event.before }}' ||
   "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
   "$resolve_run" != *"headRefOid"* ||
-  "$resolve_run" != *"timelineItems(first:100,after:\$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT])"* ||
+  "$resolve_run" != *"timelineItems(first:100,after:\$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT,HEAD_REF_FORCE_PUSHED_EVENT])"* ||
+  "$resolve_run" != *"... on HeadRefForcePushedEvent{createdAt beforeCommit{oid} afterCommit{oid}}"* ||
   "$resolve_run" != *"pageInfo{hasNextPage endCursor}"* ||
   "$resolve_run" != *"is-current-pull-request-lifecycle.sh"* ||
-  "$resolve_run" != *'"$EVENT_ACTION" "$EVENT_UPDATED_AT"'* ||
+  "$resolve_run" != *'"$EVENT_ACTION" "$EVENT_UPDATED_AT" "$EVENT_BEFORE" "$EVENT_HEAD"'* ||
   "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
   "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
   echo "::error file=$workflow::actor enforcement must reject a moved head or a later same-head lifecycle event without treating unrelated PR edits as supersession"

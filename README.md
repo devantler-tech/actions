@@ -238,8 +238,11 @@ older privileged run before its jobs can mutate the PR without cancelling anothe
 This caller-keyed state lease is acquired only when the reusable auto-merge lane actually executes,
 so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
 arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
-edits create no replacement run. Before mutation, a live reopen/ready-for-review timeline binding
-rejects later events and treats any equal-time sequence it cannot uniquely identify as superseded.
+edits create no replacement run. Before mutation, a live reopen/ready-for-review/force-push timeline
+binding rejects later events (including a head that moves away and returns) and treats any equal-time
+sequence it cannot uniquely identify as superseded. Arming and revocation share one mutation lane;
+a delayed rejected event preserves only auto-merge state whose authorization time is provably newer
+than that rejected run.
 Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
 ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
 safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.
@@ -283,6 +286,7 @@ jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
     permissions:
+      actions: read
       pull-requests: write
       contents: write
     with:
@@ -292,23 +296,25 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> **Actor-trust note:** Callers that enable actor trust must grant `contents: write` and
-> `pull-requests: write` as shown above and should pass a stable, globally caller-unique
-> `concurrency-key`. An omitted key uses a safe repository-wide compatibility lane, which can
+> **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
+> `contents: write`, and `pull-requests: write` as shown above and should pass a stable,
+> globally caller-unique `concurrency-key`. An omitted key uses a safe repository-wide
+> compatibility lane, which can
 > cancel independent actor-trust call sites for the same PR but cannot let stale authority proceed;
 > explicit keys avoid that availability tradeoff. Workflow-level arbitration orders lifecycle state
 > only for the reusable lane that actually executes; skipped or unrelated caller runs do not
 > reauthorize or supersede it.
 > Both the original and rerun-triggering actors must be trusted for every privileged event. The
+> read scope binds stale-revocation decisions to the rejected run's durable creation time; the
 > write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
-> App private key. Missing revoke authority fails the required workflow closed.
+> App private key. Missing lookup or revoke authority fails the required workflow closed.
 >
-> **Note:** The caller grants only the legacy minimum above, with or without
-> enforcement — the enforced paths' read-only lookups run on separate App
-> tokens minted only when needed. Review enforcement additionally requires
-> the GitHub App installation to grant **Actions: read**, **Checks: read**,
-> and **Contents: read**. If the installation lacks a required scope, the workflow fails
-> closed rather than approving or arming on unproven evidence.
+> **Note:** The caller grants the documented minimum above with or without enforcement.
+> Actor trust uses its caller `Actions: read` scope only to bind stale revocation to the
+> rejected run's creation time. Review enforcement uses a separate App token and additionally
+> requires the GitHub App installation to grant **Actions: read**, **Checks: read**, and
+> **Contents: read**. If a required scope is missing, the workflow fails closed rather than
+> approving or arming on unproven evidence.
 
 #### Secrets and Inputs
 

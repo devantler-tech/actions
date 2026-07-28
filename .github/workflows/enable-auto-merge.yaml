@@ -333,16 +333,15 @@ jobs:
     needs: eligibility
     if: needs.eligibility.outputs.disarm == 'true'
     permissions:
+      actions: read
       contents: write
       pull-requests: write
-    # Evidence-removal disarms share the serialized review lane with later
-    # trusted replacement evidence. A stale deletion therefore either runs
-    # first and is followed by a live re-evaluation, or is replaced while
-    # pending by that newer re-evaluation. Pull-request disarms use a
-    # run-unique suffix because workflow-level state arbitration already
-    # orders those lifecycle events.
+    # All arming/disarming mutations share one caller/PR lane. A stale rejected
+    # event therefore checks the current authorization timestamp without racing
+    # a newer arming; it either runs first and is followed by reauthorization,
+    # is replaced while pending, or observes and preserves the newer state.
     concurrency:
-      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
@@ -352,13 +351,14 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout trusted disarm script
-        # A direct self-repo run uses the PR base SHA because job.workflow_sha
-        # can include the rejected head. A workflow_call consumer instead uses
-        # the called workflow's own immutable job.workflow_sha.
+        # A direct self-repo pull_request run uses the PR base SHA because
+        # job.workflow_sha can include the rejected head. Every other event
+        # shape, including direct issue_comment deletion, uses the called
+        # workflow's immutable job.workflow_sha rather than a mutable branch.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
-          ref: ${{ github.event.repository.full_name == job.workflow_repository && (github.event.pull_request.base.sha || github.event.repository.default_branch) || job.workflow_sha }}
+          ref: ${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}
           path: .devantler-tech-actions
           persist-credentials: false
 
@@ -367,10 +367,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
+          event_created_at=
+          if ! event_created_at=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID" --jq .created_at); then
+            echo "::warning::Unable to resolve rejected-event run creation time; revoking fail-closed."
+          fi
           bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh \
-            "$REPOSITORY" "$PR_NUMBER"
+            "$REPOSITORY" "$PR_NUMBER" "$event_created_at"
 
   auto-merge:
     needs: eligibility
@@ -384,12 +389,11 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
-    # Review/comment runs re-evaluate complete live gate state, so serializing
-    # them preserves the prior contract; a superseding pending run is safe
-    # because it reads the same current state. Pull-request runs already hold
-    # the earlier workflow-level state lease and use a run-unique job suffix.
+    # Every mutation shares the disarm job's caller/PR lane. Review/comment
+    # runs re-evaluate complete live state; pull-request runs also retain the
+    # earlier workflow-level state lease and durable lifecycle bindings.
     concurrency:
-      group: enable-auto-merge-review-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'pull_request' && github.run_id || 'review' }}
+      group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
 
@@ -464,6 +468,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
+          EVENT_BEFORE: ${{ github.event.before }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
@@ -494,11 +499,12 @@ jobs:
             gh api graphql --paginate \
               -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
                 repository(owner:$owner,name:$name){pullRequest(number:$number){
-                  timelineItems(first:100,after:$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT]){
+                  timelineItems(first:100,after:$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT,HEAD_REF_FORCE_PUSHED_EVENT]){
                     nodes{
                       __typename
                       ... on ReopenedEvent{createdAt}
                       ... on ReadyForReviewEvent{createdAt}
+                      ... on HeadRefForcePushedEvent{createdAt beforeCommit{oid} afterCommit{oid}}
                     }
                     pageInfo{hasNextPage endCursor}
                   }
@@ -507,11 +513,14 @@ jobs:
               -f owner="$OWNER" -f name="$NAME" -F number="$PR_NUMBER" |
               jq -s '[.[].data.repository.pullRequest.timelineItems.nodes[]? | {
                 type: .__typename,
-                createdAt: .createdAt
+                createdAt: .createdAt,
+                before: (.beforeCommit.oid // null),
+                after: (.afterCommit.oid // null)
               }]' > "$lifecycle_file"
 
             if bash .devantler-tech-actions/.scripts/is-current-pull-request-lifecycle.sh \
-              "$EVENT_ACTION" "$EVENT_UPDATED_AT" < "$lifecycle_file"; then
+              "$EVENT_ACTION" "$EVENT_UPDATED_AT" "$EVENT_BEFORE" "$EVENT_HEAD" \
+              < "$lifecycle_file"; then
               :
             else
               lifecycle_status=$?

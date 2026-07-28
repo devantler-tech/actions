@@ -3,8 +3,9 @@
 # Determine whether a pull_request event is still the newest durable same-head
 # lifecycle decision. Workflow concurrency cancels ordinary older work, but
 # GitHub does not guarantee scheduling order within a concurrency group. The
-# live head check in the workflow handles synchronize events; this helper
-# detects later reopened/ready_for_review events without treating unrelated PR
+# live head check in the workflow handles ordinary synchronize events; this
+# helper detects later reopened/ready_for_review/force-push events, including
+# a head that moves away and then returns, without treating unrelated PR
 # metadata edits as supersession.
 #
 # Equal-second events are action-aware: reopened/ready_for_review may identify
@@ -17,8 +18,10 @@
 
 set -euo pipefail
 
-event_action="${1:?usage: is-current-pull-request-lifecycle.sh <event-action> <event-updated-at>}"
-event_updated_at="${2:?usage: is-current-pull-request-lifecycle.sh <event-action> <event-updated-at>}"
+event_action="${1:?usage: is-current-pull-request-lifecycle.sh <event-action> <event-updated-at> <event-before> <event-head>}"
+event_updated_at="${2:?usage: is-current-pull-request-lifecycle.sh <event-action> <event-updated-at> <event-before> <event-head>}"
+event_before="${3-}"
+event_head="${4:?usage: is-current-pull-request-lifecycle.sh <event-action> <event-updated-at> <event-before> <event-head>}"
 timeline="$(mktemp)"
 trap 'rm -f "$timeline"' EXIT
 tee "$timeline" >/dev/null
@@ -28,25 +31,48 @@ if ! jq -e --arg action "$event_action" --arg event_time "$event_updated_at" '
   ($event_time | fromdateiso8601) as $event_epoch
   | type == "array" and
     all(.[];
-      (.type == "ReopenedEvent" or .type == "ReadyForReviewEvent") and
+      (.type == "ReopenedEvent" or
+       .type == "ReadyForReviewEvent" or
+       .type == "HeadRefForcePushedEvent") and
       (.createdAt | type == "string") and
-      ((.createdAt | fromdateiso8601) != null)
+      ((.createdAt | fromdateiso8601) != null) and
+      (
+        .type != "HeadRefForcePushedEvent" or
+        (
+          (.before | type == "string") and (.before | length) > 0 and
+          (.after | type == "string") and (.after | length) > 0
+        )
+      )
     )
 ' "$timeline" >/dev/null 2>&1; then
   echo "::error::Malformed pull-request lifecycle action, timeline, or event timestamp." >&2
   exit 2
 fi
 
-if jq -e --arg action "$event_action" --arg event_time "$event_updated_at" '
+if jq -e \
+  --arg action "$event_action" \
+  --arg event_time "$event_updated_at" \
+  --arg event_before "$event_before" \
+  --arg event_head "$event_head" '
   ($event_time | fromdateiso8601) as $event_epoch
   | any(.[]; (.createdAt | fromdateiso8601) > $event_epoch) or
     (
       [.[] | select((.createdAt | fromdateiso8601) == $event_epoch)] as $equal
-      | if $action == "opened" or $action == "synchronize" then
+      | if $action == "opened" then
           ($equal | length) > 0
+        elif $action == "synchronize" then
+          (
+            [$equal[] | select(
+              .type == "HeadRefForcePushedEvent" and
+              .before == $event_before and
+              .after == $event_head
+            )] as $current_force
+            | ($equal | length) != 0 and
+              (($equal | length) != 1 or ($current_force | length) != 1)
+          )
         elif $action == "reopened" then
           ([$equal[] | select(.type == "ReopenedEvent")] | length) != 1 or
-          ([$equal[] | select(.type == "ReadyForReviewEvent")] | length) != 0
+          ($equal | length) != 1
         else
           ([$equal[] | select(.type == "ReadyForReviewEvent")] | length) != 1 or
           ($equal | length) != 1

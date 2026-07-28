@@ -2115,6 +2115,7 @@ jobs:
       concurrency-key: actor-trust-self-test
       enforce-actor-trust: true
     permissions:
+      actions: read
       pull-requests: write
       contents: write
     secrets:

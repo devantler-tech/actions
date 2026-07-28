@@ -2,6 +2,8 @@
   {
     "name": "no lifecycle events",
     "event_action": "opened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [],
     "expected_exit": 0
@@ -9,6 +11,8 @@
   {
     "name": "current and older events do not supersede",
     "event_action": "ready_for_review",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T19:59:59Z"},
@@ -19,6 +23,8 @@
   {
     "name": "current reopen is uniquely identifiable",
     "event_action": "reopened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:00Z"}
@@ -28,6 +34,8 @@
   {
     "name": "same-second ready event supersedes reopen",
     "event_action": "reopened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:00Z"},
@@ -38,6 +46,8 @@
   {
     "name": "ambiguous same-second reopen fails closed",
     "event_action": "reopened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:00Z"},
@@ -48,6 +58,8 @@
   {
     "name": "ambiguous same-second ready event fails closed",
     "event_action": "ready_for_review",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:00Z"},
@@ -56,8 +68,64 @@
     "expected_exit": 1
   },
   {
+    "name": "current force push is uniquely identifiable",
+    "event_action": "synchronize",
+    "event_before": "head-a",
+    "event_head": "head-b",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {
+        "type": "HeadRefForcePushedEvent",
+        "createdAt": "2026-07-28T20:00:00Z",
+        "before": "head-a",
+        "after": "head-b"
+      }
+    ],
+    "expected_exit": 0
+  },
+  {
+    "name": "returned head after intervening force push supersedes",
+    "event_action": "opened",
+    "event_before": "",
+    "event_head": "head-a",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {
+        "type": "HeadRefForcePushedEvent",
+        "createdAt": "2026-07-28T20:00:01Z",
+        "before": "head-b",
+        "after": "head-a"
+      }
+    ],
+    "expected_exit": 1
+  },
+  {
+    "name": "ambiguous same-second force-push sequence fails closed",
+    "event_action": "synchronize",
+    "event_before": "head-a",
+    "event_head": "head-b",
+    "event_updated_at": "2026-07-28T20:00:00Z",
+    "timeline": [
+      {
+        "type": "HeadRefForcePushedEvent",
+        "createdAt": "2026-07-28T20:00:00Z",
+        "before": "head-a",
+        "after": "head-b"
+      },
+      {
+        "type": "HeadRefForcePushedEvent",
+        "createdAt": "2026-07-28T20:00:00Z",
+        "before": "head-b",
+        "after": "head-a"
+      }
+    ],
+    "expected_exit": 1
+  },
+  {
     "name": "later reopen supersedes",
     "event_action": "opened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent", "createdAt": "2026-07-28T20:00:01Z"}
@@ -67,6 +135,8 @@
   {
     "name": "later ready-for-review supersedes",
     "event_action": "synchronize",
+    "event_before": "head-z",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReadyForReviewEvent", "createdAt": "2026-07-28T20:00:02Z"}
@@ -76,6 +146,8 @@
   {
     "name": "malformed timeline fails closed",
     "event_action": "opened",
+    "event_before": "",
+    "event_head": "head-a",
     "event_updated_at": "2026-07-28T20:00:00Z",
     "timeline": [
       {"type": "ReopenedEvent"}
