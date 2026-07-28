@@ -24,7 +24,7 @@ enabled_test_flag="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".with."enf
 enabled_test_permissions="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$ci_workflow")"
 if [[ "$enabled_test_uses" != "./.github/workflows/enable-auto-merge.yaml" ||
   "$enabled_test_flag" != "true" ||
-  "$enabled_test_permissions" != "contents:write,pull-requests:write" ]]; then
+  "$enabled_test_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
   echo "::error file=$ci_workflow::CI must invoke the reusable workflow with actor trust enabled and its exact revoke permissions"
   status=1
 fi
@@ -93,8 +93,8 @@ fi
 # Match the complete classifier shape rather than checking that a few strings
 # occur somewhere. This proves each allowlist is attached to the correct event
 # actor and rejects extra OR branches that could bypass the privileged gate.
-allowlist_json="$(yq -r '.jobs.eligibility.env.TRUSTED_BOT_AUTHORS' "$workflow" | jq -c .)"
-trigger_actors_json="$(yq -r '.jobs.eligibility.env.TRUSTED_TRIGGER_ACTORS' "$workflow" | jq -c .)"
+allowlist_json="$(yq -r '.env.TRUSTED_BOT_AUTHORS' "$workflow" | jq -c .)"
+trigger_actors_json="$(yq -r '.env.TRUSTED_TRIGGER_ACTORS' "$workflow" | jq -c .)"
 expected_allowlist_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
 expected_trigger_actors_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
 if [[ "$allowlist_json" != "$expected_allowlist_json" ||
@@ -133,8 +133,8 @@ if [[ "$disarm_job_condition" != "needs.eligibility.outputs.disarm == 'true'" ]]
 fi
 
 disarm_job_permissions="$(yq -r '.jobs."disarm-untrusted-update".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$workflow")"
-if [[ "$disarm_job_permissions" != "contents:write,pull-requests:write" ]]; then
-  echo "::error file=$workflow::the rejected-update disarm path must grant only the two write scopes required to revoke auto-merge"
+if [[ "$disarm_job_permissions" != "actions:read,contents:write,pull-requests:write" ]]; then
+  echo "::error file=$workflow::the rejected-update disarm path must grant only revocation writes plus run-order read access"
   status=1
 fi
 
@@ -187,6 +187,28 @@ if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c1
 fi
 if ! grep -Fq 'disarm-auto-merge.sh' <<<"$disarm_job"; then
   echo "::error file=$workflow::rejected updates must revoke both classic auto-merge and merge-queue state"
+  status=1
+fi
+
+disarm_step_env="$(yq -r '
+  [.jobs."disarm-untrusted-update".steps[]
+   | select(.name == "🔒 Disarm auto-merge after rejected pull request trigger")
+   | .env // {}][0]' "$workflow")"
+disarm_step_run="$(yq -r '
+  [.jobs."disarm-untrusted-update".steps[]
+   | select(.name == "🔒 Disarm auto-merge after rejected pull request trigger")
+   | .run // ""]
+  | join("\n")' "$workflow")"
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.head.sha }}' ||
+  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$disarm_step_env")" != '${{ github.event.pull_request.updated_at }}' ||
+  "$(yq -r '.RUN_ID // ""' <<<"$disarm_step_env")" != '${{ github.run_id }}' ||
+  "$disarm_step_run" != *"headRefOid,updatedAt"* ||
+  "$disarm_step_run" != *'[[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]'* ||
+  "$disarm_step_run" != *"actions/runs"* ||
+  "$disarm_step_run" != *"LATEST_ACTOR"* ||
+  "$disarm_step_run" != *"TRUSTED_TRIGGER_ACTORS"* ]]; then
+  echo "::error file=$workflow::rejected events must still match the live head and lifecycle timestamp before revocation"
   status=1
 fi
 

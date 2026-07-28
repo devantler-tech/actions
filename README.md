@@ -270,6 +270,7 @@ jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
     permissions:
+      actions: read
       pull-requests: write
       contents: write
     with:
@@ -279,10 +280,11 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> **Actor-trust note:** Callers that enable actor trust must grant both `contents: write` and
-> `pull-requests: write` as shown above. Those scopes are used only by the rejected-event
-> `GITHUB_TOKEN` revocation job; rejected events never receive the App private key. Missing revoke
-> authority fails the required workflow closed.
+> **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
+> `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
+> delayed rejected event was superseded by a newer trusted pull-request run; the write scopes revoke
+> classic auto-merge or merge-queue state. Rejected events never receive the App private key.
+> Missing proof or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without
 > enforcement — the enforced gate's read-only lookups run on a separate App

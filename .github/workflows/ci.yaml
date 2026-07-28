@@ -2087,6 +2087,7 @@ jobs:
     with:
       enforce-actor-trust: true
     permissions:
+      actions: read
       pull-requests: write
       contents: write
     secrets:

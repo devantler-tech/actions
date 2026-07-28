@@ -54,6 +54,10 @@ on:
 
 permissions: {}
 
+env:
+  TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
+  TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
+
 jobs:
   # Required-workflow rules treat a workflow whose only job is SKIPPED as
   # unsatisfied. Classify every trigger in an unconditional, unprivileged job
@@ -63,8 +67,6 @@ jobs:
     permissions: {}
     runs-on: ubuntu-latest
     env:
-      TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
-      TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
       ACTOR_TRUST_ENFORCED: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
     outputs:
       eligible: ${{ steps.classify.outputs.eligible }}
@@ -163,6 +165,7 @@ jobs:
     needs: eligibility
     if: needs.eligibility.outputs.disarm == 'true'
     permissions:
+      actions: read
       contents: write
       pull-requests: write
     concurrency:
@@ -191,7 +194,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
-        run: bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
+          RUN_ID: ${{ github.run_id }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
+        run: |
+          set -euo pipefail
+          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,updatedAt)
+          LIVE_HEAD=$(jq -r .headRefOid <<<"$pr_json")
+          LIVE_UPDATED_AT=$(jq -r .updatedAt <<<"$pr_json")
+
+          if [[ "$LIVE_HEAD" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ]]; then
+            # Scheduling order is not event order. Prove the newest later
+            # pull_request workflow run before allowing an older rejection to
+            # stand down; comments/reviews and later untrusted events do not
+            # count as reauthorization and therefore still revoke fail-closed.
+            run_pages=$(gh api --method GET "repos/$REPOSITORY/actions/runs" --paginate \
+              -f event=pull_request -f per_page=100 -f created=">=${EVENT_UPDATED_AT}" | jq -s .)
+            LATEST_ACTOR=$(jq -r --argjson current "$RUN_ID" --argjson pr "$PR_NUMBER" '
+              [
+                .[].workflow_runs[]?
+                | select(
+                    (.id > $current) and
+                    any(.pull_requests[]?; .number == $pr)
+                  )
+              ]
+              | if length == 0 then "" else (max_by(.id).actor.login // "") end
+            ' <<<"$run_pages")
+
+            if jq -e --arg actor "$LATEST_ACTOR" 'index($actor) != null' \
+              <<<"$TRUSTED_TRIGGER_ACTORS" >/dev/null; then
+              echo "::notice::PR #${PR_NUMBER}: rejected event was superseded by a newer trusted pull_request run from ${LATEST_ACTOR}; skipping stale revocation."
+              exit 0
+            fi
+
+            echo "::notice::PR #${PR_NUMBER}: live state changed without a newer trusted pull_request reauthorization; revoking fail-closed."
+          fi
+
+          bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
 
   auto-merge:
     needs: eligibility
