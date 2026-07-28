@@ -514,6 +514,47 @@ jobs:
           cp "$RUNNER_TEMP/source-mapping-NuGet.Config" "$config"
         shell: bash
 
+      - name: 🧪 Prepare a symlinked caller NuGet configuration
+        id: symlink-fixture
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          cp -R .github/fixtures/run-dotnet-tests "$workspace"
+          cp .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config "$target"
+          ln -s "$target" "$workspace/NuGet.Config"
+          echo "target_sha=$(sha256sum "$target" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+          echo "link_target=$(readlink "$workspace/NuGet.Config")" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore through a symlinked caller config
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: ${{ runner.temp }}/run-dotnet-tests-symlink
+
+      - name: 🔒 Verify the symlink and target bytes are preserved
+        env:
+          EXPECTED_LINK_TARGET: ${{ steps.symlink-fixture.outputs.link_target }}
+          EXPECTED_TARGET_SHA: ${{ steps.symlink-fixture.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          if [[ ! -L "$workspace/NuGet.Config" ]]; then
+            echo "::error::Authenticated restore removed the caller's NuGet.Config symlink"
+            exit 1
+          fi
+          if [[ "$(readlink "$workspace/NuGet.Config")" != "$EXPECTED_LINK_TARGET" ]]; then
+            echo "::error::Authenticated restore changed the caller's NuGet.Config symlink target"
+            exit 1
+          fi
+          if [[ "$(sha256sum "$target" | cut -d ' ' -f 1)" != "$EXPECTED_TARGET_SHA" ]]; then
+            echo "::error::Authenticated restore changed the symlinked NuGet.Config target bytes"
+            exit 1
+          fi
+        shell: bash
+
       - name: 🧪 Configure an untrusted source with the credential-bearing name
         run: >-
           dotnet nuget add source

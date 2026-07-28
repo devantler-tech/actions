@@ -161,7 +161,7 @@ runs:
           else
             config_path="$selected_config"
             if [[ -z "$config_path" ]]; then
-              config_path="$(find . -maxdepth 1 -type f -iname 'nuget.config' -print -quit)"
+              config_path="$(find . -maxdepth 1 \( -type f -o -type l \) -iname 'nuget.config' -print -quit)"
             fi
             if [[ -n "$config_path" ]]; then
               config_backup="$(mktemp)"
