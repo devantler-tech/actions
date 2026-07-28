@@ -3,8 +3,9 @@ description: Test .NET solution or project
 author: devantler-tech
 inputs:
   github-token:
-    description: GitHub token to access the repository
-    required: true
+    description: GitHub token for authenticated package restore and Code Quality upload
+    required: false
+    default: ""
   working-directory:
     description: Directory to run the tests in
     required: false
@@ -20,7 +21,8 @@ runs:
         dotnet-version: |
           9
           10
-    - name: 🚚 Restore packages
+    - name: 🚚 Restore packages with GitHub Packages
+      if: inputs.github-token != ''
       run: |
         set -euo pipefail
         config="$(mktemp)"
@@ -41,6 +43,11 @@ runs:
         # NuGet reads source credentials from this process-only environment variable, so the
         # token is neither written to NuGet.Config nor exposed to repository-controlled tests.
         NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ inputs.github-token }};ValidAuthenticationTypes=Basic
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+    - name: 🚚 Restore packages without credentials
+      if: inputs.github-token == ''
+      run: dotnet restore
       shell: bash
       working-directory: ${{ inputs.working-directory }}
     - name: 🧪 Test
@@ -65,7 +72,7 @@ runs:
     # the third-party action directly is the only zero-lag option. Keep the inputs in sync
     # with upload-coverage/action.yaml.
     - name: 📊 Upload Code Coverage to GitHub Code Quality
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && inputs.github-token != ''
       continue-on-error: true
       uses: actions/upload-code-coverage@b51da2c3c1b23e04d2d6477cfc34350b1f5cd3e9 # v1.2.0
       with:
@@ -74,4 +81,4 @@ runs:
         label: code-coverage/dotnet
         # best-effort during the Code Quality preview — never break .NET CI on upload hiccups.
         fail-on-error: "false"
-        token: ${{ github.token }}
+        token: ${{ inputs.github-token }}
