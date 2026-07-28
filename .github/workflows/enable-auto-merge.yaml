@@ -54,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       eligible: ${{ steps.classify.outputs.eligible }}
+      disarm: ${{ steps.classify-disarm.outputs.disarm }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -110,12 +111,65 @@ jobs:
           }}
         run: echo "eligible=true" >> "$GITHUB_OUTPUT"
 
+      - name: 🔒 Classify rejected head update for disarm
+        id: classify-disarm
+        if: >-
+          ${{
+            github.event_name == 'pull_request' &&
+            github.event.action == 'synchronize' &&
+            !github.event.pull_request.draft &&
+            contains(
+              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              github.event.pull_request.user.login
+            ) &&
+            !contains(
+              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              github.actor
+            )
+          }}
+        run: echo "disarm=true" >> "$GITHUB_OUTPUT"
+
       - name: ✅ Complete ineligible required-workflow run
         id: ineligible
         if: steps.classify.outputs.eligible != 'true'
         run: >-
           echo "::notice::This event is not eligible for privileged bot auto-merge;
           completing the required workflow as a safe no-op."
+
+  # A trusted-bot PR may already be armed when a different actor updates its
+  # head. Revoke that stale state with the event's GITHUB_TOKEN in a separate
+  # least-privilege job: rejected events never receive the App private key.
+  # A read-only token fails the job closed, leaving a required check red.
+  disarm-untrusted-update:
+    needs: eligibility
+    if: needs.eligibility.outputs.disarm == 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: enable-auto-merge-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout trusted disarm script
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
+      - name: 🔒 Disarm auto-merge after rejected head update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh "$REPOSITORY" "$PR_NUMBER"
 
   auto-merge:
     needs: eligibility
