@@ -106,10 +106,15 @@ app_token_base_condition="$(yq -r '
   [.jobs."auto-merge".steps[]
    | select(.id == "app-token-base")
    | .if // ""][0]' "$workflow")"
+write_checkout_condition="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "📥 Checkout devantler-tech/actions (this workflow'\''s commit)")
+   | .if // ""][0]' "$workflow")"
 resolve_condition="$(yq -r '
   [.jobs."auto-merge".steps[]
    | select(.name == "🔎 Resolve target pull request")
    | .if // ""][0]' "$workflow")"
+expected_order_authorized="github.event_name != 'pull_request' || !(inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') || (steps.event-order-token.outcome == 'success' && steps.event-order.outcome == 'success' && steps.event-order.outputs.current == 'true')"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$event_order_permissions" != "permission-actions:read" ||
   "$event_order_condition" != "github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true')" ||
@@ -118,9 +123,10 @@ if [[ "$event_order_permissions" != "permission-actions:read" ||
   "$event_order_run" != *'echo "current=false"'* ||
   "$event_order_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
   "$event_order_checkout_path" != ".devantler-tech-actions-order" ||
-  "$app_token_condition" != "steps.event-order.outputs.current != 'false'" ||
-  "$app_token_base_condition" != "steps.event-order.outputs.current != 'false' && steps.app-token.outcome == 'failure'" ||
-  "$resolve_condition" != "steps.event-order.outputs.current != 'false'" ]]; then
+  "$app_token_condition" != "$expected_order_authorized" ||
+  "$app_token_base_condition" != "($expected_order_authorized) && steps.app-token.outcome == 'failure'" ||
+  "$write_checkout_condition" != "$expected_order_authorized" ||
+  "$resolve_condition" != "$expected_order_authorized" ]]; then
   echo "::error file=$workflow::the serialized privileged job must prove strict run-ID order from trusted code before minting write access or mutating the PR"
   status=1
 fi
