@@ -78,7 +78,7 @@ jobs:
             }}
           working-directory: ${{ inputs.working-directory || '.' }}
 
-      - name: 🔒 Verify authenticated GitHub Packages source
+      - name: 🔒 Verify authenticated GitHub Packages source is ephemeral
         if: >-
           ${{
             github.event_name != 'pull_request' ||
@@ -91,7 +91,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! dotnet nuget list source | grep -Fq 'github [Enabled]'; then
-            echo "::error::Authenticated run did not configure the GitHub Packages source"
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Authenticated restore persisted the GitHub Packages source"
             exit 1
           fi
+          echo "Authenticated GitHub Packages source was removed after restore ✅"

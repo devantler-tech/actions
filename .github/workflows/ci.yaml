@@ -1535,8 +1535,8 @@ jobs:
             exit 1
           fi
 
-          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .if' "$WORKFLOW")"
-          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
+          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source is ephemeral") | .if' "$WORKFLOW")"
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source is ephemeral") | .run' "$WORKFLOW")"
           for required_guard in \
             "inputs.enable-github-packages" \
             "github.event.pull_request.head.repo.full_name" \
@@ -1552,11 +1552,11 @@ jobs:
             echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
             exit 1
           fi
-          if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
-            echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
+          if [[ "$verify_run" != *"if dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
+            echo "::error::$WORKFLOW enabled-state test must prove the authenticated GitHub Packages source is ephemeral"
             exit 1
           fi
-          echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
+          echo "Only an explicit same-repository non-bot pull request can receive the ephemeral restore token ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
