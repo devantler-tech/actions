@@ -1,6 +1,6 @@
 # Run Dotnet Tests
 
-Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 (STS) and .NET 10 (LTS) SDKs side-by-side, optionally configures GHCR for private packages, runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) on authenticated runs.
+Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 (STS) and .NET 10 (LTS) SDKs side-by-side, optionally restores private packages from GitHub Packages without persisting credentials, runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) on authenticated runs.
 
 > **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build), requires the repo's **Code Quality** to be enabled (_Settings → Code quality_), and is skipped when `github-token` is empty.
 
@@ -32,9 +32,9 @@ steps:
 ```
 
 Pass `github-token` only for trusted runs that need to restore private packages from
-GitHub Packages. The reusable workflow intentionally omits it on `pull_request` events so
-PR-controlled MSBuild targets and tests cannot read the credential. Credential-free runs
-also skip the token-bearing GitHub Code Quality upload.
+GitHub Packages. Authentication is scoped to that restore step, so subsequent tests
+cannot read the credential from their process environment or the user NuGet configuration.
+Credential-free runs also skip the token-bearing GitHub Code Quality upload.
 
 ## Reusable workflow
 

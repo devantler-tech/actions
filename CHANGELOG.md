@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.8](https://github.com/devantler-tech/actions/compare/v10.2.7...v10.2.8) (2026-07-28)
+
+
+### Bug Fixes
+
+* prevent dotnet tests from reading package token ([#668](https://github.com/devantler-tech/actions/issues/668)) ([1ecf910](https://github.com/devantler-tech/actions/commit/1ecf91010b5e30f70ffbbf5c63486d2097b62df4))
+
 ## [10.2.7](https://github.com/devantler-tech/actions/compare/v10.2.6...v10.2.7) (2026-07-28)
 
 

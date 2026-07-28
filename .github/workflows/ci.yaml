@@ -441,6 +441,146 @@ jobs:
             exit 1
           fi
 
+  test-run-dotnet-tests-preserves-source-mapping:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Run .NET Tests - Preserve Source Mapping"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10
+
+      - name: 📦 Build mapped local package
+        run: >-
+          dotnet pack
+          .github/fixtures/run-dotnet-tests-source-mapping/dependency/Fixture.Dependency.csproj
+          --configuration Release
+          --output .github/fixtures/run-dotnet-tests-source-mapping/local-packages
+        shell: bash
+
+      - name: 🧪 Restore and test with caller source mapping
+        uses: ./run-dotnet-tests
+        with:
+          # Exercise the credential-bearing branch without exposing a real token to PR-controlled restore code.
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: 🔒 Verify caller NuGet configuration is byte-identical
+        run: >-
+          git diff --exit-code --
+          .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+        shell: bash
+
+      - name: 🧪 Configure the canonical caller-owned GitHub Packages source
+        id: canonical-source
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          cp "$config" "$RUNNER_TEMP/source-mapping-NuGet.Config"
+          dotnet nuget add source \
+            --configfile "$config" \
+            --name github \
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          echo "sha=$(sha256sum "$config" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore with the canonical caller-owned source
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: 🔒 Verify the canonical caller-owned source is byte-identical
+        env:
+          EXPECTED_SHA: ${{ steps.canonical-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          actual_sha="$(sha256sum "$config" | cut -d ' ' -f 1)"
+          if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Authenticated restore changed the caller-owned GitHub Packages source"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/source-mapping-NuGet.Config" "$config"
+        shell: bash
+
+      - name: 🧪 Prepare a symlinked caller NuGet configuration
+        id: symlink-fixture
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          cp -R .github/fixtures/run-dotnet-tests "$workspace"
+          cp .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config "$target"
+          ln -s "$target" "$workspace/NuGet.Config"
+          echo "target_sha=$(sha256sum "$target" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+          echo "link_target=$(readlink "$workspace/NuGet.Config")" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore through a symlinked caller config
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: ${{ runner.temp }}/run-dotnet-tests-symlink
+
+      - name: 🔒 Verify the symlink and target bytes are preserved
+        env:
+          EXPECTED_LINK_TARGET: ${{ steps.symlink-fixture.outputs.link_target }}
+          EXPECTED_TARGET_SHA: ${{ steps.symlink-fixture.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          if [[ ! -L "$workspace/NuGet.Config" ]]; then
+            echo "::error::Authenticated restore removed the caller's NuGet.Config symlink"
+            exit 1
+          fi
+          if [[ "$(readlink "$workspace/NuGet.Config")" != "$EXPECTED_LINK_TARGET" ]]; then
+            echo "::error::Authenticated restore changed the caller's NuGet.Config symlink target"
+            exit 1
+          fi
+          if [[ "$(sha256sum "$target" | cut -d ' ' -f 1)" != "$EXPECTED_TARGET_SHA" ]]; then
+            echo "::error::Authenticated restore changed the symlinked NuGet.Config target bytes"
+            exit 1
+          fi
+        shell: bash
+
+      - name: 🧪 Configure an untrusted source with the credential-bearing name
+        run: >-
+          dotnet nuget add source
+          --configfile .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          --name github
+          ../local-packages
+        shell: bash
+
+      - name: 🛡️ Reject the untrusted credential target
+        id: untrusted-source
+        continue-on-error: true
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: ✅ Verify the untrusted credential target was rejected
+        env:
+          OUTCOME: ${{ steps.untrusted-source.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Authenticated restore accepted a source named 'github' with an untrusted URL"
+            exit 1
+          fi
+        shell: bash
+
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -1439,7 +1579,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
+          dotnet restore
+          dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
           exit "${PIPESTATUS[0]}"
 
       - name: ✅ Assert the test gate blocked on the failing test
@@ -1489,7 +1630,7 @@ jobs:
           GATE: run-dotnet-tests/action.yaml
           # Match the full command, not a bare substring — commands also appear in comments,
           # so a looser grep could false-pass if the real value changed while a comment did not.
-          EXPECTED_TEST_CMD: 'dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
+          EXPECTED_TEST_CMD: 'dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED_TEST_CMD" "$GATE"; then
@@ -1539,28 +1680,39 @@ jobs:
             exit 1
           fi
 
-          verify_if="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .if' "$WORKFLOW")"
-          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source") | .run' "$WORKFLOW")"
-          for required_guard in \
-            "inputs.enable-github-packages" \
-            "github.event.pull_request.head.repo.full_name" \
-            "github.repository" \
-            "github.event.pull_request.user.login" \
-            "[bot]"; do
-            if [[ "$verify_if" != *"$required_guard"* ]]; then
-              echo "::error::$WORKFLOW authenticated-source assertion is missing the '$required_guard' trust guard"
+          for source_step in \
+            "🔎 Snapshot authenticated GitHub Packages source" \
+            "🔒 Verify authenticated GitHub Packages source state is preserved"; do
+            source_if="$(SOURCE_STEP="$source_step" yq -r '.jobs.test.steps[] | select(.name == strenv(SOURCE_STEP)) | .if' "$WORKFLOW")"
+            for required_guard in \
+              "inputs.enable-github-packages" \
+              "github.event.pull_request.head.repo.full_name" \
+              "github.repository" \
+              "github.event.pull_request.user.login" \
+              "[bot]"; do
+              if [[ "$source_if" != *"$required_guard"* ]]; then
+                echo "::error::$WORKFLOW '$source_step' is missing the '$required_guard' trust guard"
+                exit 1
+              fi
+            done
+            if [[ "$source_if" == *"github.actor"* ]]; then
+              echo "::error::$WORKFLOW '$source_step' must trust the pull-request author, not the event actor"
               exit 1
             fi
           done
-          if [[ "$verify_if" == *"github.actor"* ]]; then
-            echo "::error::$WORKFLOW authenticated-source assertion must trust the pull-request author, not the event actor"
+
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .run' "$WORKFLOW")"
+          verify_before_state="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .env.BEFORE_STATE' "$WORKFLOW")"
+          expected_comparison="if [[ \"\$after_state\" != \"\$BEFORE_STATE\" ]]; then"
+          if [[ "$verify_run" != *'after_state'* || "$verify_run" != *"$expected_comparison"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must compare the post-action state with its snapshot"
             exit 1
           fi
-          if [[ "$verify_run" != *"dotnet nuget list source"* || "$verify_run" != *"github [Enabled]"* ]]; then
-            echo "::error::$WORKFLOW enabled-state test must observe the authenticated GitHub Packages source"
+          if [[ "$verify_before_state" != *"steps.github-source-before.outputs.state"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must consume the pre-action snapshot"
             exit 1
           fi
-          echo "Only an explicit same-repository non-bot pull request can receive the token ✅"
+          echo "Only an explicit same-repository non-bot pull request can receive the ephemeral restore token, and its source state is preserved ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
@@ -2743,6 +2895,7 @@ jobs:
       - test-aggregate-job-checks-failure
       - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
+      - test-run-dotnet-tests-preserves-source-mapping
       - test-setup-agent-skills-inline
       - test-setup-agent-skills-pinned
       - test-setup-agent-skills-missing-input
@@ -2836,6 +2989,7 @@ jobs:
             ${{ needs.test-aggregate-job-checks-failure.result }}
             ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
+            ${{ needs.test-run-dotnet-tests-preserves-source-mapping.result }}
             ${{ needs.test-setup-agent-skills-inline.result }}
             ${{ needs.test-setup-agent-skills-pinned.result }}
             ${{ needs.test-setup-agent-skills-missing-input.result }}

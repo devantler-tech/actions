@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Fixture.Dependency</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>devantler-tech</Authors>
+    <Description>Local package used to verify NuGet source mapping preservation.</Description>
+  </PropertyGroup>
+</Project>
