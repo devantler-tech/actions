@@ -25,6 +25,7 @@ if ! jq -e '
     all(.workflow_runs[];
       (.id | type) == "number" and
       (.workflow_id | type) == "number" and
+      (.event | type) == "string" and
       (.pull_requests | type) == "array" and
       all(.pull_requests[]; (.number | type) == "number")
     )
@@ -42,6 +43,7 @@ if jq -e \
       .[].workflow_runs[];
       .id > $current and
       .workflow_id == $workflow and
+      .event == "pull_request" and
       any(.pull_requests[]; .number == $pr)
     )
   ' <<<"$run_pages" >/dev/null; then

@@ -285,13 +285,32 @@ jobs:
           set -euo pipefail
           run_json=$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")
           workflow_id=$(jq -er '.workflow_id | select(type == "number")' <<<"$run_json")
-          run_created_at=$(jq -er '.created_at | select(type == "string" and length > 0)' <<<"$run_json")
-          run_pages=$(
-            gh api "repos/$REPOSITORY/actions/runs" --method GET --paginate \
-              -f event=pull_request -f per_page=100 \
-              -f created=">=${run_created_at}" |
-              jq -s .
-          )
+          run_pages='[]'
+          page=1
+          current_seen=false
+          while :; do
+            page_json=$(
+              gh api "repos/$REPOSITORY/actions/workflows/$workflow_id/runs" \
+                --method GET -f per_page=100 -f page="$page"
+            )
+            run_pages=$(jq -cn \
+              --argjson pages "$run_pages" --argjson page "$page_json" \
+              '$pages + [$page]')
+            if jq -e --argjson current "$RUN_ID" \
+              'any(.workflow_runs[]?; .id == $current)' \
+              <<<"$page_json" >/dev/null; then
+              current_seen=true
+            fi
+            page_size=$(jq -er '.workflow_runs | length' <<<"$page_json")
+            if [[ "$page_size" -lt 100 ]]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+          if [[ "$current_seen" != "true" ]]; then
+            echo "::error::Current run was absent from the complete workflow-run history."
+            exit 2
+          fi
 
           if bash .devantler-tech-actions-order/.scripts/is-current-pull-request-workflow-run.sh \
             "$RUN_ID" "$workflow_id" "$PR_NUMBER" <<<"$run_pages"; then
