@@ -10,6 +10,7 @@
   {
     "name": "Dependabot",
     "event_name": "pull_request",
+    "action": "opened",
     "draft": false,
     "login": "dependabot[bot]",
     "actor": "dependabot[bot]",
@@ -66,6 +67,7 @@
   {
     "name": "draft trusted bot",
     "event_name": "pull_request",
+    "action": "opened",
     "draft": true,
     "login": "dependabot[bot]",
     "actor": "dependabot[bot]",
@@ -82,9 +84,28 @@
   {
     "name": "untrusted actor updates trusted bot PR",
     "event_name": "pull_request",
+    "action": "synchronize",
     "draft": false,
     "login": "dependabot[bot]",
     "actor": "octocat",
     "eligible": false
+  },
+  {
+    "name": "maintainer reopens trusted bot PR",
+    "event_name": "pull_request",
+    "action": "reopened",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "devantler",
+    "eligible": true
+  },
+  {
+    "name": "maintainer marks trusted bot PR ready",
+    "event_name": "pull_request",
+    "action": "ready_for_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "devantler",
+    "eligible": true
   }
 ]

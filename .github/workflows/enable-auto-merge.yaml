@@ -62,6 +62,9 @@ jobs:
 
       - name: 🔎 Classify privileged auto-merge trigger
         id: classify
+        # `synchronize` identifies a head update, so its actor must be trusted
+        # too. Lifecycle actions such as `reopened` and `ready_for_review` may
+        # legitimately be performed by a human.
         if: >-
           ${{
             (
@@ -71,9 +74,12 @@ jobs:
                 fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
                 github.event.pull_request.user.login
               ) &&
-              contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-                github.actor
+              (
+                github.event.action != 'synchronize' ||
+                contains(
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  github.actor
+                )
               )
             ) ||
             (
