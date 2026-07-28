@@ -480,6 +480,32 @@ jobs:
           .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
         shell: bash
 
+      - name: 🧪 Configure an untrusted source with the credential-bearing name
+        run: >-
+          dotnet nuget add source
+          --configfile .github/fixtures/run-dotnet-tests-source-mapping/consumer/NuGet.Config
+          --name github
+          ../local-packages
+        shell: bash
+
+      - name: 🛡️ Reject the untrusted credential target
+        id: untrusted-source
+        continue-on-error: true
+        uses: ./run-dotnet-tests
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: ✅ Verify the untrusted credential target was rejected
+        env:
+          OUTCOME: ${{ steps.untrusted-source.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Authenticated restore accepted a source named 'github' with an untrusted URL"
+            exit 1
+          fi
+        shell: bash
+
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"

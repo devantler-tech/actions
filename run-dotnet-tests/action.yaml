@@ -43,7 +43,21 @@ runs:
 
         source_listing="$(dotnet nuget list source --format Detailed)"
         if grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Enabled\]' <<<"$source_listing"; then
-          :
+          expected_source_url="https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          github_source_url="$(
+            awk '
+              tolower($0) ~ /^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[enabled\][[:space:]]*$/ {
+                getline
+                sub(/^[[:space:]]+/, "")
+                print
+                exit
+              }
+            ' <<<"$source_listing"
+          )"
+          if [[ "$github_source_url" != "$expected_source_url" ]]; then
+            echo "::error::The existing NuGet source named 'github' does not target $expected_source_url"
+            exit 1
+          fi
         elif grep -Eiq '^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[Disabled\]' <<<"$source_listing"; then
           echo "::error::The existing NuGet source named 'github' is disabled; enable or rename it before authenticated restore"
           exit 1
