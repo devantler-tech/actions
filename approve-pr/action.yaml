@@ -10,8 +10,8 @@ inputs:
     description: 'GitHub App ID. Deprecated: use client-id instead.'
     required: false
   app-private-key:
-    description: GitHub App Private Key
-    required: true
+    description: GitHub App Private Key (required unless dry-run is true)
+    required: false
   pr-number:
     description: Pull request number to approve
     required: true

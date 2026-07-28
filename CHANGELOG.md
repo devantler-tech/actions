@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.2.7](https://github.com/devantler-tech/actions/compare/v10.2.6...v10.2.7) (2026-07-28)
+
+
+### Bug Fixes
+
+* **ci:** withhold app credentials from approve-pr tests ([#672](https://github.com/devantler-tech/actions/issues/672)) ([79e64a2](https://github.com/devantler-tech/actions/commit/79e64a211e5b79fde9b489ce0d04a6c218dd1712))
+
 ## [10.2.6](https://github.com/devantler-tech/actions/compare/v10.2.5...v10.2.6) (2026-07-28)
 
 

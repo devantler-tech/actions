@@ -23,19 +23,10 @@ jobs:
   # check green so the release auto-merges.
   # ── approve-pr ──────────────────────────────────────────────
   test-approve-pr:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
-      contents: write
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
-      startsWith(github.event_name, 'pull_request') &&
-      (
-        github.event.pull_request.user.login == 'dependabot[bot]' ||
-        github.event.pull_request.user.login == 'renovate[bot]' ||
-        github.event.pull_request.user.login == 'botantler[bot]' ||
-        github.event.pull_request.user.login == 'devantler'
-      )
+      contents: read
     steps:
       - name: 📑 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,9 +36,23 @@ jobs:
       - name: 🧪 Run approve-pr
         uses: ./approve-pr
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          pr-number: ${{ github.event.pull_request.number }}
+          pr-number: ${{ github.event.pull_request.number || 0 }}
+          dry-run: "true"
+
+  test-approve-pr-credential-boundary:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Approve PR - Credential-Free CI"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔒 Assert approve-pr CI stays credential-free
+        run: bash .github/tests/test-approve-pr-credential-boundary.sh
 
   # ── cleanup-ghcr-packages ───────────────────────────────────
   test-cleanup-ghcr-packages:
@@ -2692,6 +2697,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - test-approve-pr
+      - test-approve-pr-credential-boundary
       - test-cleanup-ghcr-packages
       - test-create-issues-from-todos
       - test-dependency-review
@@ -2781,6 +2787,7 @@ jobs:
         with:
           job-results: >-
             ${{ needs.test-approve-pr.result }}
+            ${{ needs.test-approve-pr-credential-boundary.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-dependency-review.result }}
