@@ -8,22 +8,30 @@ mock_log="$(mktemp)"
 trap 'rm -f "$mock_log"' EXIT
 
 armed_output="$(
-  MOCK_GH_LOG="$mock_log" MOCK_GH_STATE="PR_node_id true true" PATH="$mock_bin:$PATH" \
+  MOCK_GH_LOG="$mock_log" MOCK_GH_STATE="PR_node_id true false" PATH="$mock_bin:$PATH" \
     bash "$script" devantler-tech/actions 42
 )"
 
-if ! grep -Fq $'pr\tmerge\t42\t--disable-auto\t--repo\tdevantler-tech/actions' "$mock_log"; then
+if ! grep -Fq $'pr\tmerge\t42\t--disable-auto\t--repo\tdevantler-tech/actions' "$mock_log" ||
+  grep -Fq "dequeuePullRequest" "$mock_log" ||
+  [[ "$armed_output" != *"Auto-merge DISARMED"* ||
+    "$armed_output" == *"DEQUEUED from the merge queue"* ]]; then
   echo "::error file=$script::classic auto-merge state was not disabled"
   exit 1
 fi
+
+: >"$mock_log"
+queued_output="$(
+  MOCK_GH_LOG="$mock_log" MOCK_GH_STATE="PR_node_id false true" PATH="$mock_bin:$PATH" \
+    bash "$script" devantler-tech/actions 42
+)"
+
 if ! grep -Fq "dequeuePullRequest" "$mock_log" ||
-  ! grep -Fq -- $'-f\tid=PR_node_id' "$mock_log"; then
+  ! grep -Fq -- $'-f\tid=PR_node_id' "$mock_log" ||
+  grep -Fq $'pr\tmerge\t42\t--disable-auto\t--repo\tdevantler-tech/actions' "$mock_log" ||
+  [[ "$queued_output" != *"DEQUEUED from the merge queue"* ||
+    "$queued_output" == *"Auto-merge DISARMED"* ]]; then
   echo "::error file=$script::merge-queue state was not dequeued with the pull request node ID"
-  exit 1
-fi
-if [[ "$armed_output" != *"Auto-merge DISARMED"* ||
-  "$armed_output" != *"DEQUEUED from the merge queue"* ]]; then
-  echo "::error file=$script::revocation must report both state changes"
   exit 1
 fi
 
