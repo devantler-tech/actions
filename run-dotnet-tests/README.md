@@ -32,10 +32,9 @@ steps:
 ```
 
 Pass `github-token` only for trusted runs that need to restore private packages from
-GitHub Packages. Authentication is scoped to the restore step, so repository-controlled
-MSBuild targets and tests cannot read the credential from their process environment or
-the user NuGet configuration. Credential-free runs also skip the token-bearing GitHub
-Code Quality upload.
+GitHub Packages. Authentication is scoped to that restore step, so subsequent tests
+cannot read the credential from their process environment or the user NuGet configuration.
+Credential-free runs also skip the token-bearing GitHub Code Quality upload.
 
 ## Reusable workflow
 
