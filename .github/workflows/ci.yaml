@@ -2070,6 +2070,28 @@ jobs:
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
+  test-enable-auto-merge-actor-trust:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Enable Auto-Merge - Actor Trust Enabled"
+    uses: ./.github/workflows/enable-auto-merge.yaml
+    # Exercise the public enabled call boundary on maintainer-owned same-repo
+    # changes without competing with bot auto-merge. The author-gate fixtures
+    # below cover trusted/untrusted actor decisions and pin the disarm wiring.
+    with:
+      enforce-actor-trust: true
+    permissions:
+      pull-requests: write
+      contents: write
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
   test-enable-auto-merge-author-gate:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge - Author Gate"
@@ -2863,6 +2885,7 @@ jobs:
       - test-run-dotnet-tests-workflow
       - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
+      - test-enable-auto-merge-actor-trust
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-pentad-gate
       - test-create-release
@@ -2954,6 +2977,7 @@ jobs:
             ${{ needs.test-run-dotnet-tests-workflow.result }}
             ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
+            ${{ needs.test-enable-auto-merge-actor-trust.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
             ${{ needs.test-create-release.result }}

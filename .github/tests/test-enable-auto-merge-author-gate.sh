@@ -4,6 +4,7 @@ set -euo pipefail
 
 workflow="${1:-.github/workflows/enable-auto-merge.yaml}"
 fixtures="${2:-.github/tests/enable-auto-merge-authors.json}"
+ci_workflow="${3:-.github/workflows/ci.yaml}"
 condition="$(yq -r '
   [(.jobs.eligibility.steps // [])[]
    | select(.id == "classify")
@@ -15,6 +16,16 @@ status=0
 actor_gate_default="$(yq -r '.on.workflow_call.inputs."enforce-actor-trust".default | tostring' "$workflow")"
 if [[ "$actor_gate_default" != "false" ]]; then
   echo "::error file=$workflow::actor-trust enforcement must ship as a default-off workflow_call input"
+  status=1
+fi
+
+enabled_test_uses="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".uses // ""' "$ci_workflow")"
+enabled_test_flag="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".with."enforce-actor-trust" | tostring' "$ci_workflow")"
+enabled_test_permissions="$(yq -r '.jobs."test-enable-auto-merge-actor-trust".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$ci_workflow")"
+if [[ "$enabled_test_uses" != "./.github/workflows/enable-auto-merge.yaml" ||
+  "$enabled_test_flag" != "true" ||
+  "$enabled_test_permissions" != "contents:write,pull-requests:write" ]]; then
+  echo "::error file=$ci_workflow::CI must invoke the reusable workflow with actor trust enabled and its exact revoke permissions"
   status=1
 fi
 
@@ -133,9 +144,17 @@ if grep -Fq 'APP_PRIVATE_KEY' <<<"$disarm_job" ||
   echo "::error file=$workflow::rejected updates must disarm with GITHUB_TOKEN and never receive the App private key"
   status=1
 fi
-disarm_concurrency="$(yq -r '.jobs."disarm-untrusted-update".concurrency // ""' "$workflow")"
-if [[ -n "$disarm_concurrency" ]]; then
-  echo "::error file=$workflow::rejected-update disarms must not use replaceable GitHub concurrency slots"
+disarm_concurrency_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
+disarm_cancel_in_progress="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
+auto_merge_concurrency_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
+auto_merge_cancel_in_progress="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" // ""' "$workflow")"
+expected_auto_merge_cancel="\${{ github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') }}"
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+if [[ "$disarm_concurrency_group" != 'enable-auto-merge-actor-${{ github.event.pull_request.number }}' ||
+  "$disarm_cancel_in_progress" != "true" ||
+  "$auto_merge_concurrency_group" != "enable-auto-merge-\${{ github.event_name == 'pull_request' && 'actor' || 'review' }}-\${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}" ||
+  "$auto_merge_cancel_in_progress" != "$expected_auto_merge_cancel" ]]; then
+  echo "::error file=$workflow::pull_request arming and rejection must share a newest-event-wins actor concurrency group"
   status=1
 fi
 disarm_checkout_uses="$(yq -r '
@@ -183,11 +202,13 @@ resolve_run="$(yq -r '
 expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
+  "$(yq -r '.EVENT_UPDATED_AT // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.updated_at }}' ||
   "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
   "$resolve_run" != *"headRefOid"* ||
+  "$resolve_run" != *"updatedAt"* ||
   "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
-  "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
-  echo "::error file=$workflow::actor enforcement must bind pull_request runs to their event head before arming"
+  "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && ( "$HEAD_SHA" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ) ]]'* ]]; then
+  echo "::error file=$workflow::actor enforcement must reject pull_request runs superseded by a newer head or lifecycle event"
   status=1
 fi
 

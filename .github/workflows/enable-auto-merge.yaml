@@ -154,15 +154,20 @@ jobs:
   # A trusted-bot PR may already be armed when an untrusted actor updates its
   # head or changes its lifecycle state. Revoke that stale state with the
   # event's GITHUB_TOKEN in a separate least-privilege job: rejected events
-  # never receive the App private key. Disarm jobs deliberately have no
-  # concurrency group because GitHub retains only one pending run per group;
-  # every rejected event must get its own non-replaceable revocation attempt.
+  # never receive the App private key. Rejection and pull_request arming share
+  # a cancel-in-progress group, so the newest pull_request event wins: a
+  # rejected event cancels older arming before it revokes, repeated rejections
+  # coalesce into the newest equivalent revocation, and a later trusted
+  # maintainer event is the explicit reauthorization.
   disarm-untrusted-update:
     needs: eligibility
     if: needs.eligibility.outputs.disarm == 'true'
     permissions:
       contents: write
       pull-requests: write
+    concurrency:
+      group: enable-auto-merge-actor-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -200,13 +205,15 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
-    # Serialize runs per PR so an older green gate run cannot interleave with
-    # a newer run that saw the gate turn red (the newer run's disarm always
-    # executes after the older run finishes). Enforced runs never auto-arm;
-    # their final step revokes any stale legacy arming before handing off.
+    # pull_request runs share the actor group with rejected-event disarms.
+    # With actor enforcement enabled, cancel-in-progress makes the newest
+    # event authoritative, preventing an older same-head lifecycle run from
+    # arming after a later rejection. Review/comment gate runs use a separate
+    # serialized group: they never arm with review enforcement enabled, and
+    # with it disabled they preserve the existing no-op behavior.
     concurrency:
-      group: enable-auto-merge-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-      cancel-in-progress: false
+      group: enable-auto-merge-${{ github.event_name == 'pull_request' && 'actor' || 'review' }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' && (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -280,25 +287,30 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
           ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
         run: |
           set -euo pipefail
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,isDraft,state)
+          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,isDraft,state,updatedAt)
           HEAD_SHA=$(jq -r .headRefOid <<<"$pr_json")
+          LIVE_UPDATED_AT=$(jq -r .updatedAt <<<"$pr_json")
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
           eligible=$(jq -r 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end' <<<"$pr_json")
+          superseded=false
 
-          # A later head must be evaluated by its own run. This also prevents
-          # an older queued run from re-arming after a rejected update's
-          # non-replaceable disarm has completed.
-          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]; then
+          # A later head or lifecycle update must be evaluated by its own run.
+          # The updatedAt binding covers reopened/ready_for_review races whose
+          # head is unchanged; shared newest-event-wins concurrency orders the
+          # resulting arming or revocation after this check.
+          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && ( "$HEAD_SHA" != "$EVENT_HEAD" || "$LIVE_UPDATED_AT" != "$EVENT_UPDATED_AT" ) ]]; then
             eligible=false
-            echo "::notice::PR #${PR_NUMBER} moved from event head ${EVENT_HEAD} to ${HEAD_SHA}; the newer head's own run decides."
+            superseded=true
+            echo "::notice::PR #${PR_NUMBER} changed after this event (head ${EVENT_HEAD} -> ${HEAD_SHA}, updated ${EVENT_UPDATED_AT} -> ${LIVE_UPDATED_AT}); the newer event's run decides."
           fi
 
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          if [[ "$eligible" != "true" ]]; then
+          if [[ "$eligible" != "true" && "$superseded" != "true" ]]; then
             echo "::notice::PR #${PR_NUMBER} is draft or not open; skipping the auto-merge gate."
           fi
 
