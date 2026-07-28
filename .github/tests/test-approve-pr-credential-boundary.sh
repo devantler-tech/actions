@@ -17,6 +17,12 @@ job_permissions="$(
 [[ "$job_permissions" == '{"contents":"read"}' ]] ||
   fail "test-approve-pr must run with contents: read only; got $job_permissions"
 
+job_definition="$(yq -o=json -I=0 '.jobs."test-approve-pr"' "$ci_workflow")"
+[[ "$job_definition" != *'secrets.'* &&
+  "$job_definition" != *'APP_PRIVATE_KEY'* &&
+  "$job_definition" != *'APP_CLIENT_ID'* ]] ||
+  fail "test-approve-pr must not expose GitHub App credentials through any job field"
+
 job_condition="$(yq -r '.jobs."test-approve-pr".if // ""' "$ci_workflow")"
 [[ "$job_condition" != *"pull_request.user.login"* ]] ||
   fail "test-approve-pr must not author-gate a privileged pull_request path; it should be credential-free for every event"
