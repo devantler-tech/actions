@@ -12,6 +12,12 @@ condition="$(yq -r '
 
 status=0
 
+actor_gate_default="$(yq -r '.on.workflow_call.inputs."enforce-actor-trust".default | tostring' "$workflow")"
+if [[ "$actor_gate_default" != "false" ]]; then
+  echo "::error file=$workflow::actor-trust enforcement must ship as a default-off workflow_call input"
+  status=1
+fi
+
 # A required workflow must complete successfully for ineligible events rather
 # than making its only job SKIPPED. Keep classification in an unconditional,
 # zero-permission job and gate the privileged job on its output.
@@ -76,10 +82,18 @@ fi
 # Match the complete classifier shape rather than checking that a few strings
 # occur somewhere. This proves each allowlist is attached to the correct event
 # actor and rejects extra OR branches that could bypass the privileged gate.
-allowlist_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
+allowlist_json="$(yq -r '.jobs.eligibility.env.TRUSTED_BOT_AUTHORS' "$workflow" | jq -c .)"
+trigger_actors_json="$(yq -r '.jobs.eligibility.env.TRUSTED_TRIGGER_ACTORS' "$workflow" | jq -c .)"
+expected_allowlist_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
+expected_trigger_actors_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
+if [[ "$allowlist_json" != "$expected_allowlist_json" ||
+  "$trigger_actors_json" != "$expected_trigger_actors_json" ]]; then
+  echo "::error file=$workflow::trusted bot authors and triggering actors must be defined once in the eligibility job"
+  status=1
+fi
 reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login)&&(github.event.action!='synchronize'||contains(fromJSON('$allowlist_json'),github.actor)))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
+expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(env.ACTOR_TRUST_ENFORCED!='true'||contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"
@@ -93,9 +107,9 @@ disarm_condition="$(yq -r '
    | .if // ""]
   | join("\n")' "$workflow")"
 normalized_disarm_condition="$(tr -d '[:space:]' <<<"$disarm_condition")"
-expected_disarm_condition="\${{github.event_name=='pull_request'&&github.event.action=='synchronize'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login)&&!contains(fromJSON('$allowlist_json'),github.actor)}}"
+expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)}}"
 if [[ "$normalized_disarm_condition" != "$expected_disarm_condition" ]]; then
-  echo "::error file=$workflow::rejected trusted-author synchronize events must be classified for fail-closed disarm"
+  echo "::error file=$workflow::rejected trusted-author pull_request events must be classified for fail-closed disarm"
   echo "expected: $expected_disarm_condition"
   echo "actual:   $normalized_disarm_condition"
   status=1
@@ -103,13 +117,13 @@ fi
 
 disarm_job_condition="$(yq -r '.jobs."disarm-untrusted-update".if // ""' "$workflow")"
 if [[ "$disarm_job_condition" != "needs.eligibility.outputs.disarm == 'true'" ]]; then
-  echo "::error file=$workflow::the disarm job must run only for exactly-true rejected synchronize events"
+  echo "::error file=$workflow::the disarm job must run only for exactly-true rejected pull_request events"
   status=1
 fi
 
 disarm_job_permissions="$(yq -r '.jobs."disarm-untrusted-update".permissions | to_entries | sort_by(.key) | map(.key + ":" + .value) | join(",")' "$workflow")"
-if [[ "$disarm_job_permissions" != "contents:read,pull-requests:write" ]]; then
-  echo "::error file=$workflow::the rejected-update disarm path must use only contents:read and pull-requests:write"
+if [[ "$disarm_job_permissions" != "contents:write,pull-requests:write" ]]; then
+  echo "::error file=$workflow::the rejected-update disarm path must grant only the two write scopes required to revoke auto-merge"
   status=1
 fi
 
@@ -119,6 +133,16 @@ if grep -Fq 'APP_PRIVATE_KEY' <<<"$disarm_job" ||
   echo "::error file=$workflow::rejected updates must disarm with GITHUB_TOKEN and never receive the App private key"
   status=1
 fi
+disarm_concurrency="$(yq -r '.jobs."disarm-untrusted-update".concurrency // ""' "$workflow")"
+if [[ -n "$disarm_concurrency" ]]; then
+  echo "::error file=$workflow::rejected-update disarms must not use replaceable GitHub concurrency slots"
+  status=1
+fi
+disarm_checkout_uses="$(yq -r '
+  [.jobs."disarm-untrusted-update".steps[]
+   | select(.name == "📥 Checkout trusted disarm script")
+   | .uses // ""]
+  | join("\n")' "$workflow")"
 disarm_checkout_repository="$(yq -r '
   [.jobs."disarm-untrusted-update".steps[]
    | select(.name == "📥 Checkout trusted disarm script")
@@ -135,7 +159,8 @@ disarm_checkout_persist="$(yq -r '
    | .with."persist-credentials"]
   | join("\n")' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
-if [[ "$disarm_checkout_repository" != '${{ job.workflow_repository }}' ||
+if [[ "$disarm_checkout_uses" != "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" ||
+  "$disarm_checkout_repository" != '${{ job.workflow_repository }}' ||
   "$disarm_checkout_ref" != '${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}' ||
   "$disarm_checkout_persist" != "false" ]]; then
   echo "::error file=$workflow::rejected updates must run the disarm script from the trusted base/called-workflow commit without persisted credentials"
@@ -146,13 +171,44 @@ if ! grep -Fq 'disarm-auto-merge.sh' <<<"$disarm_job"; then
   status=1
 fi
 
+resolve_env="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "🔎 Resolve target pull request")
+   | .env // {}][0]' "$workflow")"
+resolve_run="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "🔎 Resolve target pull request")
+   | .run // ""]
+  | join("\n")' "$workflow")"
+expected_enforce_expr="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}"
+# shellcheck disable=SC2016 # GitHub expressions are compared literally.
+if [[ "$(yq -r '.EVENT_HEAD // ""' <<<"$resolve_env")" != '${{ github.event.pull_request.head.sha }}' ||
+  "$(yq -r '.ENFORCE_ACTOR_TRUST // ""' <<<"$resolve_env")" != "$expected_enforce_expr" ||
+  "$resolve_run" != *"headRefOid"* ||
+  "$resolve_run" != *'echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"'* ||
+  "$resolve_run" != *'[[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]'* ]]; then
+  echo "::error file=$workflow::actor enforcement must bind pull_request runs to their event head before arming"
+  status=1
+fi
+
+gates_head_env="$(yq -r '
+  [.jobs."auto-merge".steps[]
+   | select(.name == "🛂 Verify review and pre-merge gates")
+   | .env.HEAD_SHA // ""]
+  | join("\n")' "$workflow")"
+# shellcheck disable=SC2016 # GitHub expression is compared literally.
+if [[ "$gates_head_env" != '${{ steps.pr.outputs.head_sha }}' ]]; then
+  echo "::error file=$workflow::the gate must carry the event-bound head through approval and arming"
+  status=1
+fi
+
 while IFS= read -r fixture; do
   name="$(jq -r '.name' <<<"$fixture")"
   event_name="$(jq -r '.event_name' <<<"$fixture")"
-  action="$(jq -r '.action // "opened"' <<<"$fixture")"
   draft="$(jq -r '.draft' <<<"$fixture")"
   login="$(jq -r '.login' <<<"$fixture")"
   actor="$(jq -r '.actor' <<<"$fixture")"
+  enforce="$(jq -r 'if has("enforce") then .enforce else true end' <<<"$fixture")"
   expected="$(jq -r '.eligible' <<<"$fixture")"
   expected_disarm="$(jq -r '.disarm // false' <<<"$fixture")"
   actual=false
@@ -160,14 +216,14 @@ while IFS= read -r fixture; do
 
   if [[ "$event_name" == "pull_request" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
-    { [[ "$action" != "synchronize" ]] ||
-      jq -e --arg actor "$actor" 'index($actor) != null' <<<"$allowlist_json" >/dev/null; }; then
+    { [[ "$enforce" != "true" ]] ||
+      jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; then
     actual=true
   fi
 
-  if [[ "$event_name" == "pull_request" && "$action" == "synchronize" && "$draft" == "false" ]] &&
+  if [[ "$enforce" == "true" && "$event_name" == "pull_request" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
-    ! jq -e --arg actor "$actor" 'index($actor) != null' <<<"$allowlist_json" >/dev/null; then
+    ! jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; then
     actual_disarm=true
   fi
 

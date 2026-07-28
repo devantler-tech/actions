@@ -88,8 +88,19 @@
     "draft": false,
     "login": "dependabot[bot]",
     "actor": "octocat",
+    "enforce": true,
     "disarm": true,
     "eligible": false
+  },
+  {
+    "name": "actor enforcement off preserves legacy trusted-author behavior",
+    "event_name": "pull_request",
+    "action": "synchronize",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "octocat",
+    "enforce": false,
+    "eligible": true
   },
   {
     "name": "maintainer reopens trusted bot PR",
@@ -108,5 +119,27 @@
     "login": "dependabot[bot]",
     "actor": "devantler",
     "eligible": true
+  },
+  {
+    "name": "untrusted actor reopens trusted bot PR",
+    "event_name": "pull_request",
+    "action": "reopened",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "disarm": true,
+    "eligible": false
+  },
+  {
+    "name": "untrusted actor marks trusted bot PR ready",
+    "event_name": "pull_request",
+    "action": "ready_for_review",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "octocat",
+    "enforce": true,
+    "disarm": true,
+    "eligible": false
   }
 ]

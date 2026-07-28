@@ -21,6 +21,16 @@ on:
           issue_comment so review results that land after the pull_request
           events still re-evaluate the gate (a reusable workflow cannot
           schedule its callers).
+      enforce-actor-trust:
+        type: boolean
+        required: false
+        default: false
+        description: >-
+          Opt-in (default-off) enforcement that requires every pull_request
+          trigger on an allowlisted bot-authored PR to come from an allowlisted
+          bot or maintainer. Rejected triggers actively revoke stale auto-merge
+          and merge-queue state. Direct/required-workflow runs can opt in with
+          the ENFORCE_ACTOR_TRUST repository or organization variable.
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -52,6 +62,10 @@ jobs:
   eligibility:
     permissions: {}
     runs-on: ubuntu-latest
+    env:
+      TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
+      TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","devantler"]'
+      ACTOR_TRUST_ENFORCED: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
     outputs:
       eligible: ${{ steps.classify.outputs.eligible }}
       disarm: ${{ steps.classify-disarm.outputs.disarm }}
@@ -63,22 +77,23 @@ jobs:
 
       - name: 🔎 Classify privileged auto-merge trigger
         id: classify
-        # `synchronize` identifies a head update, so its actor must be trusted
-        # too. Lifecycle actions such as `reopened` and `ready_for_review` may
-        # legitimately be performed by a human.
+        # When actor-trust enforcement is enabled, every pull_request trigger
+        # must be trusted. This prevents an untrusted actor from re-arming a
+        # previously disarmed PR through reopened/ready_for_review; `devantler`
+        # is the explicit maintainer reauthorization path.
         if: >-
           ${{
             (
               github.event_name == 'pull_request' &&
               !github.event.pull_request.draft &&
               contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                fromJSON(env.TRUSTED_BOT_AUTHORS),
                 github.event.pull_request.user.login
               ) &&
               (
-                github.event.action != 'synchronize' ||
+                env.ACTOR_TRUST_ENFORCED != 'true' ||
                 contains(
-                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  fromJSON(env.TRUSTED_TRIGGER_ACTORS),
                   github.actor
                 )
               )
@@ -91,7 +106,7 @@ jobs:
               ) &&
               !github.event.pull_request.draft &&
               contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                fromJSON(env.TRUSTED_BOT_AUTHORS),
                 github.event.pull_request.user.login
               )
             ) ||
@@ -104,26 +119,26 @@ jobs:
                 github.event.comment.user.login
               ) &&
               contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                fromJSON(env.TRUSTED_BOT_AUTHORS),
                 github.event.issue.user.login
               )
             )
           }}
         run: echo "eligible=true" >> "$GITHUB_OUTPUT"
 
-      - name: 🔒 Classify rejected head update for disarm
+      - name: 🔒 Classify rejected pull request trigger for disarm
         id: classify-disarm
         if: >-
           ${{
+            env.ACTOR_TRUST_ENFORCED == 'true' &&
             github.event_name == 'pull_request' &&
-            github.event.action == 'synchronize' &&
             !github.event.pull_request.draft &&
             contains(
-              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              fromJSON(env.TRUSTED_BOT_AUTHORS),
               github.event.pull_request.user.login
             ) &&
             !contains(
-              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              fromJSON(env.TRUSTED_TRIGGER_ACTORS),
               github.actor
             )
           }}
@@ -136,19 +151,18 @@ jobs:
           echo "::notice::This event is not eligible for privileged bot auto-merge;
           completing the required workflow as a safe no-op."
 
-  # A trusted-bot PR may already be armed when a different actor updates its
-  # head. Revoke that stale state with the event's GITHUB_TOKEN in a separate
-  # least-privilege job: rejected events never receive the App private key.
-  # A read-only token fails the job closed, leaving a required check red.
+  # A trusted-bot PR may already be armed when an untrusted actor updates its
+  # head or changes its lifecycle state. Revoke that stale state with the
+  # event's GITHUB_TOKEN in a separate least-privilege job: rejected events
+  # never receive the App private key. Disarm jobs deliberately have no
+  # concurrency group because GitHub retains only one pending run per group;
+  # every rejected event must get its own non-replaceable revocation attempt.
   disarm-untrusted-update:
     needs: eligibility
     if: needs.eligibility.outputs.disarm == 'true'
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
-    concurrency:
-      group: enable-auto-merge-${{ github.event.pull_request.number || github.run_id }}
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -157,14 +171,17 @@ jobs:
           egress-policy: audit
 
       - name: 📥 Checkout trusted disarm script
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        # A direct self-repo run uses the PR base SHA because job.workflow_sha
+        # can include the rejected head. A workflow_call consumer instead uses
+        # the called workflow's own immutable job.workflow_sha.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}
           path: .devantler-tech-actions
           persist-credentials: false
 
-      - name: 🔒 Disarm auto-merge after rejected head update
+      - name: 🔒 Disarm auto-merge after rejected pull request trigger
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -261,10 +278,25 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
         run: |
+          set -euo pipefail
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          eligible=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json isDraft,state \
-            --jq 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end')
+          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,isDraft,state)
+          HEAD_SHA=$(jq -r .headRefOid <<<"$pr_json")
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          eligible=$(jq -r 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end' <<<"$pr_json")
+
+          # A later head must be evaluated by its own run. This also prevents
+          # an older queued run from re-arming after a rejected update's
+          # non-replaceable disarm has completed.
+          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]; then
+            eligible=false
+            echo "::notice::PR #${PR_NUMBER} moved from event head ${EVENT_HEAD} to ${HEAD_SHA}; the newer head's own run decides."
+          fi
+
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           if [[ "$eligible" != "true" ]]; then
             echo "::notice::PR #${PR_NUMBER} is draft or not open; skipping the auto-merge gate."
@@ -329,9 +361,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
           EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           set -euo pipefail
-          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
 
           # The proven head is exported so approval is bound to the reviewed
           # commit and the legacy default-off arming path cannot ride a push.
