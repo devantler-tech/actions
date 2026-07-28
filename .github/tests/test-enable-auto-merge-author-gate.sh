@@ -69,10 +69,7 @@ fi
 # Match the complete classifier shape rather than checking that a few strings
 # occur somewhere. This proves each allowlist is attached to the correct event
 # actor and rejects extra OR branches that could bypass the privileged gate.
-allowlist_json="$(jq -c '
-  reduce (.[] | select(.eligible) | .login) as $login
-    ([]; if index($login) then . else . + [$login] end)
-' "$fixtures")"
+allowlist_json='["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
 reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
 expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login)&&(github.event.action!='synchronize'||contains(fromJSON('$allowlist_json'),github.actor)))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON('$allowlist_json'),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON('$allowlist_json'),github.event.issue.user.login))}}"
