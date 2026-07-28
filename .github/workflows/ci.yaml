@@ -1861,6 +1861,31 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  # ── Flag-ON counterpart of test-validate-go-project (the both-states rule) ──
+  # test-validate-go-project above omits `scan-default-branch` entirely, so it exercises
+  # the default — the OFF state every existing consumer gets. This job passes it as true.
+  # Together they cover both states of the flag, per AGENTS.md "Shipping a new capability
+  # behind an opt-in flag": a flag whose off-path is untested can regress silently, and so
+  # can an on-path that was never instantiated.
+  #
+  # What this proves is that the input is declared and accepted and that the workflow
+  # behaves correctly in both states of it — NOT that a default-branch push scans, which
+  # no pull-request-triggered job can demonstrate (`github.ref` here is a PR merge ref, so
+  # the default-branch arm is unreachable by construction). The reachability of that arm is
+  # what the structural guard in test-govulncheck-main-coverage.sh asserts instead.
+  test-validate-go-project-scan-default-branch:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Default-Branch Scan Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      scan-default-branch: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-run-dotnet-tests-workflow:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests"
@@ -2749,6 +2774,7 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-scan-default-branch
       - test-run-dotnet-tests-workflow
       - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
@@ -2841,6 +2867,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
             ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}

@@ -703,8 +703,10 @@ jobs:
 
 | Key               | Type           | Default | Required | Description                                                         |
 |-------------------|----------------|---------|----------|---------------------------------------------------------------------|
-| `APP_PRIVATE_KEY` | Secret         | -       | No       | GitHub App private key for authenticating the workflow              |
-| `pr-owner`        | Input (string) | -       | No       | Pull request author login (used to disable auto-commit for bot PRs) |
+| `APP_PRIVATE_KEY`     | Secret          | -       | No       | GitHub App private key for authenticating the workflow                                                                                                                                                                          |
+| `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
+| `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
+| `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 
 </details>
 

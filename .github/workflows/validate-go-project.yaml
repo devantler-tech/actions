@@ -12,6 +12,11 @@ on:
         type: string
         default: ""
         description: "Go module directory to validate. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can run in a repo that is not itself a Go module."
+      scan-default-branch:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to running the vulnerability scan on every default-branch invocation, not just on pull requests. Off by default because it is a behaviour change for every consumer: a default branch that was reporting green can legitimately go red the moment an advisory is published against code that was already merged. Roll out caller-by-caller, then flip this default to true and remove the input (devantler-tech/actions#788)."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App Private Key"
@@ -49,6 +54,7 @@ jobs:
       pull-requests: read
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      govulncheck: ${{ steps.filter.outputs.govulncheck }}
       lintable: ${{ steps.filter.outputs.lintable }}
     steps:
       - name: 🛡️ Harden runner
@@ -72,12 +78,21 @@ jobs:
               - 'go.sum'
               - '.golangci.yml'
               - '.golangci.yaml'
-              # The allowlist decides which advisories the vuln scan accepts, so a
-              # change to it changes the gate's verdict on unchanged code. Without
-              # this entry, editing the allowlist skips the very scan that reads it.
-              # Both forms are listed because `working-directory` may point at a nested
-              # module, whose allowlist lives at e.g. `services/api/.govulncheck-allow.txt`
-              # — a root-only pattern would leave that edit unscanned.
+            # The allowlist decides which advisories the vuln scan accepts, so a change to
+            # it changes the gate's verdict on unchanged code: without this filter, editing
+            # the allowlist skips the very scan that reads it.
+            #
+            # It is a filter of its OWN rather than an entry in `go:` on purpose. `go` is
+            # consumed by go-mod-tidy, golangci-lint, deadcode, the test matrix and the
+            # coverage upload as well; folding the allowlist into it would make an
+            # allowlist-only commit run all of those in every consumer repo, so an
+            # administrative risk-acceptance could be blocked by a pre-existing failure
+            # somewhere else entirely. This output is OR-ed into the govulncheck job alone.
+            #
+            # Both forms are listed because `working-directory` may point at a nested
+            # module, whose allowlist lives at e.g. `services/api/.govulncheck-allow.txt`
+            # — a root-only pattern would leave that edit unscanned.
+            govulncheck:
               - '.govulncheck-allow.txt'
               - '**/.govulncheck-allow.txt'
             # Files lintable by MegaLinter Go flavor (excluding Go files which are covered above)
@@ -374,25 +389,46 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Deliberately NOT restricted by event_name, and deliberately NOT diff-gated on the
-    # default branch. A vulnerability scan's verdict depends on the vulnerability
-    # DATABASE as well as the diff: an advisory published after a merge makes unchanged,
-    # already-merged code vulnerable. Two separate gates each hid that, and both are gone:
-    #   * `event_name == 'pull_request'` meant the default branch never scanned at all;
-    #   * the path filter alone means a default-branch push touching no Go path (a README
-    #     edit) skips the scan, so the branch keeps reporting green while a
-    #     newly-published advisory already applies to it.
-    # On the default branch the scan therefore runs on every invocation; on pull requests
-    # and topic branches the path filter still applies, so per-PR cost is unchanged.
-    # The default-branch arm tests `go == 'false'` rather than being unconditional: an
-    # EMPTY output means the `changes` job did not run at all (it is itself gated), and
-    # only an explicit 'false' proves the filter ran and found no Go paths. Keying on the
-    # explicit value keeps this independent of how skipped-`needs` propagate.
+    # A vulnerability scan's verdict depends on the vulnerability DATABASE as well as the
+    # diff: an advisory published after a merge makes unchanged, already-merged code
+    # vulnerable. Two separate conditions each hid that on the default branch —
+    # `event_name == 'pull_request'` meant it never scanned at all, and the path filter
+    # alone means a push touching no Go path (a README edit) skips the scan, so the branch
+    # keeps reporting green while a newly-published advisory already applies to it.
+    #
+    # Fixing that changes behaviour in EVERY consumer repo at once, and the intended
+    # consequence is that a default branch which was green CAN now go red. Per AGENTS.md
+    # (*Shipping a new capability behind an opt-in flag*) it therefore ships behind
+    # `scan-default-branch`, default false, to be rolled out caller-by-caller before the
+    # default flips and the input is removed (#788).
+    #
+    # The two arms, and why each is shaped this way:
+    #
+    #   * PULL-REQUEST ARM — unflagged, and identical to the behaviour shipped today
+    #     except that an allowlist-only change now also triggers it. A consumer that
+    #     passes nothing gets exactly what it got before, which is what makes this
+    #     backward-compatible. `govulncheck` is its own filter output rather than an entry
+    #     in `go` so an allowlist edit triggers THIS job and not tidy/lint/deadcode/tests.
+    #
+    #   * DEFAULT-BRANCH ARM — the new capability, reachable only when a caller opts in.
+    #     It tests `go != ''` rather than being unconditional because an EMPTY output means
+    #     the `changes` job did not run at all (it is itself gated); a concrete 'true' or
+    #     'false' proves the filter ran, so the arm stays independent of how skipped-`needs`
+    #     propagate. It is deliberately NOT diff-gated beyond that: on the default branch,
+    #     scanning is the point.
+    #
+    # The input is compared against both the boolean and the string because a workflow
+    # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
-      && (needs.changes.outputs.go == 'true'
-      || (needs.changes.outputs.go == 'false'
-      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)))
+      && ((
+        (needs.changes.outputs.go == 'true' || needs.changes.outputs.govulncheck == 'true')
+        && github.event_name == 'pull_request'
+      ) || (
+        (inputs.scan-default-branch == true || inputs.scan-default-branch == 'true')
+        && needs.changes.outputs.go != ''
+        && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      ))
     permissions:
       contents: read
     # govulncheck's default symbol scan builds a whole-program call graph in memory,
