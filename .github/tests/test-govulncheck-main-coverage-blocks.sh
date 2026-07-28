@@ -90,6 +90,12 @@ check govulncheck-output-not-consumed.yaml \
   "is never read by the govulncheck job's gate"
 check missing-govulncheck-output.yaml \
   "does not expose a 'govulncheck' output"
+# Being reachable is only half of it: the trigger is new behaviour, so it must also be
+# behind the opt-in, and the scan it schedules must read the allowlist that fired it.
+check allowlist-trigger-not-flag-gated.yaml \
+  "is not gated by 'inputs.scan-default-branch'"
+check allow-file-not-working-dir-relative.yaml \
+  "'allow-file' is not composed from 'inputs.working-directory'"
 
 # ── Controls: the guard must accept correct input ────────────────────────────────
 passes() {

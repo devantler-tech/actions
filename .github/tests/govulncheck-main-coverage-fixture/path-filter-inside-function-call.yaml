@@ -33,7 +33,13 @@ jobs:
       github.repository != 'x/y'
       && contains(fromJSON('["true"]'), needs.changes.outputs.go)
       && ((
-        (needs.changes.outputs.go == 'true' || needs.changes.outputs.govulncheck == 'true')
+        (
+          needs.changes.outputs.go == 'true'
+          || (
+            (inputs.scan-default-branch == true || inputs.scan-default-branch == 'true')
+            && needs.changes.outputs.govulncheck == 'true'
+          )
+        )
         && github.event_name == 'pull_request'
       ) || (
         (inputs.scan-default-branch == true || inputs.scan-default-branch == 'true')
@@ -41,4 +47,8 @@ jobs:
         && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       ))
     steps:
-      - run: 'true'
+      - id: govulncheck-allow
+        run: 'true'
+      - uses: devantler/govulncheck-action@v0
+        with:
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}

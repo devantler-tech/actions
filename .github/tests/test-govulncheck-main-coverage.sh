@@ -257,8 +257,65 @@ else
   fi
 fi
 
+# ── 9. The allowlist trigger must itself be behind the opt-in ─────────────────────
+# Check 8 proves the allowlist CAN trigger the scan. That is only half the contract: the
+# trigger is new behaviour, so a caller that passes nothing must not get it (AGENTS.md,
+# *Shipping a new capability behind an opt-in flag*). Check 6 cannot cover this — it skips
+# any arm mentioning the flag, and the allowlist term shares an arm with the diff gate.
+#
+# Asserted structurally rather than by token co-occurrence: the innermost parenthesised
+# group holding the allowlist term must ALSO hold the flag, AND-ed. Merely finding both
+# tokens somewhere in the gate would accept `(flag || govulncheck == 'true')`, where the
+# allowlist fires with the flag off — the exact shape this check exists to reject.
+innermost_group_with() {
+  awk -v tok="$1" '{
+    s = $0; n = length(s); best = ""
+    for (i = 1; i <= n; i++) {
+      if (substr(s, i, 1) != "(") continue
+      depth = 0
+      for (j = i; j <= n; j++) {
+        c = substr(s, j, 1)
+        if (c == "(") depth++
+        else if (c == ")") { depth--; if (depth == 0) break }
+      }
+      if (depth != 0) continue
+      g = substr(s, i, j - i + 1)
+      if (index(g, tok) > 0 && (best == "" || length(g) < length(best))) best = g
+    }
+    print best
+  }' <<<"$normalized"
+}
+
+vuln_term="needs.changes.outputs.govulncheck"
+vuln_group="$(innermost_group_with "$vuln_term")"
+if [[ -z "$vuln_group" ]]; then
+  fail "could not find a parenthesised group holding '$vuln_term'; the gate's structure is not what this guard can verify — see ksail#6373."
+elif ! grep -qF "$flag_ref" <<<"$vuln_group"; then
+  fail "the allowlist term '$vuln_term' is not gated by '$flag_ref', so a pull request that edits only .govulncheck-allow.txt schedules the vulnerability scan in every consumer that never opted in. Offending group: ${vuln_group}. See AGENTS.md, 'Shipping a new capability behind an opt-in flag'."
+elif ! grep -qF '&&' <<<"$vuln_group"; then
+  fail "'$flag_ref' and the allowlist term '$vuln_term' share a group but are not AND-ed, so the allowlist trigger still fires with the opt-in off. Offending group: ${vuln_group}. See AGENTS.md, 'Shipping a new capability behind an opt-in flag'."
+fi
+
+# ── 10. The scan must read the allowlist the trigger fired on ─────────────────────
+# Check 8's '**/.govulncheck-allow.txt' pattern lets a nested module's allowlist trigger
+# the scan. That is worth nothing unless the scanner is then pointed at THAT file.
+#
+# `defaults.run.working-directory` governs `run:` steps only, never a `uses:` step's
+# inputs, so the detection step resolves the nested allowlist while a bare literal
+# `allow-file` sends the action to the repo root. The action takes both of its path inputs
+# checkout-root-relative — pinned by the allowlist self-test in ci.yaml, which passes
+# `work-dir: .github/tests/govulncheck-allowlist` alongside a fully prefixed `allow-file`.
+# So the value must be composed from `inputs.working-directory`, exactly as the sibling
+# `go-version-file` input already is.
+allow_file="$(yq -r '.jobs.govulncheck.steps[] | select(.with != null) | .with["allow-file"] // ""' "$workflow" | grep -v '^$' | head -1)"
+if [[ -z "$allow_file" ]]; then
+  fail "the govulncheck job passes no 'allow-file' input, so a committed .govulncheck-allow.txt is ignored and every risk-accepted advisory blocks the scan — see AGENTS.md, *Tested invariants*."
+elif ! grep -qF 'inputs.working-directory' <<<"$allow_file"; then
+  fail "'allow-file' is not composed from 'inputs.working-directory' (got: ${allow_file}). With a nested module the detection step finds e.g. services/api/.govulncheck-allow.txt while the scanner is pointed at the repo root, so the nested module's risk acceptance is silently dropped and the scan blocks on an advisory that was already accepted."
+fi
+
 if [[ "$status" -eq 0 ]]; then
-  echo "govulncheck's default-branch scan is opt-in and reachable, nothing new runs unopted, and allowlist edits trigger the scan that reads them ✅"
+  echo "govulncheck's default-branch scan is opt-in and reachable, nothing new runs unopted, and allowlist edits trigger — behind the same opt-in — the scan that reads them ✅"
 fi
 
 exit "$status"
