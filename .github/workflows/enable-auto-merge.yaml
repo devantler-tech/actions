@@ -80,9 +80,10 @@ jobs:
       - name: 🔎 Classify privileged auto-merge trigger
         id: classify
         # When actor-trust enforcement is enabled, every pull_request trigger
-        # must be trusted. This prevents an untrusted actor from re-arming a
-        # previously disarmed PR through reopened/ready_for_review; `devantler`
-        # is the explicit maintainer reauthorization path.
+        # and any rerun initiator must be trusted. This prevents an untrusted
+        # actor from re-arming a previously disarmed PR through lifecycle
+        # events or by rerunning a trusted event; `devantler` is the explicit
+        # maintainer reauthorization path.
         if: >-
           ${{
             (
@@ -94,9 +95,15 @@ jobs:
               ) &&
               (
                 env.ACTOR_TRUST_ENFORCED != 'true' ||
-                contains(
-                  fromJSON(env.TRUSTED_TRIGGER_ACTORS),
-                  github.actor
+                (
+                  contains(
+                    fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                    github.actor
+                  ) &&
+                  contains(
+                    fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                    github.triggering_actor
+                  )
                 )
               )
             ) ||
@@ -139,9 +146,15 @@ jobs:
               fromJSON(env.TRUSTED_BOT_AUTHORS),
               github.event.pull_request.user.login
             ) &&
-            !contains(
-              fromJSON(env.TRUSTED_TRIGGER_ACTORS),
-              github.actor
+            (
+              !contains(
+                fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                github.actor
+              ) ||
+              !contains(
+                fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                github.triggering_actor
+              )
             )
           }}
         run: echo "disarm=true" >> "$GITHUB_OUTPUT"

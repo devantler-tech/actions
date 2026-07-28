@@ -33,11 +33,18 @@ jq -er \
       | select(
           (.id > $current) and
           (.workflow_id == $workflow) and
-          ((.created_at // "") >= $live) and
+          ((.created_at // "") > $live) and
           any(.pull_requests[]?; .number == $pr)
         )
     ]
-    | (if length == 0 then "" else (max_by(.id).actor.login // "") end) as $actor
-    | select($actor != "" and ($trusted | index($actor)) != null)
+    | (if length == 0 then {} else max_by(.id) end) as $run
+    | ($run.actor.login // "") as $actor
+    | ($run.triggering_actor.login // "") as $triggering_actor
+    | select(
+        $actor != "" and
+        $triggering_actor != "" and
+        ($trusted | index($actor)) != null and
+        ($trusted | index($triggering_actor)) != null
+      )
     | $actor
   '

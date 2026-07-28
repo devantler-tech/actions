@@ -141,5 +141,17 @@
     "enforce": true,
     "disarm": true,
     "eligible": false
+  },
+  {
+    "name": "untrusted collaborator reruns trusted bot event",
+    "event_name": "pull_request",
+    "action": "synchronize",
+    "draft": false,
+    "login": "dependabot[bot]",
+    "actor": "dependabot[bot]",
+    "triggering_actor": "octocat",
+    "enforce": true,
+    "disarm": true,
+    "eligible": false
   }
 ]

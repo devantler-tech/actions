@@ -104,7 +104,7 @@ if [[ "$allowlist_json" != "$expected_allowlist_json" ||
 fi
 reviewers_json='["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 normalized_condition="$(tr -d '[:space:]' <<<"$condition")"
-expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(env.ACTOR_TRUST_ENFORCED!='true'||contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login))}}"
+expected_condition="\${{(github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(env.ACTOR_TRUST_ENFORCED!='true'||(contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)&&contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))))||(github.event_name=='pull_request_review'&&contains(fromJSON('$reviewers_json'),github.event.review.user.login)&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login))||(github.event_name=='issue_comment'&&github.event.issue.pull_request&&github.event.issue.state=='open'&&contains(fromJSON('$reviewers_json'),github.event.comment.user.login)&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.issue.user.login))}}"
 if [[ "$normalized_condition" != "$expected_condition" ]]; then
   echo "::error file=$workflow::eligibility classifier must exactly preserve the pull_request, pull_request_review, and issue_comment trust branches"
   echo "expected: $expected_condition"
@@ -118,7 +118,7 @@ disarm_condition="$(yq -r '
    | .if // ""]
   | join("\n")' "$workflow")"
 normalized_disarm_condition="$(tr -d '[:space:]' <<<"$disarm_condition")"
-expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)}}"
+expected_disarm_condition="\${{env.ACTOR_TRUST_ENFORCED=='true'&&github.event_name=='pull_request'&&!github.event.pull_request.draft&&contains(fromJSON(env.TRUSTED_BOT_AUTHORS),github.event.pull_request.user.login)&&(!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.actor)||!contains(fromJSON(env.TRUSTED_TRIGGER_ACTORS),github.triggering_actor))}}"
 if [[ "$normalized_disarm_condition" != "$expected_disarm_condition" ]]; then
   echo "::error file=$workflow::rejected trusted-author pull_request events must be classified for fail-closed disarm"
   echo "expected: $expected_disarm_condition"
@@ -250,6 +250,7 @@ while IFS= read -r fixture; do
   draft="$(jq -r '.draft' <<<"$fixture")"
   login="$(jq -r '.login' <<<"$fixture")"
   actor="$(jq -r '.actor' <<<"$fixture")"
+  triggering_actor="$(jq -r '.triggering_actor // .actor' <<<"$fixture")"
   enforce="$(jq -r 'if has("enforce") then .enforce else true end' <<<"$fixture")"
   expected="$(jq -r '.eligible' <<<"$fixture")"
   expected_disarm="$(jq -r '.disarm // false' <<<"$fixture")"
@@ -259,13 +260,15 @@ while IFS= read -r fixture; do
   if [[ "$event_name" == "pull_request" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
     { [[ "$enforce" != "true" ]] ||
-      jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; then
+      { jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null &&
+        jq -e --arg actor "$triggering_actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; }; then
     actual=true
   fi
 
   if [[ "$enforce" == "true" && "$event_name" == "pull_request" && "$draft" == "false" ]] &&
     jq -e --arg login "$login" 'index($login) != null' <<<"$allowlist_json" >/dev/null &&
-    ! jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; then
+    { ! jq -e --arg actor "$actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null ||
+      ! jq -e --arg actor "$triggering_actor" 'index($actor) != null' <<<"$trigger_actors_json" >/dev/null; }; then
     actual_disarm=true
   fi
 

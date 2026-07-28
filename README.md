@@ -228,10 +228,12 @@ commit it checked.
 **With actor-trust enforcement turned on** — the `enforce-actor-trust` input, or the
 `ENFORCE_ACTOR_TRUST` repository/organization variable — every `pull_request` trigger on an
 allowlisted bot-authored PR must come from an allowlisted bot or the explicit `devantler`
-maintainer actor. A rejected trigger receives no App token and actively revokes both classic
-auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`. Pull-request arming and
-revocation use a newest-event-wins critical section: a newer rejected event cancels older arming,
-while a later trusted maintainer event is an explicit reauthorization.
+maintainer actor. Workflow reruns also require the initiating `github.triggering_actor` to be
+allowlisted; a trusted original event cannot be replayed by an untrusted collaborator. A rejected
+trigger receives no App token and actively revokes both classic auto-merge and merge-queue state
+with the caller's `GITHUB_TOKEN`. Pull-request arming and revocation use a newest-event-wins
+critical section: a newer rejected event cancels older arming, while a later trusted maintainer
+event is an explicit reauthorization.
 
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
@@ -283,8 +285,10 @@ jobs:
 > **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
 > `contents: write`, and `pull-requests: write` as shown above. The read scope proves whether a
 > delayed rejected event was superseded by a newer trusted run of the same caller workflow for that
-> PR; unrelated workflows do not reauthorize it. The write scopes revoke classic auto-merge or
-> merge-queue state. Rejected events never receive the App private key.
+> PR, created strictly after the observed live PR update; same-second timestamps are ambiguous and
+> revoke fail-closed. Both the original and rerun-triggering actors must be trusted, and unrelated
+> workflows do not reauthorize. The write scopes revoke classic auto-merge or merge-queue state.
+> Rejected events never receive the App private key.
 > Missing proof or revoke authority fails the required workflow closed.
 >
 > **Note:** The caller grants only the legacy minimum above, with or without
