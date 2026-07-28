@@ -2018,6 +2018,31 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  # ── Flag-ON counterpart of test-validate-go-project (the both-states rule) ──
+  # test-validate-go-project above omits `scan-default-branch` entirely, so it exercises
+  # the default — the OFF state every existing consumer gets. This job passes it as true.
+  # Together they cover both states of the flag, per AGENTS.md "Shipping a new capability
+  # behind an opt-in flag": a flag whose off-path is untested can regress silently, and so
+  # can an on-path that was never instantiated.
+  #
+  # What this proves is that the input is declared and accepted and that the workflow
+  # behaves correctly in both states of it — NOT that a default-branch push scans, which
+  # no pull-request-triggered job can demonstrate (`github.ref` here is a PR merge ref, so
+  # the default-branch arm is unreachable by construction). The reachability of that arm is
+  # what the structural guard in test-govulncheck-main-coverage.sh asserts instead.
+  test-validate-go-project-scan-default-branch:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Default-Branch Scan Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      scan-default-branch: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-run-dotnet-tests-workflow:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests"
@@ -2389,6 +2414,53 @@ jobs:
       - name: 🧪 Assert govulncheck keeps a cold-cache-safe finite timeout + GOMEMLIMIT
         run: bash .github/tests/test-govulncheck-timeout.sh
 
+  test-govulncheck-main-coverage:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert govulncheck runs on the default branch and on allowlist edits
+        run: bash .github/tests/test-govulncheck-main-coverage.sh
+
+  # ── Failing-input counterpart to the job above (the both-tests convention) ──
+  # The trigger guard is itself a gate, and its checks are structural string analysis over
+  # a GitHub expression — unusually easy to make silently vacuous (a `strip_groups`
+  # regression that empties `$top_level` satisfies every assertion). The happy-path job
+  # above cannot catch that. This one points the SAME guard at deliberately-bad fixtures
+  # and asserts it fails WITH THE EXPECTED MESSAGE, plus that it still passes the real
+  # workflow — so neither an accept-everything nor a reject-everything guard passes.
+  test-govulncheck-main-coverage-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck Trigger Guard - Blocks On Bad Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the trigger guard blocks every bad-input fixture
+        run: bash .github/tests/test-govulncheck-main-coverage-blocks.sh
+
   # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
   # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
   # when a workflow has a finding. The happy-path test-zizmor job only proves the gate
@@ -2671,24 +2743,45 @@ jobs:
         with:
           persist-credentials: false
 
-      # The org-required direct run of validate-go-project.yaml and this repo's
-      # ci.yaml self-test (which calls it as a reusable workflow) run on the same
-      # repository + ref. If the concurrency group is not invocation-aware they share
-      # one group and cancel each other, failing CI - Required Checks nondeterministically
-      # (devantler-tech/actions#587). A reusable workflow inherits the CALLER's
-      # github.workflow, so keying the group on github.workflow keeps the two
-      # invocations in separate groups while runs of the same invocation still
-      # supersede. This guard goes red if that discriminator is ever dropped. The
-      # grep is a regex (not -F) so the group's own ${{ … }} expressions are matched
-      # as literals here rather than being evaluated in this workflow.
-      - name: 🔒 Assert the concurrency group keys on github.workflow
+      # Two invocations of validate-go-project.yaml that differ in any way must land in
+      # different concurrency groups, or the later cancels the earlier and CI - Required
+      # Checks fails nondeterministically. Both collisions below were observed live, and
+      # each needs its own discriminator:
+      #
+      #   * github.workflow — the org-required direct run vs this repo's ci.yaml
+      #     self-test, which run on the same repository + ref. A reusable workflow
+      #     inherits the CALLER's github.workflow (devantler-tech/actions#587).
+      #   * the invocation's inputs — two calls from the SAME caller on the same ref,
+      #     which github.workflow cannot tell apart. The `scan-default-branch`
+      #     both-states self-tests are exactly that: identical but for one input.
+      #
+      # This guard goes red if either discriminator is dropped. The grep is a regex (not
+      # -F) so the group's own ${{ … }} expressions are matched as literals here rather
+      # than being evaluated in this workflow.
+      - name: 🔒 Assert the concurrency group is invocation-aware
         shell: bash
         env:
           GATE: .github/workflows/validate-go-project.yaml
         run: |
           set -euo pipefail
-          if ! grep -Eq 'group: "validate-go-project-.*github\.workflow' "$GATE"; then
-            echo "::error::$GATE concurrency group is no longer invocation-aware. Keep github.workflow in the group (devantler-tech/actions#587) so the org-required direct run and the ci.yaml reusable-workflow self-test do not cancel each other."
+          group="$(grep -E 'group: "validate-go-project-' "$GATE" || true)"
+          if [[ -z "$group" ]]; then
+            echo "::error::$GATE has no recognisable validate-go-project concurrency group to verify."
+            exit 1
+          fi
+          if ! grep -Eq 'github\.workflow' <<<"$group"; then
+            echo "::error::$GATE concurrency group no longer keys on github.workflow (devantler-tech/actions#587), so the org-required direct run and the ci.yaml reusable-workflow self-test share a group and cancel each other."
+            exit 1
+          fi
+          # Every workflow_call input must appear, so a new input that distinguishes two
+          # invocations cannot be added without also distinguishing their groups.
+          missing=""
+          while IFS= read -r input; do
+            [[ -n "$input" ]] || continue
+            grep -qF "inputs.$input" <<<"$group" || missing="$missing $input"
+          done < <(yq -r '.["on"].workflow_call.inputs | keys | .[]' "$GATE")
+          if [[ -n "$missing" ]]; then
+            echo "::error::$GATE concurrency group omits workflow_call input(s):$missing. Two calls from the same caller workflow on the same ref that differ only by an input would share a group, and the later would cancel the earlier."
             exit 1
           fi
           echo "validate-go-project.yaml concurrency group is invocation-aware ✅"
@@ -2860,6 +2953,7 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-scan-default-branch
       - test-run-dotnet-tests-workflow
       - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
@@ -2880,6 +2974,8 @@ jobs:
       - test-govulncheck-strict-blocks
       - test-govulncheck-action-lockstep
       - test-govulncheck-timeout
+      - test-govulncheck-main-coverage
+      - test-govulncheck-main-coverage-blocks
       - test-zizmor-blocks
       - test-zizmor-action-lockstep
       - test-validate-go-lint-blocks
@@ -2951,6 +3047,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
             ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
@@ -2971,6 +3068,8 @@ jobs:
             ${{ needs.test-govulncheck-strict-blocks.result }}
             ${{ needs.test-govulncheck-action-lockstep.result }}
             ${{ needs.test-govulncheck-timeout.result }}
+            ${{ needs.test-govulncheck-main-coverage.result }}
+            ${{ needs.test-govulncheck-main-coverage-blocks.result }}
             ${{ needs.test-zizmor-blocks.result }}
             ${{ needs.test-zizmor-action-lockstep.result }}
             ${{ needs.test-validate-go-lint-blocks.result }}
