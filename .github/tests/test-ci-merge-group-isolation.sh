@@ -15,18 +15,16 @@ while IFS= read -r entry; do
   condition="$(yq -r '.condition' <<<"$entry")"
   [[ "$job" == "ci-required-checks" ]] && continue
 
-  # Every job that consumes the merge ref must make its exclusion explicit.
-  # Jobs already restricted to pull-request or push events are also ineligible.
-  if [[ "$condition" == *"merge_group"* &&
-    "$condition" != *"github.event_name != 'merge_group'"* ]]; then
-    unsafe_jobs+=("$job")
-    continue
-  fi
-
-  if [[ "$condition" == *"github.event_name != 'merge_group'"* ||
-    "$condition" == *"github.event_name == 'pull_request'"* ||
-    "$condition" == *"github.event_name == 'push'"* ||
-    "$condition" == *"startsWith(github.event_name, 'pull_request')"* ]]; then
+  # Require a safe event predicate as the leading top-level conjunct. Merely
+  # finding one elsewhere is unsafe: `true || event == pull_request` still
+  # executes for merge_group and would make a substring-only guard vacuous.
+  compact_condition="$(
+    sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' <<<"$condition"
+  )"
+  expression="${compact_condition#\$\{\{}"
+  expression="${expression#"${expression%%[![:space:]]*}"}"
+  if [[ "$expression" == "github.event_name != 'merge_group' &&"* ||
+    "$expression" == "github.event_name == 'push' &&"* ]]; then
     continue
   fi
 

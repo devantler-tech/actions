@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every test job below is ineligible for merge_group, either through an explicit
-  # exclusion or an event-specific pull_request/push guard. Merge refs contain
+  # Every test job below is ineligible for merge_group through a leading event
+  # predicate: an explicit exclusion, or the push-only Zizmor self-test. Merge refs contain
   # PR-controlled local actions and fixtures, so test jobs must never run them with
   # repository secrets or write-capable tokens. Only `CI - Required Checks` completes
   # the merge-queue requirement; it receives no repository secrets and retains only
@@ -132,7 +132,7 @@ jobs:
     # The underlying action only produces a diff on pull_request events; on push /
     # merge_group there is no PR to review, so the test is PR-gated (skipped
     # otherwise, which aggregate-job-checks tolerates — like test-approve-pr).
-    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && startsWith(github.event_name, 'pull_request') }}"
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && startsWith(github.event_name, 'pull_request') }}"
     permissions:
       contents: read
     steps:
@@ -205,7 +205,9 @@ jobs:
     permissions:
       contents: read
     if: >-
-      !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+      github.event_name != 'merge_group' &&
+      !startsWith(github.head_ref, 'release-please--') &&
+      !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
       (
         github.event.pull_request.user.login == 'dependabot[bot]' ||
@@ -1902,6 +1904,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-ci-merge-group-isolation.sh
 
+      - name: 🔐 Check merge-group isolation guard blocks unsafe input
+        shell: bash
+        run: bash .github/tests/test-ci-merge-group-isolation-blocks.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
@@ -2084,6 +2090,7 @@ jobs:
   test-run-dotnet-tests-workflow-authenticated:
     if: >-
       ${{
+        github.event_name != 'merge_group' &&
         !startsWith(github.head_ref, 'release-please--') &&
         !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
         github.event_name == 'pull_request' &&
@@ -2125,6 +2132,7 @@ jobs:
   test-enable-auto-merge-actor-trust:
     if: >-
       ${{
+        github.event_name != 'merge_group' &&
         !startsWith(github.head_ref, 'release-please--') &&
         !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
         github.event_name == 'pull_request' &&
