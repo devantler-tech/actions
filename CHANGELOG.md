@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.0.4](https://github.com/devantler-tech/actions/compare/v11.0.3...v11.0.4) (2026-07-29)
+
+
+### Bug Fixes
+
+* isolate merge queue CI from repository secrets ([#704](https://github.com/devantler-tech/actions/issues/704)) ([d8b63a1](https://github.com/devantler-tech/actions/commit/d8b63a11fa451da47c3fa8b366f99e08d5e02545))
+
 ## [11.0.3](https://github.com/devantler-tech/actions/compare/v11.0.2...v11.0.3) (2026-07-29)
 
 
