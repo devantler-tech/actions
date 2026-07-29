@@ -23,31 +23,36 @@ jobs:
   # check green so the release auto-merges.
   # ── approve-pr ──────────────────────────────────────────────
   test-approve-pr:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
-      contents: write
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
-      startsWith(github.event_name, 'pull_request') &&
-      (
-        github.event.pull_request.user.login == 'dependabot[bot]' ||
-        github.event.pull_request.user.login == 'renovate[bot]' ||
-        github.event.pull_request.user.login == 'botantler[bot]' ||
-        github.event.pull_request.user.login == 'devantler'
-      )
+      contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 🧪 Run approve-pr
         uses: ./approve-pr
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          pr-number: ${{ github.event.pull_request.number }}
+          pr-number: ${{ github.event.pull_request.number || 0 }}
+          dry-run: "true"
+
+  test-approve-pr-credential-boundary:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Approve PR - Credential-Free CI"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔒 Assert approve-pr CI stays credential-free
+        run: bash .github/tests/test-approve-pr-credential-boundary.sh
 
   # ── cleanup-ghcr-packages ───────────────────────────────────
   test-cleanup-ghcr-packages:
@@ -57,7 +62,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -78,7 +83,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -125,7 +130,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -156,7 +161,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -203,18 +208,13 @@ jobs:
         github.event.pull_request.user.login == 'devantler'
       )
     steps:
-      # Never execute this privileged local action from the PR merge commit: an
-      # allowlisted PR can modify action.yaml and otherwise inherit this job's
-      # write-scoped GITHUB_TOKEN. Load the implementation from the trusted base.
-      - name: 📑 Checkout trusted action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: .trusted-actions
           persist-credentials: false
 
       - name: 🧪 Run enable-auto-merge-on-pr
-        uses: ./.trusted-actions/enable-auto-merge-on-pr
+        uses: ./enable-auto-merge-on-pr
         with:
           pr-number: ${{ github.event.pull_request.number }}
           dry-run: "true"
@@ -227,7 +227,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -262,7 +262,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -308,7 +308,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -328,7 +328,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -344,7 +344,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -360,7 +360,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -388,7 +388,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -422,15 +422,164 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 🧪 Run run-dotnet-tests
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: .github/fixtures/run-dotnet-tests
+
+      - name: 🔒 Verify pull-request tests received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Pull-request tests configured the authenticated GHCR feed"
+            exit 1
+          fi
+
+  test-run-dotnet-tests-preserves-source-mapping:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Run .NET Tests - Preserve Source Mapping"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10
+
+      - name: 📦 Build mapped local package
+        run: >-
+          dotnet pack
+          .github/fixtures/run-dotnet-tests-source-mapping/dependency/Fixture.Dependency.csproj
+          --configuration Release
+          --output .github/fixtures/run-dotnet-tests-source-mapping/local-packages
+        shell: bash
+
+      - name: 🧪 Restore and test with caller source mapping
+        uses: ./run-dotnet-tests
+        with:
+          # Exercise the credential-bearing branch without exposing a real token to PR-controlled restore code.
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: 🔒 Verify caller NuGet configuration is byte-identical
+        run: >-
+          git diff --exit-code --
+          .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+        shell: bash
+
+      - name: 🧪 Configure the canonical caller-owned GitHub Packages source
+        id: canonical-source
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          cp "$config" "$RUNNER_TEMP/source-mapping-NuGet.Config"
+          dotnet nuget add source \
+            --configfile "$config" \
+            --name github \
+            "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+          echo "sha=$(sha256sum "$config" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore with the canonical caller-owned source
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: 🔒 Verify the canonical caller-owned source is byte-identical
+        env:
+          EXPECTED_SHA: ${{ steps.canonical-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          config=.github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          actual_sha="$(sha256sum "$config" | cut -d ' ' -f 1)"
+          if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Authenticated restore changed the caller-owned GitHub Packages source"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/source-mapping-NuGet.Config" "$config"
+        shell: bash
+
+      - name: 🧪 Prepare a symlinked caller NuGet configuration
+        id: symlink-fixture
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          cp -R .github/fixtures/run-dotnet-tests "$workspace"
+          cp .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config "$target"
+          ln -s "$target" "$workspace/NuGet.Config"
+          echo "target_sha=$(sha256sum "$target" | cut -d ' ' -f 1)" >>"$GITHUB_OUTPUT"
+          echo "link_target=$(readlink "$workspace/NuGet.Config")" >>"$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: 🧪 Restore through a symlinked caller config
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: ${{ runner.temp }}/run-dotnet-tests-symlink
+
+      - name: 🔒 Verify the symlink and target bytes are preserved
+        env:
+          EXPECTED_LINK_TARGET: ${{ steps.symlink-fixture.outputs.link_target }}
+          EXPECTED_TARGET_SHA: ${{ steps.symlink-fixture.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/run-dotnet-tests-symlink"
+          target="$RUNNER_TEMP/run-dotnet-tests-symlink.NuGet.Config"
+          if [[ ! -L "$workspace/NuGet.Config" ]]; then
+            echo "::error::Authenticated restore removed the caller's NuGet.Config symlink"
+            exit 1
+          fi
+          if [[ "$(readlink "$workspace/NuGet.Config")" != "$EXPECTED_LINK_TARGET" ]]; then
+            echo "::error::Authenticated restore changed the caller's NuGet.Config symlink target"
+            exit 1
+          fi
+          if [[ "$(sha256sum "$target" | cut -d ' ' -f 1)" != "$EXPECTED_TARGET_SHA" ]]; then
+            echo "::error::Authenticated restore changed the symlinked NuGet.Config target bytes"
+            exit 1
+          fi
+        shell: bash
+
+      - name: 🧪 Configure an untrusted source with the credential-bearing name
+        run: >-
+          dotnet nuget add source
+          --configfile .github/fixtures/run-dotnet-tests-source-mapping/restore-config/NuGet.Config
+          --name github
+          ../local-packages
+        shell: bash
+
+      - name: 🛡️ Reject the untrusted credential target
+        id: untrusted-source
+        continue-on-error: true
+        uses: ./run-dotnet-tests
+        with:
+          github-token: credential-boundary-sentinel
+          working-directory: .github/fixtures/run-dotnet-tests-source-mapping/consumer
+
+      - name: ✅ Verify the untrusted credential target was rejected
+        env:
+          OUTCOME: ${{ steps.untrusted-source.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Authenticated restore accepted a source named 'github' with an untrusted URL"
+            exit 1
+          fi
+        shell: bash
 
   # ── setup-agent-skills ────────────────────────────────────
   test-setup-agent-skills-inline:
@@ -444,7 +593,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -488,7 +637,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -528,7 +677,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -556,7 +705,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -585,7 +734,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -630,7 +779,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -662,16 +811,16 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: 🧪 Run setup-go-toolchain with token
+      - name: 🧪 Run setup-go-toolchain with private module discovery
         uses: ./setup-go-toolchain
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ✅ Verify GOPRIVATE is set
+      - name: ✅ Verify private module configuration is safe
         shell: bash
         run: |
           goprivate=$(go env GOPRIVATE)
@@ -680,6 +829,11 @@ jobs:
             exit 1
           fi
           echo "GOPRIVATE: $goprivate"
+
+          if git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null | grep -q 'x-access-token'; then
+            echo "::error::A GitHub token was persisted in global Git configuration"
+            exit 1
+          fi
 
   # ── setup-ksail-cli ────────────────────────────────────────
   test-setup-ksail-cli:
@@ -692,7 +846,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -711,7 +865,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -802,7 +956,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -994,7 +1148,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1010,7 +1164,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1032,7 +1186,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1080,7 +1234,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1129,7 +1283,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1159,7 +1313,7 @@ jobs:
       code-quality: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1183,7 +1337,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1217,7 +1371,7 @@ jobs:
       issues: write
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1238,7 +1392,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1267,7 +1421,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1296,7 +1450,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1324,7 +1478,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1355,7 +1509,7 @@ jobs:
       packages: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1364,8 +1518,17 @@ jobs:
         continue-on-error: true
         uses: ./run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.event_name != 'pull_request' && secrets.GITHUB_TOKEN || '' }}
           working-directory: does-not-exist
+
+      - name: 🔒 Verify negative pull-request test received no GHCR credentials
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          if dotnet nuget list source | grep -Fq 'github [Enabled]'; then
+            echo "::error::Negative pull-request test configured the authenticated GHCR feed"
+            exit 1
+          fi
 
       - name: ✅ Verify step failed as expected
         shell: bash
@@ -1397,12 +1560,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           # Match run-dotnet-tests/action.yaml's SDK provisioning (previous STS + current LTS).
           dotnet-version: |
@@ -1421,7 +1584,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
+          dotnet restore
+          dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed" 2>&1 | tee dotnet-test-output.txt
           exit "${PIPESTATUS[0]}"
 
       - name: ✅ Assert the test gate blocked on the failing test
@@ -1456,7 +1620,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1471,7 +1635,7 @@ jobs:
           GATE: run-dotnet-tests/action.yaml
           # Match the full command, not a bare substring — commands also appear in comments,
           # so a looser grep could false-pass if the real value changed while a comment did not.
-          EXPECTED_TEST_CMD: 'dotnet test --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
+          EXPECTED_TEST_CMD: 'dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"'
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED_TEST_CMD" "$GATE"; then
@@ -1479,6 +1643,81 @@ jobs:
             exit 1
           fi
           echo "run-dotnet-tests/action.yaml runs the self-tested test command ✅"
+
+      - name: 🔒 Assert credential-free tests skip coverage upload
+        shell: bash
+        env:
+          GATE: run-dotnet-tests/action.yaml
+        run: |
+          set -euo pipefail
+          upload_if="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .if' "$GATE")"
+          upload_token="$(yq -r '.runs.steps[] | select(.name == "📊 Upload Code Coverage to GitHub Code Quality") | .with.token' "$GATE")"
+          if [[ "$upload_if" != *"inputs.github-token != ''"* ]]; then
+            echo "::error::$GATE must skip coverage upload when github-token is empty"
+            exit 1
+          fi
+          if [[ "$upload_token" != *"inputs.github-token"* || "$upload_token" == *"github.token"* ]]; then
+            echo "::error::$GATE coverage upload must use only the explicit github-token input"
+            exit 1
+          fi
+          echo "Credential-free tests cannot reach the token-bearing coverage upload ✅"
+
+      - name: 🔒 Assert the authenticated opt-in rejects fork and bot pull requests
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/run-dotnet-tests.yaml
+        run: |
+          set -euo pipefail
+          token_expr="$(yq -r '.jobs.test.steps[] | select(.name == "🧪 Test .NET solution or project") | .with.github-token' "$WORKFLOW")"
+          for required_guard in \
+            "inputs.enable-github-packages" \
+            "github.event.pull_request.head.repo.full_name" \
+            "github.repository" \
+            "github.event.pull_request.user.login" \
+            "[bot]"; do
+            if [[ "$token_expr" != *"$required_guard"* ]]; then
+              echo "::error::$WORKFLOW authenticated pull-request path is missing the '$required_guard' trust guard"
+              exit 1
+            fi
+          done
+          if [[ "$token_expr" == *"github.actor"* ]]; then
+            echo "::error::$WORKFLOW must trust the immutable pull-request author, not the actor who triggered this event"
+            exit 1
+          fi
+
+          for source_step in \
+            "🔎 Snapshot authenticated GitHub Packages source" \
+            "🔒 Verify authenticated GitHub Packages source state is preserved"; do
+            source_if="$(SOURCE_STEP="$source_step" yq -r '.jobs.test.steps[] | select(.name == strenv(SOURCE_STEP)) | .if' "$WORKFLOW")"
+            for required_guard in \
+              "inputs.enable-github-packages" \
+              "github.event.pull_request.head.repo.full_name" \
+              "github.repository" \
+              "github.event.pull_request.user.login" \
+              "[bot]"; do
+              if [[ "$source_if" != *"$required_guard"* ]]; then
+                echo "::error::$WORKFLOW '$source_step' is missing the '$required_guard' trust guard"
+                exit 1
+              fi
+            done
+            if [[ "$source_if" == *"github.actor"* ]]; then
+              echo "::error::$WORKFLOW '$source_step' must trust the pull-request author, not the event actor"
+              exit 1
+            fi
+          done
+
+          verify_run="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .run' "$WORKFLOW")"
+          verify_before_state="$(yq -r '.jobs.test.steps[] | select(.name == "🔒 Verify authenticated GitHub Packages source state is preserved") | .env.BEFORE_STATE' "$WORKFLOW")"
+          expected_comparison="if [[ \"\$after_state\" != \"\$BEFORE_STATE\" ]]; then"
+          if [[ "$verify_run" != *'after_state'* || "$verify_run" != *"$expected_comparison"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must compare the post-action state with its snapshot"
+            exit 1
+          fi
+          if [[ "$verify_before_state" != *"steps.github-source-before.outputs.state"* ]]; then
+            echo "::error::$WORKFLOW authenticated-source assertion must consume the pre-action snapshot"
+            exit 1
+          fi
+          echo "Only an explicit same-repository non-bot pull request can receive the ephemeral restore token, and its source state is preserved ✅"
 
   # run-dotnet-tests INLINES upload-coverage's single pinned step (a composite action
   # cannot `uses:` its own repo at the same commit), so nothing structural ties the two
@@ -1499,7 +1738,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1537,7 +1776,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1626,7 +1865,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1779,6 +2018,31 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  # ── Flag-ON counterpart of test-validate-go-project (the both-states rule) ──
+  # test-validate-go-project above omits `scan-default-branch` entirely, so it exercises
+  # the default — the OFF state every existing consumer gets. This job passes it as true.
+  # Together they cover both states of the flag, per AGENTS.md "Shipping a new capability
+  # behind an opt-in flag": a flag whose off-path is untested can regress silently, and so
+  # can an on-path that was never instantiated.
+  #
+  # What this proves is that the input is declared and accepted and that the workflow
+  # behaves correctly in both states of it — NOT that a default-branch push scans, which
+  # no pull-request-triggered job can demonstrate (`github.ref` here is a PR merge ref, so
+  # the default-branch arm is unreachable by construction). The reachability of that arm is
+  # what the structural guard in test-govulncheck-main-coverage.sh asserts instead.
+  test-validate-go-project-scan-default-branch:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Default-Branch Scan Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      scan-default-branch: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-run-dotnet-tests-workflow:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests"
@@ -1787,6 +2051,26 @@ jobs:
     # (this repo is not itself a .NET project).
     with:
       working-directory: .github/fixtures/run-dotnet-tests
+    permissions:
+      contents: read
+      packages: read
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  test-run-dotnet-tests-workflow-authenticated:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Run .NET Tests - Authenticated Packages"
+    uses: ./.github/workflows/run-dotnet-tests.yaml
+    # Exercise the opt-in state only for the maintainer-authored code from this repository.
+    with:
+      working-directory: .github/fixtures/run-dotnet-tests
+      enable-github-packages: true
     permissions:
       contents: read
       packages: read
@@ -1803,11 +2087,37 @@ jobs:
     # enabled-state gate decisions are covered by the script-level fixture
     # tests (test-enable-auto-merge-pentad-gate) and the wiring flips live
     # per repo via ENFORCE_MERGE_GATES after validation.
+    with:
+      concurrency-key: default-self-test
     permissions:
       pull-requests: write
       contents: write
       checks: read
       actions: read
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-enable-auto-merge-actor-trust:
+    if: >-
+      ${{
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Enable Auto-Merge - Actor Trust Enabled"
+    uses: ./.github/workflows/enable-auto-merge.yaml
+    # Exercise the public enabled call boundary on maintainer-owned same-repo
+    # changes without competing with bot auto-merge. The author-gate fixtures
+    # below cover trusted/untrusted actor decisions and pin the disarm wiring.
+    with:
+      concurrency-key: actor-trust-self-test
+      enforce-actor-trust: true
+    permissions:
+      actions: read
+      pull-requests: write
+      contents: write
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
@@ -1824,12 +2134,18 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 🧪 Verify privileged author gate
         run: bash .github/tests/test-enable-auto-merge-author-gate.sh
+
+      - name: 🧪 Verify rejected-event revocation behavior
+        run: bash .github/tests/test-disarm-auto-merge.sh
+
+      - name: 🧪 Verify durable pull-request lifecycle ordering
+        run: bash .github/tests/test-is-current-pull-request-lifecycle.sh
 
   test-enable-auto-merge-pentad-gate:
     if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -1844,7 +2160,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1883,7 +2199,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2001,7 +2317,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2031,7 +2347,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2084,7 +2400,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2123,12 +2439,59 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 🧪 Assert govulncheck keeps a cold-cache-safe finite timeout + GOMEMLIMIT
         run: bash .github/tests/test-govulncheck-timeout.sh
+
+  test-govulncheck-main-coverage:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert govulncheck runs on the default branch and on allowlist edits
+        run: bash .github/tests/test-govulncheck-main-coverage.sh
+
+  # ── Failing-input counterpart to the job above (the both-tests convention) ──
+  # The trigger guard is itself a gate, and its checks are structural string analysis over
+  # a GitHub expression — unusually easy to make silently vacuous (a `strip_groups`
+  # regression that empties `$top_level` satisfies every assertion). The happy-path job
+  # above cannot catch that. This one points the SAME guard at deliberately-bad fixtures
+  # and asserts it fails WITH THE EXPECTED MESSAGE, plus that it still passes the real
+  # workflow — so neither an accept-everything nor a reject-everything guard passes.
+  test-govulncheck-main-coverage-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Govulncheck Trigger Guard - Blocks On Bad Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the trigger guard blocks every bad-input fixture
+        run: bash .github/tests/test-govulncheck-main-coverage-blocks.sh
 
   # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
   # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
@@ -2156,7 +2519,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2171,7 +2534,7 @@ jobs:
       - name: 🌈 Scan vulnerable fixture (expected to fail)
         id: scan
         continue-on-error: true
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
         with:
           inputs: .github/tests/zizmor-fixture/template-injection.yml
           advanced-security: false
@@ -2209,7 +2572,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2223,7 +2586,7 @@ jobs:
           # Match the full `uses:` line, not the bare ref — the ref also appears in
           # comments, so a bare-ref grep could false-pass if the real `uses:` SHA changed
           # while a comment still mentioned the old ref.
-          EXPECTED: "uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa"
+          EXPECTED: "uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02"
         run: |
           set -euo pipefail
           if ! grep -qF "$EXPECTED" .github/workflows/scan-for-workflow-vulnerabilities.yaml; then
@@ -2253,12 +2616,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .github/tests/golangci-lint-fixture/go.mod
 
@@ -2309,12 +2672,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: .github/tests/go-test-fixture/go.mod
 
@@ -2364,7 +2727,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2408,31 +2771,167 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # The org-required direct run of validate-go-project.yaml and this repo's
-      # ci.yaml self-test (which calls it as a reusable workflow) run on the same
-      # repository + ref. If the concurrency group is not invocation-aware they share
-      # one group and cancel each other, failing CI - Required Checks nondeterministically
-      # (devantler-tech/actions#587). A reusable workflow inherits the CALLER's
-      # github.workflow, so keying the group on github.workflow keeps the two
-      # invocations in separate groups while runs of the same invocation still
-      # supersede. This guard goes red if that discriminator is ever dropped. The
-      # grep is a regex (not -F) so the group's own ${{ … }} expressions are matched
-      # as literals here rather than being evaluated in this workflow.
-      - name: 🔒 Assert the concurrency group keys on github.workflow
+      # Two invocations of validate-go-project.yaml that differ in any way must land in
+      # different concurrency groups, or the later cancels the earlier and CI - Required
+      # Checks fails nondeterministically. Both collisions below were observed live, and
+      # each needs its own discriminator:
+      #
+      #   * github.workflow — the org-required direct run vs this repo's ci.yaml
+      #     self-test, which run on the same repository + ref. A reusable workflow
+      #     inherits the CALLER's github.workflow (devantler-tech/actions#587).
+      #   * the invocation's inputs — two calls from the SAME caller on the same ref,
+      #     which github.workflow cannot tell apart. The `scan-default-branch`
+      #     both-states self-tests are exactly that: identical but for one input.
+      #
+      # This guard goes red if either discriminator is dropped. The grep is a regex (not
+      # -F) so the group's own ${{ … }} expressions are matched as literals here rather
+      # than being evaluated in this workflow.
+      - name: 🔒 Assert the concurrency group is invocation-aware
         shell: bash
         env:
           GATE: .github/workflows/validate-go-project.yaml
         run: |
           set -euo pipefail
-          if ! grep -Eq 'group: "validate-go-project-.*github\.workflow' "$GATE"; then
-            echo "::error::$GATE concurrency group is no longer invocation-aware. Keep github.workflow in the group (devantler-tech/actions#587) so the org-required direct run and the ci.yaml reusable-workflow self-test do not cancel each other."
+          group="$(grep -E 'group: "validate-go-project-' "$GATE" || true)"
+          if [[ -z "$group" ]]; then
+            echo "::error::$GATE has no recognisable validate-go-project concurrency group to verify."
+            exit 1
+          fi
+          if ! grep -Eq 'github\.workflow' <<<"$group"; then
+            echo "::error::$GATE concurrency group no longer keys on github.workflow (devantler-tech/actions#587), so the org-required direct run and the ci.yaml reusable-workflow self-test share a group and cancel each other."
+            exit 1
+          fi
+          # Every workflow_call input must appear, so a new input that distinguishes two
+          # invocations cannot be added without also distinguishing their groups.
+          missing=""
+          while IFS= read -r input; do
+            [[ -n "$input" ]] || continue
+            grep -qF "inputs.$input" <<<"$group" || missing="$missing $input"
+          done < <(yq -r '.["on"].workflow_call.inputs | keys | .[]' "$GATE")
+          if [[ -n "$missing" ]]; then
+            echo "::error::$GATE concurrency group omits workflow_call input(s):$missing. Two calls from the same caller workflow on the same ref that differ only by an input would share a group, and the later would cancel the earlier."
             exit 1
           fi
           echo "validate-go-project.yaml concurrency group is invocation-aware ✅"
+
+  # ── lint.yaml self-tests ─────────────────────────────────────────────────────
+  # lint.yaml is a GATING reusable workflow (it fails a PR on a lint finding), so per the
+  # AGENTS.md convention it carries BOTH a passes-on-good-input and a blocks-on-bad-input
+  # self-test — a happy-path test alone cannot catch a gate that silently stopped biting.
+  # apply-fixes is false here: the self-test must never commit to the branch under test.
+  test-lint-workflow:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Passes On Clean Fixture"
+    # This is the real read-only consumer proof: GitHub rejects a called workflow at
+    # startup if any job tries to elevate beyond these caller permissions.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/lint.yaml
+    with:
+      working-directory: .github/tests/megalinter-clean-fixture
+      apply-fixes: false
+
+  test-lint-blocks:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Blocks On Invalid Fixture"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same MegaLinter image SHA as lint.yaml's gate (guarded by test-lint-gate-lockstep),
+      # pointed at a fixture whose JSON has a syntax error no formatter can auto-fix — so
+      # APPLY_FIXES cannot mask it and the run must exit non-zero. continue-on-error lets
+      # the next step assert the failure. Reports go to a dedicated folder the assertion
+      # reads, which distinguishes a real lint block from an operational failure (e.g. an
+      # image pull error), which would leave no report at all.
+      - name: 🧹 Lint invalid fixture (expected to fail)
+        id: ml
+        continue-on-error: true
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
+        env:
+          DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
+          REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
+          VALIDATE_ALL_CODEBASE: true
+          APPLY_FIXES: none
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ✅ Assert the lint gate blocked on the invalid fixture
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.ml.outcome }}
+        run: |
+          set -euo pipefail
+          REPORTS="${GITHUB_WORKSPACE}/megalinter-bad-fixture-reports"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::MegaLinter should FAIL on the deliberately-invalid JSON in .github/tests/megalinter-bad-fixture, but its outcome was '$OUTCOME'. lint.yaml's gate is no longer blocking on lint findings."
+            exit 1
+          fi
+          if ! grep -rqF "bad.json" "$REPORTS" 2>/dev/null; then
+            echo "::error::MegaLinter failed, but no report named the bad.json fixture — the failure was operational (e.g. an image pull error), not a real lint block. Reports:"
+            ls -R "$REPORTS" 2>/dev/null || echo "(no reports captured)"
+            exit 1
+          fi
+          echo "Lint gate correctly blocked on the invalid JSON fixture ✅"
+
+  test-lint-gate-lockstep:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Gate Pins Self-Tested Image"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔐 Assert the lint credential boundary
+        shell: bash
+        run: bash .github/tests/test-lint-credential-boundary.sh
+
+      # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
+      # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
+      # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
+      # If any of the three is bumped alone, this goes red and forces them to move together.
+      - name: 🔒 Assert both gates pin the self-tested MegaLinter image
+        shell: bash
+        env:
+          # Match the full `uses:` line, not the bare SHA — the SHA also appears in
+          # comments, so a bare grep could false-pass if the real `uses:` changed while a
+          # comment still named the old one.
+          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc"
+        run: |
+          set -euo pipefail
+          status=0
+          for gate in .github/workflows/lint.yaml .github/workflows/validate-go-project.yaml; do
+            if ! grep -qF "$EXPECTED" "$gate"; then
+              echo "::error::$gate no longer pins '$EXPECTED'. If the MegaLinter image was bumped intentionally, update test-lint-blocks, both gates and this EXPECTED value together so the failure-mode self-test keeps exercising the real gate."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Both MegaLinter gates pin the self-tested image ✅"
 
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
@@ -2440,6 +2939,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - test-approve-pr
+      - test-approve-pr-credential-boundary
       - test-cleanup-ghcr-packages
       - test-create-issues-from-todos
       - test-dependency-review
@@ -2453,6 +2953,7 @@ jobs:
       - test-aggregate-job-checks-failure
       - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
+      - test-run-dotnet-tests-preserves-source-mapping
       - test-setup-agent-skills-inline
       - test-setup-agent-skills-pinned
       - test-setup-agent-skills-missing-input
@@ -2484,8 +2985,11 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-scan-default-branch
       - test-run-dotnet-tests-workflow
+      - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
+      - test-enable-auto-merge-actor-trust
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-pentad-gate
       - test-create-release
@@ -2503,12 +3007,17 @@ jobs:
       - test-govulncheck-strict-blocks
       - test-govulncheck-action-lockstep
       - test-govulncheck-timeout
+      - test-govulncheck-main-coverage
+      - test-govulncheck-main-coverage-blocks
       - test-zizmor-blocks
       - test-zizmor-action-lockstep
       - test-validate-go-lint-blocks
       - test-validate-go-test-blocks
       - test-validate-go-gate-lockstep
       - test-validate-go-project-concurrency-key
+      - test-lint-workflow
+      - test-lint-blocks
+      - test-lint-gate-lockstep
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -2517,7 +3026,7 @@ jobs:
       contents: read
     steps:
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -2525,6 +3034,7 @@ jobs:
         with:
           job-results: >-
             ${{ needs.test-approve-pr.result }}
+            ${{ needs.test-approve-pr-credential-boundary.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}
             ${{ needs.test-create-issues-from-todos.result }}
             ${{ needs.test-dependency-review.result }}
@@ -2538,6 +3048,7 @@ jobs:
             ${{ needs.test-aggregate-job-checks-failure.result }}
             ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
+            ${{ needs.test-run-dotnet-tests-preserves-source-mapping.result }}
             ${{ needs.test-setup-agent-skills-inline.result }}
             ${{ needs.test-setup-agent-skills-pinned.result }}
             ${{ needs.test-setup-agent-skills-missing-input.result }}
@@ -2569,8 +3080,11 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
+            ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
+            ${{ needs.test-enable-auto-merge-actor-trust.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
             ${{ needs.test-create-release.result }}
@@ -2588,12 +3102,17 @@ jobs:
             ${{ needs.test-govulncheck-strict-blocks.result }}
             ${{ needs.test-govulncheck-action-lockstep.result }}
             ${{ needs.test-govulncheck-timeout.result }}
+            ${{ needs.test-govulncheck-main-coverage.result }}
+            ${{ needs.test-govulncheck-main-coverage-blocks.result }}
             ${{ needs.test-zizmor-blocks.result }}
             ${{ needs.test-zizmor-action-lockstep.result }}
             ${{ needs.test-validate-go-lint-blocks.result }}
             ${{ needs.test-validate-go-test-blocks.result }}
             ${{ needs.test-validate-go-gate-lockstep.result }}
             ${{ needs.test-validate-go-project-concurrency-key.result }}
+            ${{ needs.test-lint-workflow.result }}
+            ${{ needs.test-lint-blocks.result }}
+            ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}

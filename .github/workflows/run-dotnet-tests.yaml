@@ -5,6 +5,11 @@ permissions: {}
 on:
   workflow_call:
     inputs:
+      enable-github-packages:
+        required: false
+        type: boolean
+        default: false
+        description: "Allow authenticated package restore and Code Quality upload for trusted same-repository pull-request code."
       working-directory:
         required: false
         type: string
@@ -38,7 +43,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -47,15 +52,91 @@ jobs:
       # local path. Same-commit resolution — no release lag, no tag refs; consumer SHA-pinning
       # policies see only the pinned actions/checkout plus a local `./` path.
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .devantler-tech-actions
           persist-credentials: false
 
+      - name: 🔎 Snapshot authenticated GitHub Packages source
+        id: github-source-before
+        if: >-
+          ${{
+            github.event_name != 'pull_request' ||
+            (
+              inputs.enable-github-packages &&
+              github.event.pull_request.head.repo.full_name == github.repository &&
+              !endsWith(github.event.pull_request.user.login, '[bot]')
+            )
+          }}
+        working-directory: ${{ inputs.working-directory || '.' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_listing="$(dotnet nuget list source --format Detailed)"
+          github_source_state="$(
+            awk '
+              tolower($0) ~ /^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[(enabled|disabled)\][[:space:]]*$/ {
+                status = $0
+                getline
+                sub(/^[[:space:]]+/, "")
+                print status "|" $0
+                exit
+              }
+            ' <<<"$source_listing"
+          )"
+          echo "state=$github_source_state" >>"$GITHUB_OUTPUT"
+
       - name: 🧪 Test .NET solution or project
         uses: ./.devantler-tech-actions/run-dotnet-tests
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Pull requests are credential-free by default. A trusted workflow_call caller may
+          # opt in only for same-repository, non-bot code. Fork and bot pull requests cannot
+          # recover the token by changing the input in their workflow definition.
+          github-token: >-
+            ${{
+              (
+                github.event_name != 'pull_request' ||
+                (
+                  inputs.enable-github-packages &&
+                  github.event.pull_request.head.repo.full_name == github.repository &&
+                  !endsWith(github.event.pull_request.user.login, '[bot]')
+                )
+              ) && secrets.GITHUB_TOKEN || ''
+            }}
           working-directory: ${{ inputs.working-directory || '.' }}
+
+      - name: 🔒 Verify authenticated GitHub Packages source state is preserved
+        if: >-
+          ${{
+            github.event_name != 'pull_request' ||
+            (
+              inputs.enable-github-packages &&
+              github.event.pull_request.head.repo.full_name == github.repository &&
+              !endsWith(github.event.pull_request.user.login, '[bot]')
+            )
+          }}
+        working-directory: ${{ inputs.working-directory || '.' }}
+        env:
+          BEFORE_STATE: ${{ steps.github-source-before.outputs.state }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_listing="$(dotnet nuget list source --format Detailed)"
+          after_state="$(
+            awk '
+              tolower($0) ~ /^[[:space:]]*[0-9]+\.[[:space:]]+github[[:space:]]+\[(enabled|disabled)\][[:space:]]*$/ {
+                status = $0
+                getline
+                sub(/^[[:space:]]+/, "")
+                print status "|" $0
+                exit
+              }
+            ' <<<"$source_listing"
+          )"
+          if [[ "$after_state" != "$BEFORE_STATE" ]]; then
+            echo "::error::Authenticated restore changed the caller's GitHub Packages source state"
+            exit 1
+          fi
+          echo "Authenticated GitHub Packages source state was preserved ✅"

@@ -1,0 +1,184 @@
+name: 🧹 Lint
+
+# Repo-wide linting with MegaLinter, for consumers that are NOT plain Go modules.
+#
+# validate-go-project.yaml already embeds a MegaLinter job, but it is one stage of a
+# full Go pipeline (tidy, golangci-lint, deadcode, govulncheck, build, test, coverage)
+# and scopes MegaLinter to the Go module directory. A repo whose Go code is one subtree
+# of a larger tree — a Godot client plus a Go server, say — needs the opposite: lint the
+# WHOLE repo, and leave the Go build/test to the consumer's own job. That is this
+# workflow.
+#
+# Flavor: `go`. MegaLinter's flavors differ only in which linters are baked into the
+# image, and the `go` flavor's 55 cover every surface this org actually lints — Go, JSON,
+# Markdown, YAML, shell, GitHub Actions, Dockerfile, Kubernetes, spelling, secrets and
+# copy-paste. `cupcake` adds Python/Terraform/JS at roughly double the image; `all` adds
+# far more still. Staying on `go` also means consumers share one warm image layer with
+# validate-go-project.yaml. Keep the SHA below in lockstep with that workflow's.
+#
+# NOTE: `workflow_call` only — deliberately NO `pull_request`/`merge_group` triggers. A
+# repo already covered by the org-required validate-go-project.yaml would otherwise run
+# MegaLinter twice on every PR.
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: false
+        type: string
+        default: ""
+        description: "Directory to lint. Empty = the whole repository (the normal case); the CI self-test sets it to a fixture."
+      go-version-file:
+        required: false
+        type: string
+        default: ""
+        description: "Path to a go.mod. When set, Go is installed before linting so MegaLinter's Go linters run against the module's own toolchain instead of the container's (which lags patched releases). Leave empty when the consumer disables the Go linters or has no Go code."
+      apply-fixes:
+        required: false
+        type: boolean
+        default: true
+        description: "Auto-fix what the linters can fix and commit the result back to the PR branch. Set false for a read-only gate (and in the self-test, which must never commit to the branch under test)."
+      pr-owner:
+        required: false
+        type: string
+        default: ""
+        description: "Pull request author login. Auto-fix commits are suppressed for dependency-bot PRs, whose branches are owned by their automation."
+    secrets:
+      APP_PRIVATE_KEY:
+        description: "GitHub App private key. Required only for auto-fix commits; without it the job still lints, but a fixable finding fails the build instead of being committed."
+        required: false
+
+# A reusable workflow inherits the CALLER's github.workflow, so keying on it keeps
+# separate invocations in separate groups while runs of the same invocation supersede
+# (devantler-tech/actions#587).
+concurrency:
+  group: "lint-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}"
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  lint:
+    name: 🧹 Lint - mega-linter
+    runs-on: ubuntu-latest
+    outputs:
+      fixes-created: ${{ steps.fixes.outputs.changed }}
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Fork pull requests never get secrets, so the App token cannot be minted and fixes
+      # can never be committed back. Auto-fixing there would leave changes that the job then
+      # fails on — a red check an outside contributor cannot resolve except by installing
+      # this image locally. So forks lint READ-ONLY: nothing is fixed, nothing is left
+      # uncommitted, nothing fails for a reason they cannot act on.
+      #
+      # This is not a softer gate. With APPLY_FIXES=none a fixable formatting issue is
+      # reported as a warning and MegaLinter exits 0, but real lint ERRORS — invalid JSON,
+      # shellcheck failures — still fail the job exactly as they do on a branch.
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup Go
+        if: ${{ inputs.go-version-file != '' }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+
+      # Keep this `uses:` in lockstep with validate-go-project.yaml's MegaLinter step
+      # (enforced by test-lint-gate-lockstep) so both consumers run the same image and
+      # the failure-mode self-test always exercises the real gate.
+      - name: 🧹 Lint
+        id: ml
+        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
+        env:
+          DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
+          MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
+          VALIDATE_ALL_CODEBASE: true
+          APPLY_FIXES: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && 'all' || 'none' }}
+          APPLY_FIXES_EVENT: all
+          APPLY_FIXES_MODE: commit
+          # actionlint (<=1.7.12, bundled in MegaLinter) doesn't yet know the `code-quality`
+          # permission scope that GitHub Code Quality coverage requires callers to grant, so
+          # it reports a false "unknown permission scope" error. Ignore it until actionlint
+          # catches up.
+          ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality
+
+      # PR-controlled MegaLinter configuration may execute commands. Export only its
+      # resulting patch here; write credentials are minted later on a fresh runner.
+      - name: 📦 Prepare applied fixes
+        if: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+        id: fixes
+        shell: bash
+        run: |
+          git add --intent-to-add .
+          if git diff --quiet HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/megalinter-fixes.patch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📤 Upload applied fixes
+        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: megalinter-fixes
+          path: ${{ runner.temp }}/megalinter-fixes.patch
+          if-no-files-found: error
+
+  apply-fixes:
+    name: 🧹 Lint - apply fixes
+    needs: lint
+    if: |
+      inputs.apply-fixes
+      && needs.lint.outputs.fixes-created == 'true'
+      && github.event.pull_request.head.repo.fork != true
+      && github.event_name == 'pull_request'
+      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
+      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: generate-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: 📥 Download applied fixes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: megalinter-fixes
+          path: ${{ runner.temp }}
+
+      - name: Apply fixes
+        shell: bash
+        run: git apply --index "${RUNNER_TEMP}/megalinter-fixes.patch"
+
+      - name: Commit and push applied linter fixes
+        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
+        with:
+          commit_message: "chore: Apply megalinter fixes"
+          commit_user_name: megalinter-bot
+          commit_user_email: 129584137+megalinter-bot@users.noreply.github.com
