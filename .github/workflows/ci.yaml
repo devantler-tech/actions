@@ -196,8 +196,7 @@ jobs:
   test-enable-auto-merge-on-pr:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
-      contents: write
+      contents: read
     if: >-
       !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
       startsWith(github.event_name, 'pull_request') &&
@@ -218,6 +217,21 @@ jobs:
         with:
           pr-number: ${{ github.event.pull_request.number }}
           dry-run: "true"
+
+  test-enable-auto-merge-on-pr-credential-boundary:
+    if: "${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Enable Auto-Merge on PR - Credential-Free CI"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔒 Assert enable-auto-merge-on-pr CI stays credential-free
+        run: bash .github/tests/test-enable-auto-merge-on-pr-credential-boundary.sh
 
   # ── free-disk-space ─────────────────────────────────────────
   test-free-disk-space:
@@ -2945,6 +2959,7 @@ jobs:
       - test-dependency-review
       - test-diagnose-flux
       - test-enable-auto-merge-on-pr
+      - test-enable-auto-merge-on-pr-credential-boundary
       - test-free-disk-space
       - test-free-disk-space-keep
       - test-login-to-ghcr
@@ -3040,6 +3055,7 @@ jobs:
             ${{ needs.test-dependency-review.result }}
             ${{ needs.test-diagnose-flux.result }}
             ${{ needs.test-enable-auto-merge-on-pr.result }}
+            ${{ needs.test-enable-auto-merge-on-pr-credential-boundary.result }}
             ${{ needs.test-free-disk-space.result }}
             ${{ needs.test-free-disk-space-keep.result }}
             ${{ needs.test-login-to-ghcr.result }}
