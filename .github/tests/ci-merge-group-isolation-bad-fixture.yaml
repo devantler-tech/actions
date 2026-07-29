@@ -1,0 +1,22 @@
+name: Deliberately unsafe merge-group fixture
+
+on:
+  pull_request:
+  merge_group:
+
+permissions: {}
+
+jobs:
+  unsafe-dead-disjunct:
+    if: "${{ true || github.event_name == 'pull_request' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This job is deliberately eligible for merge_group"
+
+  ci-required-checks:
+    if: "${{ always() }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "Required gate"
