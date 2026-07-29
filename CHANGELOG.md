@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.0.3](https://github.com/devantler-tech/actions/compare/v11.0.2...v11.0.3) (2026-07-29)
+
+
+### Bug Fixes
+
+* **ci:** keep auto-merge self-test credential-free ([#674](https://github.com/devantler-tech/actions/issues/674)) ([17aa919](https://github.com/devantler-tech/actions/commit/17aa9191db2affe37c0872ff12720cc59556d8ca))
+
 ## [11.0.2](https://github.com/devantler-tech/actions/compare/v11.0.1...v11.0.2) (2026-07-28)
 
 
