@@ -116,6 +116,10 @@
     "expect_green": false
   },
   {
+    "name": "cr-commented-findings-with-quoted-clean-marker",
+    "expect_green": false
+  },
+  {
     "name": "cr-approval-then-commented-clean",
     "expect_green": true
   },
