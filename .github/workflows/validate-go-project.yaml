@@ -778,7 +778,7 @@ jobs:
           go run github.com/boumenot/gocover-cobertura@v1.5.0 < coverage.txt > coverage.cobertura.xml
 
       # Self-reference: check out THIS workflow's own repo at the exact commit it is running
-      # from (job.workflow_repository / job.workflow_sha), then call the sibling action by
+      # from (the fixed repository / github.workflow_sha), then call the sibling action by
       # local path. Same-commit resolution — no release lag, no tag refs; consumer SHA-pinning
       # policies see only the pinned actions/checkout plus a local `./` path. Placed AFTER
       # `go test ./...` so the extra tree never enters the caller's test scope.
@@ -786,8 +786,8 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: devantler-tech/actions
+          ref: ${{ github.workflow_sha }}
           path: .devantler-tech-actions
           persist-credentials: false
 
