@@ -60,6 +60,43 @@ for workflow in "${signing_workflows[@]}"; do
   [[ "$guard_env" == '${{ steps.caller.outputs.ref }}' ]] ||
     fail "$workflow guard must bind JOB_WORKFLOW_REF to the resolve step output; got: $guard_env"
 
+  # ---- feature-flag-first: opt-in input, default-off, both states covered ----
+  # AGENTS.md "Shipping a new capability behind an opt-in flag" requires new reusable-workflow
+  # behaviour to ship default-off so existing callers see zero behaviour change on merge. That
+  # matters more than usual here: the guard only runs on a real publish, which CI never exercises
+  # (the dry-run test skips the whole publish job), so a misfire would surface at release time.
+  flag_default="$(yq -r '.on.workflow_call.inputs["enable-caller-pin"].default' "$workflow")"
+  [[ "$flag_default" == "false" ]] ||
+    fail "$workflow enable-caller-pin must default to false; got: $flag_default"
+
+  flag_type="$(yq -r '.on.workflow_call.inputs["enable-caller-pin"].type' "$workflow")"
+  [[ "$flag_type" == "boolean" ]] ||
+    fail "$workflow enable-caller-pin must be a boolean input; got: $flag_type"
+
+  # Flag OFF (the default) => neither new step runs, so a caller that omits the input is unaffected.
+  # Flag ON => both run. Both states are expressed by the same guard, so assert it on both steps.
+  for step_id_or_name in "caller" "$guard_name"; do
+    gated="$(STEP="$step_id_or_name" yq -r \
+      '[.jobs[].steps[] | select(.id == strenv(STEP) or .name == strenv(STEP)) | .if // ""] | .[0]' \
+      "$workflow")"
+    # shellcheck disable=SC2016 # GitHub expression compared literally.
+    [[ "$gated" == '${{ inputs.enable-caller-pin }}' ]] ||
+      fail "$workflow step '$step_id_or_name' must be gated on inputs.enable-caller-pin; got: $gated"
+  done
+
+  # A token request with no timeout can hang the publish job until the 6h run limit. Pin the bound
+  # so removing it cannot pass silently.
+  resolve_run="$(yq -r \
+    '.jobs[].steps[] | select(.id == "caller") | .run' "$workflow")"
+  grep -Eq 'curl [^|]*--max-time [0-9]+' <<<"$resolve_run" ||
+    fail "$workflow OIDC token request must carry --max-time so it cannot hang the publish job"
+
+  # The resolve step must precede the guard: if it ran after, steps.caller.outputs.ref would be
+  # empty and the guard would fail closed on a correctly-pinned caller.
+  resolve_index="$(JOB="$job" yq -r \
+    '.jobs[strenv(JOB)].steps | to_entries
+       | map(select(.value.id == "caller")) | .[0].key' "$workflow")"
+
   # Ordering matters: the pin must be decided before the job does any work that could publish or
   # sign. Checkout is the first such step in both workflows.
   guard_index="$(GUARD_NAME="$guard_name" JOB="$job" yq -r \
@@ -73,6 +110,8 @@ for workflow in "${signing_workflows[@]}"; do
     fail "$workflow has no actions/checkout step to order the guard against"
   [[ "$guard_index" -lt "$checkout_index" ]] ||
     fail "$workflow guard must run before checkout (guard=$guard_index checkout=$checkout_index)"
+  [[ "$resolve_index" -lt "$guard_index" ]] ||
+    fail "$workflow resolve step must run before the guard (resolve=$resolve_index guard=$guard_index)"
 
   # ---- behavioural half: run the shipped script against every ref shape ----
   script="$(GUARD_NAME="$guard_name" yq -r \
