@@ -2275,12 +2275,28 @@ jobs:
     with:
       app-name: app
       dry-run: true
-      # Exercises the flag through the real workflow_call interface, which the
-      # script-extraction tests below cannot: it proves the input schema accepts
-      # the name and type. The guard itself does not run here — publish-app.yaml's
-      # publish job carries `if: ${{ !inputs.dry-run }}` — so this stays a schema
-      # check, and the enabled BEHAVIOUR is covered by test-publish-caller-pin.sh
-      # and the push-only live job.
+      # enable-caller-pin is deliberately OMITTED here: this job is the default-off
+      # half of the flag's workflow_call coverage, and omitting it also proves the
+      # input is genuinely optional. The enabled half is test-publish-app-caller-pin
+      # below.
+
+  test-publish-app-caller-pin:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Publish App - Dry Run (caller-pin enabled)"
+    uses: ./.github/workflows/publish-app.yaml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      app-name: app
+      dry-run: true
+      # The enabled half. This reaches the flag through the real workflow_call
+      # interface, which the script-extraction tests cannot: it proves the input
+      # schema accepts the name and type. The guard itself does not run —
+      # publish-app.yaml's publish job carries `if: ${{ !inputs.dry-run }}` — so
+      # this is a schema check, and the enabled BEHAVIOUR stays covered by
+      # test-publish-caller-pin.sh and the push-only live job.
       enable-caller-pin: true
 
   # The caller-pin guard lives inside the publish job, which the dry-run tests skip, so nothing else
@@ -2361,9 +2377,21 @@ jobs:
       id-token: write
     with:
       dry-run: true
-      # Same schema check as test-publish-app: publish-manifests.yaml's
-      # publish-manifests job is gated on `if: ${{ !inputs.dry-run }}`, so the
-      # guard does not run — this proves only that the input is accepted.
+      # Default-off half, as above: enable-caller-pin is deliberately omitted.
+
+  test-publish-manifests-caller-pin:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Publish Manifests - Dry Run (caller-pin enabled)"
+    uses: ./.github/workflows/publish-manifests.yaml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      dry-run: true
+      # Enabled half. publish-manifests.yaml's publish-manifests job is gated on
+      # `if: ${{ !inputs.dry-run }}`, so the guard does not run — this proves the
+      # input is accepted by name and type.
       enable-caller-pin: true
 
   test-scan-for-todo-comments:
@@ -3115,7 +3143,9 @@ jobs:
       - test-deploy-github-pages
       - test-publish-dotnet-library
       - test-publish-app
+      - test-publish-app-caller-pin
       - test-publish-manifests
+      - test-publish-manifests-caller-pin
       - test-publish-caller-pin-live
       - test-scan-for-todo-comments
       - test-sync-cluster-policies
@@ -3212,7 +3242,9 @@ jobs:
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}
             ${{ needs.test-publish-app.result }}
+            ${{ needs.test-publish-app-caller-pin.result }}
             ${{ needs.test-publish-manifests.result }}
+            ${{ needs.test-publish-manifests-caller-pin.result }}
             ${{ needs.test-publish-caller-pin-live.result }}
             ${{ needs.test-scan-for-todo-comments.result }}
             ${{ needs.test-sync-cluster-policies.result }}
