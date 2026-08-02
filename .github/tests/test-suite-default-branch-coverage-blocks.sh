@@ -92,8 +92,13 @@ else
   status=1
 fi
 
-# Same clauses, different wrapping/spacing. If this were rejected, the fixtures below would
-# be failing on how they are written rather than on what they say.
+# The canonical single-line composition of the shared clauses. Every fixture below is built
+# from these same five variables, so if this were rejected each "blocks" result would be
+# unattributable — the rejection could be the composition rather than the named defect.
+expect_pass "good-canonical" "$GOOD"
+
+# Same clauses, different wrapping/spacing. Together with the canonical form above this
+# separates "written differently" from "says something different".
 expect_pass "good-reflowed" "$REPO
 && (
   $FILTER
