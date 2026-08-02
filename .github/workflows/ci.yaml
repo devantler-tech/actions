@@ -2457,7 +2457,7 @@ jobs:
       contents: write
       pull-requests: write
     with:
-      source-repo-path: devantler-tech/gitops-tenant-template
+      source-repo-path: devantler-tech/platform-tenant-template
       use-app-token: false
       dry-run: true
 
