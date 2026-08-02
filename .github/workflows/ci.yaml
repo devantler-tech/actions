@@ -2275,6 +2275,13 @@ jobs:
     with:
       app-name: app
       dry-run: true
+      # Exercises the flag through the real workflow_call interface, which the
+      # script-extraction tests below cannot: it proves the input schema accepts
+      # the name and type. The guard itself does not run here — publish-app.yaml's
+      # publish job carries `if: ${{ !inputs.dry-run }}` — so this stays a schema
+      # check, and the enabled BEHAVIOUR is covered by test-publish-caller-pin.sh
+      # and the push-only live job.
+      enable-caller-pin: true
 
   # The caller-pin guard lives inside the publish job, which the dry-run tests skip, so nothing else
   # in CI ever performs the live OIDC request and JWT decode it depends on. Without this job that
@@ -2354,6 +2361,10 @@ jobs:
       id-token: write
     with:
       dry-run: true
+      # Same schema check as test-publish-app: publish-manifests.yaml's
+      # publish-manifests job is gated on `if: ${{ !inputs.dry-run }}`, so the
+      # guard does not run — this proves only that the input is accepted.
+      enable-caller-pin: true
 
   test-scan-for-todo-comments:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
