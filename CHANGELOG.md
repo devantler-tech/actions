@@ -1,5 +1,12 @@
 # Changelog
 
+## [12.0.1](https://github.com/devantler-tech/actions/compare/v12.0.0...v12.0.1) (2026-08-02)
+
+
+### Code Refactoring
+
+* point template-sync examples at platform-tenant-template ([#886](https://github.com/devantler-tech/actions/issues/886)) ([e44a6a3](https://github.com/devantler-tech/actions/commit/e44a6a306f2977da425aeecf77942e6776ccd5a9))
+
 ## [12.0.0](https://github.com/devantler-tech/actions/compare/v11.1.0...v12.0.0) (2026-08-02)
 
 
