@@ -2276,6 +2276,67 @@ jobs:
       app-name: app
       dry-run: true
 
+  # The caller-pin guard lives inside the publish job, which the dry-run tests skip, so nothing else
+  # in CI ever performs the live OIDC request and JWT decode it depends on. Without this job that
+  # integration would first execute during a tagged release, on the first caller to opt in.
+  # This runs the script EXTRACTED FROM publish-app.yaml — not a copy — against a real token, and
+  # asserts it resolves the claim for THIS reusable workflow. It cannot assert the guard passes: a
+  # CI run's caller ref is refs/pull/N/merge, which the guard correctly rejects, so it asserts the
+  # gate BITES on that input instead (the failure-mode coverage convention in AGENTS.md).
+  test-publish-caller-pin-live:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Publish Caller Pin - Live OIDC"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔎 Run the shipped resolver against a real OIDC token
+        id: live
+        run: |
+          script="$(yq -r '.jobs[].steps[] | select(.id == "caller") | .run' \
+            .github/workflows/publish-app.yaml)"
+          [ -n "$script" ] || { echo "::error::could not extract the resolve step"; exit 1; }
+          out="$(mktemp)"
+          GITHUB_OUTPUT="$out" bash -euo pipefail -c "$script"
+          ref="$(sed -n 's/^ref=//p' "$out")"
+          echo "resolved=$ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          # The claim must exist and name a workflow in this repository. An empty value is the exact
+          # failure the expression-context version of this guard had, and it must never come back.
+          case "$ref" in
+            devantler-tech/actions/.github/workflows/*@*) ;;
+            "") echo "::error::OIDC job_workflow_ref claim resolved EMPTY"; exit 1 ;;
+            *) echo "::error::unexpected job_workflow_ref shape: $ref"; exit 1 ;;
+          esac
+
+      - name: 🔒 Assert the shipped guard rejects this unpinned caller
+        env:
+          RESOLVED_REF: ${{ steps.live.outputs.ref }}
+        run: |
+          guard="$(yq -r '.jobs[].steps[] | select(.name == "🔒 Require a SHA-pinned caller") | .run' \
+            .github/workflows/publish-app.yaml)"
+          [ -n "$guard" ] || { echo "::error::could not extract the guard step"; exit 1; }
+          # A CI run is reached via refs/pull/N/merge, which is not a commit SHA, so the gate must
+          # fail here. A pass would mean the gate stopped biting.
+          if JOB_WORKFLOW_REF="$RESOLVED_REF" bash -euo pipefail -c "$guard" >/tmp/guard.log 2>&1; then
+            echo "::error::the caller-pin guard ACCEPTED an unpinned caller ($RESOLVED_REF)"
+            exit 1
+          fi
+          grep -q "must be called by a 40-character commit SHA" /tmp/guard.log ||
+            { echo "::error::guard failed for the wrong reason:"; cat /tmp/guard.log; exit 1; }
+          echo "guard correctly rejected $RESOLVED_REF ✅"
+
   test-publish-manifests:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish Manifests - Dry Run"
@@ -3037,6 +3098,7 @@ jobs:
       - test-publish-dotnet-library
       - test-publish-app
       - test-publish-manifests
+      - test-publish-caller-pin-live
       - test-scan-for-todo-comments
       - test-sync-cluster-policies
       - test-update-agent-skills
@@ -3133,6 +3195,7 @@ jobs:
             ${{ needs.test-publish-dotnet-library.result }}
             ${{ needs.test-publish-app.result }}
             ${{ needs.test-publish-manifests.result }}
+            ${{ needs.test-publish-caller-pin-live.result }}
             ${{ needs.test-scan-for-todo-comments.result }}
             ${{ needs.test-sync-cluster-policies.result }}
             ${{ needs.test-update-agent-skills.result }}
