@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.1.0](https://github.com/devantler-tech/actions/compare/v11.0.4...v11.1.0) (2026-08-02)
+
+
+### Features
+
+* **publish:** require a SHA-pinned caller before signing ([#858](https://github.com/devantler-tech/actions/issues/858)) ([36171a3](https://github.com/devantler-tech/actions/commit/36171a36868fff7a8314dd2746c67fc79205ea2e))
+* **validate-go-project:** run the Go suite on the default branch behind an opt-in ([#870](https://github.com/devantler-tech/actions/issues/870)) ([6fbf4d0](https://github.com/devantler-tech/actions/commit/6fbf4d059e2ecc6ba4e52b9b9bd6399cb7cbc123))
+
 ## [11.0.4](https://github.com/devantler-tech/actions/compare/v11.0.3...v11.0.4) (2026-07-29)
 
 
