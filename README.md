@@ -408,6 +408,7 @@ jobs:
 |---------------|----------------|------------|----------|----------------------------------------------------------------------------|
 | `app-name`    | Input (string) | -          | Yes      | Container name in the deployment manifest to pin to the built image digest |
 | `deploy-path` | Input (string) | `./deploy` | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact    |
+| `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
 
@@ -448,6 +449,7 @@ jobs:
 |---------------|----------------|----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `oci-name`    | Input (string) | `${{ github.repository }}` | No       | OCI repository name (`<owner>/<name>`) the artifact is published under, without the registry prefix or trailing `/manifests`. Override for invalid OCI path components |
 | `deploy-path` | Input (string) | `./deploy`           | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact                                                              |
+| `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
 

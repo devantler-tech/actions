@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable-caller-pin:
+        description: "Enforce that the caller pinned this workflow to a commit SHA before signing. Opt-in while rolling out; see AGENTS.md 'Shipping a new capability behind an opt-in flag'."
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -50,6 +55,39 @@ jobs:
         run: |
           if [ "$REF_TYPE" != "tag" ] || ! printf '%s' "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'; then
             echo "::error::publish-manifests must be invoked from a semver tag vX.Y.Z (got $REF_TYPE/$REF_NAME); Flux OCIRepository semver selection depends on it."
+            exit 1
+          fi
+
+      - name: 🔎 Resolve the calling ref from the OIDC claim
+        id: caller
+        if: ${{ inputs.enable-caller-pin }}
+        run: |
+          # github.job_workflow_ref is NOT exposed in the expression context — measured empty inside
+          # a called reusable workflow, while github.workflow_ref (the caller's own entry workflow)
+          # resolves fine. The value that actually reaches the cosign certificate's SAN is the OIDC
+          # token's job_workflow_ref claim, so read it from the token: same source, same value.
+          token="$(curl -fsS --max-time 10 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" | jq -r '.value')"
+          payload="$(printf '%s' "$token" | cut -d. -f2)"
+          case $((${#payload} % 4)) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+          ref="$(printf '%s' "$payload" | tr '_-' '/+' | base64 -d | jq -r '.job_workflow_ref // ""')"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: 🔒 Require a SHA-pinned caller
+        if: ${{ inputs.enable-caller-pin }}
+        env:
+          JOB_WORKFLOW_REF: ${{ steps.caller.outputs.ref }}
+        run: |
+          # This job mints a keyless cosign certificate whose SAN is this workflow's own
+          # job_workflow_ref, and the cluster's trust rules verify signatures against it. A branch
+          # or tag ref would let a superseded revision of this workflow mint a signature the
+          # cluster still trusts, so require the one ref form that cannot move: a commit SHA.
+          ref="${JOB_WORKFLOW_REF##*@}"
+          if ! printf '%s' "$ref" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::publish-manifests must be called by a 40-character commit SHA, not '@${ref}'. Pin the caller as devantler-tech/actions/.github/workflows/publish-manifests.yaml@<sha> (Renovate keeps that pin current)."
             exit 1
           fi
 
