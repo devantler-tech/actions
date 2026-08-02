@@ -39,13 +39,26 @@ for workflow in "${signing_workflows[@]}"; do
   [[ "$guard_count" == "1" ]] ||
     fail "$workflow must contain exactly one '$guard_name' step; found: $guard_count"
 
-  # The guard has to bind the context itself. Reading github.job_workflow_ref inline inside the
-  # run: body would work too, but the env binding is what keeps it out of shell interpolation.
+  # github.job_workflow_ref is NOT exposed in the expression context — measured empty inside a
+  # called reusable workflow (devantler-tech/actions#858). The claim only exists in the OIDC token,
+  # which is also the value Fulcio copies into the certificate SAN. So the guard must be fed from a
+  # resolve step that reads that claim, never from the context property.
+  resolve_reads_claim="$(yq -r \
+    '[.jobs[].steps[] | select(.id == "caller") | .run | select(test("job_workflow_ref"))] | length' \
+    "$workflow")"
+  [[ "$resolve_reads_claim" == "1" ]] ||
+    fail "$workflow must resolve the caller ref from the OIDC job_workflow_ref claim (step id: caller)"
+
+  context_property_used="$(yq -r \
+    '[.. | select(tag == "!!str") | select(test("\\$\\{\\{[^}]*github\\.job_workflow_ref"))] | length' "$workflow")"
+  [[ "$context_property_used" == "0" ]] ||
+    fail "$workflow uses the github.job_workflow_ref expression property, which is always empty"
+
   guard_env="$(GUARD_NAME="$guard_name" yq -r \
     '.jobs[].steps[] | select(.name == strenv(GUARD_NAME)) | .env.JOB_WORKFLOW_REF // ""' "$workflow")"
   # shellcheck disable=SC2016 # GitHub expression compared literally.
-  [[ "$guard_env" == '${{ github.job_workflow_ref }}' ]] ||
-    fail "$workflow guard must bind JOB_WORKFLOW_REF to github.job_workflow_ref; got: $guard_env"
+  [[ "$guard_env" == '${{ steps.caller.outputs.ref }}' ]] ||
+    fail "$workflow guard must bind JOB_WORKFLOW_REF to the resolve step output; got: $guard_env"
 
   # Ordering matters: the pin must be decided before the job does any work that could publish or
   # sign. Checkout is the first such step in both workflows.

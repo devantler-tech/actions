@@ -47,9 +47,26 @@ jobs:
             exit 1
           fi
 
+      - name: 🔎 Resolve the calling ref from the OIDC claim
+        id: caller
+        run: |
+          # github.job_workflow_ref is NOT exposed in the expression context — measured empty inside
+          # a called reusable workflow, while github.workflow_ref (the caller's own entry workflow)
+          # resolves fine. The value that actually reaches the cosign certificate's SAN is the OIDC
+          # token's job_workflow_ref claim, so read it from the token: same source, same value.
+          token="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" | jq -r '.value')"
+          payload="$(printf '%s' "$token" | cut -d. -f2)"
+          case $((${#payload} % 4)) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+          ref="$(printf '%s' "$payload" | tr '_-' '/+' | base64 -d | jq -r '.job_workflow_ref // ""')"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
       - name: 🔒 Require a SHA-pinned caller
         env:
-          JOB_WORKFLOW_REF: ${{ github.job_workflow_ref }}
+          JOB_WORKFLOW_REF: ${{ steps.caller.outputs.ref }}
         run: |
           # This job mints a keyless cosign certificate whose SAN is this workflow's own
           # job_workflow_ref, and the cluster's trust rules verify signatures against it. A branch
@@ -146,20 +163,25 @@ jobs:
           cosign sign --yes "${ARTIFACT}:${VERSION}"
           cosign sign --yes "${IMAGE}@${DIGEST}"
 
-  # TEMPORARY probe (removed before review): proves github.job_workflow_ref resolves at runtime
+  # TEMPORARY probe (removed before review): proves the OIDC job_workflow_ref claim resolves
   # inside a called reusable workflow, and shows the exact @suffix shape the guard parses.
   temp-probe-job-workflow-ref:
     name: TEMP probe job_workflow_ref
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      id-token: write
     steps:
       - name: probe
-        env:
-          JWR: ${{ github.job_workflow_ref }}
-          JWS: ${{ github.job_workflow_sha }}
-          WR: ${{ github.workflow_ref }}
         run: |
-          echo "PROBE job_workflow_ref=[$JWR]"
-          echo "PROBE job_workflow_sha=[$JWS]"
-          echo "PROBE workflow_ref=[$WR]"
-          echo "PROBE extracted=[${JWR##*@}]"
+          token="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" | jq -r '.value')"
+          payload="$(printf '%s' "$token" | cut -d. -f2)"
+          case $((${#payload} % 4)) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+          claims="$(printf '%s' "$payload" | tr '_-' '/+' | base64 -d)"
+          echo "PROBE claim_job_workflow_ref=[$(printf '%s' "$claims" | jq -r '.job_workflow_ref // "<ABSENT>"')]"
+          echo "PROBE claim_workflow_ref=[$(printf '%s' "$claims" | jq -r '.workflow_ref // "<ABSENT>"')]"
+          ref="$(printf '%s' "$claims" | jq -r '.job_workflow_ref // ""')"
+          echo "PROBE extracted=[${ref##*@}]"
