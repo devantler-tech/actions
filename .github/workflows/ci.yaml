@@ -1900,6 +1900,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-zizmor-routing.sh
 
+      - name: 🔒 Check publish workflows require a SHA-pinned caller
+        shell: bash
+        run: bash .github/tests/test-publish-caller-pin.sh
+
       - name: 🔐 Check merge-group credential isolation
         shell: bash
         run: bash .github/tests/test-ci-merge-group-isolation.sh

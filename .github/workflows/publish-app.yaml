@@ -47,6 +47,20 @@ jobs:
             exit 1
           fi
 
+      - name: 🔒 Require a SHA-pinned caller
+        env:
+          JOB_WORKFLOW_REF: ${{ github.job_workflow_ref }}
+        run: |
+          # This job mints a keyless cosign certificate whose SAN is this workflow's own
+          # job_workflow_ref, and the cluster's trust rules verify signatures against it. A branch
+          # or tag ref would let a superseded revision of this workflow mint a signature the
+          # cluster still trusts, so require the one ref form that cannot move: a commit SHA.
+          ref="${JOB_WORKFLOW_REF##*@}"
+          if ! printf '%s' "$ref" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::publish-app must be called by a 40-character commit SHA, not '@${ref}'. Pin the caller as devantler-tech/actions/.github/workflows/publish-app.yaml@<sha> (Renovate keeps that pin current)."
+            exit 1
+          fi
+
       - name: 📑 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -131,3 +145,21 @@ jobs:
           flux tag artifact "oci://${ARTIFACT}:${VERSION}" --tag latest --creds "${ACTOR}:${GH_TOKEN}"
           cosign sign --yes "${ARTIFACT}:${VERSION}"
           cosign sign --yes "${IMAGE}@${DIGEST}"
+
+  # TEMPORARY probe (removed before review): proves github.job_workflow_ref resolves at runtime
+  # inside a called reusable workflow, and shows the exact @suffix shape the guard parses.
+  temp-probe-job-workflow-ref:
+    name: TEMP probe job_workflow_ref
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: probe
+        env:
+          JWR: ${{ github.job_workflow_ref }}
+          JWS: ${{ github.job_workflow_sha }}
+          WR: ${{ github.workflow_ref }}
+        run: |
+          echo "PROBE job_workflow_ref=[$JWR]"
+          echo "PROBE job_workflow_sha=[$JWS]"
+          echo "PROBE workflow_ref=[$WR]"
+          echo "PROBE extracted=[${JWR##*@}]"
