@@ -620,7 +620,7 @@ jobs:
   template-sync:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
-      source-repo-path: devantler-tech/gitops-tenant-template
+      source-repo-path: devantler-tech/platform-tenant-template
 ```
 
 By default the sync PR is opened with `GITHUB_TOKEN`, so GitHub does not trigger
@@ -642,7 +642,7 @@ jobs:
   template-sync:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
-      source-repo-path: devantler-tech/gitops-tenant-template
+      source-repo-path: devantler-tech/platform-tenant-template
       use-app-token: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
