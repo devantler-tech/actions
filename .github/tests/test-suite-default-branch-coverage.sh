@@ -197,6 +197,38 @@ else
     elif ! grep -qF '||' <<<"$group"; then
       fail "the path-filter term and the default-branch clause share a group but are not OR-ed, so the default-branch clause cannot rescue a run the path filter rejected — see ksail#6373."
     else
+      # ── 4b. The base diff-trigger must SURVIVE as a real OR-alternative ───────────
+      # Check 4's `||` presence test is not sufficient on its own, and cannot be made
+      # sufficient: the flag-normalisation idiom this file requires elsewhere
+      # (`inputs.X == true || inputs.X == 'true'`) contributes a literal `||` nested one
+      # level inside the group, so the group contains a `||` even when its top level is a
+      # pure conjunction.
+      #
+      # The gate that exploits that — reproduced against this guard before the check was
+      # added, and it PASSED:
+      #
+      #   A && ( (inputs.test-default-branch == true || …== 'true') && go != '' && <db> )
+      #
+      # There the base trigger is gone entirely, so the job runs ONLY for callers that opt
+      # in and every other consumer silently loses its diff-triggered test run — the exact
+      # backward-compatibility property checks 3 and 6 exist to protect. It slips through
+      # because `outside` holds no path-filter term to catch (check 4), the group really
+      # does contain `default_branch` and a `||`, and `split_arms` returns a single arm
+      # that legitimately carries the flag, the ran-proof and the default-branch clause,
+      # satisfying checks 5, 6 and 7.
+      #
+      # Asserting the arm EXACTLY, rather than merely that one contains the term, is
+      # deliberate: an arm of `go == 'true' && github.event_name == 'pull_request'` would
+      # also be a regression for push consumers, and a containment test would accept it.
+      base_arm_found=0
+      while IFS= read -r arm; do
+        trimmed="$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' <<<"$arm")"
+        [[ "$trimmed" == "needs.changes.outputs.go == 'true'" ]] && base_arm_found=1
+      done < <(split_arms "$group")
+      if [[ "$base_arm_found" -eq 0 ]]; then
+        fail "no top-level OR-arm of the group is exactly \"needs.changes.outputs.go == 'true'\", so the base diff-trigger is not OR-ed with the flagged arm — the group's '||' may be nothing but the flag's own true/'true' normalisation. A caller that does not opt in would lose the diff-triggered test run it has today. See ksail#6373."
+      fi
+
       # ── 5. The default-branch clause must sit in the arm the input gates ──────────
       # Otherwise the input is referenced (check 3) but guards something else, and the new
       # behaviour is reachable without opting in.

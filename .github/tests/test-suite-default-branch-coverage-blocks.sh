@@ -139,6 +139,16 @@ expect_block "flag-top-level-and-in-group" "$REPO && $FLAG && ( $FILTER || ( $FL
 expect_block "filter-top-level" "$REPO && $FILTER && ( $FLAG && $RAN && $DB )" \
   "AND-s the path filter"
 
+# ── 4b. The base diff-trigger dropped entirely — opt-in-only execution ───────────────
+# The subtlest defect modelled here, and the one that motivated check 4b. The group still
+# contains a `||` — but only the one inside the flag's own `== true || == 'true'`
+# normalisation — so a `||`-presence test reports the base trigger as OR-ed when the
+# group's top level is in fact a pure conjunction. Every consumer that does not opt in
+# silently loses its diff-triggered test run, which is precisely the backward-compatibility
+# property this guard claims to protect. Verified to pass the guard before check 4b existed.
+expect_block "base-arm-dropped" "$REPO && ( $FLAG && $RAN && $DB )" \
+  "no top-level OR-arm of the group is exactly"
+
 # ── 5. A single event gating the whole job — no opt-in can reach the default branch ──
 expect_block "top-level-event" "$REPO && github.event_name == 'pull_request' && ( $FILTER || ( $FLAG && $RAN && $DB ) )" \
   "AND-s 'github.event_name ==' at the top level"
