@@ -17,6 +17,11 @@ on:
         type: boolean
         default: false
         description: "Opt in to the vulnerability scan's corrected coverage: it then runs on every default-branch invocation rather than only on pull requests, and a pull request that edits only a .govulncheck-allow.txt runs it too, so a risk acceptance is validated by the scanner it applies to. Off by default because both are behaviour changes for every consumer: a default branch that was reporting green can legitimately go red the moment an advisory is published against code that was already merged, and an allowlist-only pull request that used to skip the scan starts paying for it. Callers that omit this input keep the previous behaviour exactly. Roll out caller-by-caller, then flip this default to true and remove the input (devantler-tech/actions#788)."
+      test-default-branch:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to running the Go test suite on every default-branch invocation, rather than only when the diff touched a Go file. `go` answers 'did a Go source file change', which is narrower than 'could the suite's verdict have changed': a Go test may read a non-Go file as its subject, so a commit touching only those files skips the suite while breaking it, and the default branch keeps reporting green. Off by default because it is a behaviour change for every consumer — a default branch that was reporting green starts reporting whatever the suite actually says, which may be red. Callers that omit this input keep the previous behaviour exactly. Roll out caller-by-caller, then flip this default to true and remove the input (devantler-tech/ksail#6373)."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App Private Key"
@@ -693,10 +698,41 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo
+    # Skip if no Go files changed or on reusable-workflows repo.
+    #
+    # `needs.changes.outputs.go` answers "did a Go SOURCE file change", which is a strictly
+    # narrower question than "could this suite's verdict have changed". A Go test may read a
+    # non-Go file as its subject: ksail's `internal/ciharness` package asserts against
+    # `.github/workflows/*.yaml` and `.github/scripts/*.sh`. A commit touching only those
+    # files therefore yields `go == 'false'` CORRECTLY — the filter is not misconfigured —
+    # and this job skips CORRECTLY by its own rule, while the suite is in fact broken.
+    # Measured on ksail: `a5ed9f85` (#6363) moved an EKS teardown guard out of a workflow's
+    # inline `run:` into a script, breaking `TestEKSSmokePreparesCloudGitOpsAndBoundsCleanup`.
+    # That push to `main` changed four files, none of them Go, so `go` was false, 🧪 Test was
+    # skipped, and `main` reported green. Every later `main` run repeated that verdict until
+    # an unrelated pull request that happened to touch Go files inherited the failure.
+    #
+    # On the default branch there is no diff worth trusting for this decision: that branch's
+    # green IS the branch-protection signal, so it has to mean the suite ran. Fixing it
+    # changes behaviour in every consumer at once, so it ships behind the opt-in
+    # `test-default-branch` — the same shape `scan-default-branch` uses for the vuln scan.
+    #
+    # `needs.changes.outputs.go != ''` proves the filter actually RAN: an empty string means
+    # the `changes` job itself was skipped (it is gated too), so a concrete 'true'/'false' is
+    # the only evidence that this arm is deciding on a real answer.
+    #
+    # The input is compared against both the boolean and the string because a workflow
+    # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      && (
+        needs.changes.outputs.go == 'true'
+        || (
+          (inputs.test-default-branch == true || inputs.test-default-branch == 'true')
+          && needs.changes.outputs.go != ''
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        )
+      )
     permissions:
       contents: write
     steps:

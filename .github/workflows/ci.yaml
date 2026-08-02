@@ -2074,6 +2074,29 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  # ── Flag-ON counterpart for `test-default-branch` (the both-states rule) ──
+  # test-validate-go-project omits this input entirely, so it exercises the OFF state every
+  # existing consumer gets; this job passes it as true. Together they cover both states.
+  #
+  # As with scan-default-branch, what this proves is that the input is declared and
+  # accepted and that the workflow still behaves correctly in both states of it — NOT that
+  # a default-branch push runs the suite, which no pull-request-triggered job can
+  # demonstrate (`github.ref` here is a PR merge ref, so the default-branch arm is
+  # unreachable by construction). The reachability of that arm is what the structural guard
+  # in test-suite-default-branch-coverage.sh asserts instead.
+  test-validate-go-project-test-default-branch:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Default-Branch Test Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      test-default-branch: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
   test-run-dotnet-tests-workflow:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests"
@@ -2525,6 +2548,57 @@ jobs:
 
       - name: 🧪 Assert the trigger guard blocks every bad-input fixture
         run: bash .github/tests/test-govulncheck-main-coverage-blocks.sh
+
+  # ── The same property, asserted for the Go TEST suite (ksail#6373) ──────────────
+  # `needs.changes.outputs.go` answers "did a Go source file change", which is narrower
+  # than "could the suite's verdict have changed": a Go test may read a non-Go file as its
+  # subject, so a commit touching only those files skips the suite while breaking it, and
+  # the default branch keeps reporting green. Measured on ksail — a5ed9f85 changed four
+  # files, none of them Go, broke internal/ciharness, and main stayed green.
+  test-suite-default-branch-coverage:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Go Suite - Default-Branch Trigger Coverage"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the Go test suite runs on the default branch behind its opt-in
+        run: bash .github/tests/test-suite-default-branch-coverage.sh
+
+  # ── Failing-input counterpart to the job above (the both-tests convention) ──
+  # Generates its fixtures from the real workflow, so they cannot drift from it, and
+  # asserts the guard fails WITH THE EXPECTED MESSAGE on each — plus that it still passes
+  # the real workflow and a reflowed-but-equivalent gate, so neither an accept-everything
+  # nor a reject-everything guard passes.
+  test-suite-default-branch-coverage-blocks:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Go Suite Trigger Guard - Blocks On Bad Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the trigger guard blocks every bad-input fixture
+        run: bash .github/tests/test-suite-default-branch-coverage-blocks.sh
 
   # ── Zizmor gate failure-mode self-test (generalizes the govulncheck guard; #313) ──
   # scan-for-workflow-vulnerabilities.yaml is a SECURITY GATE: its job is to FAIL a PR
@@ -3020,6 +3094,7 @@ jobs:
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
       - test-validate-go-project-scan-default-branch
+      - test-validate-go-project-test-default-branch
       - test-run-dotnet-tests-workflow
       - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
@@ -3043,6 +3118,8 @@ jobs:
       - test-govulncheck-timeout
       - test-govulncheck-main-coverage
       - test-govulncheck-main-coverage-blocks
+      - test-suite-default-branch-coverage
+      - test-suite-default-branch-coverage-blocks
       - test-zizmor-blocks
       - test-zizmor-action-lockstep
       - test-validate-go-lint-blocks
@@ -3116,6 +3193,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
             ${{ needs.test-validate-go-project-scan-default-branch.result }}
+            ${{ needs.test-validate-go-project-test-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
             ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
@@ -3139,6 +3217,8 @@ jobs:
             ${{ needs.test-govulncheck-timeout.result }}
             ${{ needs.test-govulncheck-main-coverage.result }}
             ${{ needs.test-govulncheck-main-coverage-blocks.result }}
+            ${{ needs.test-suite-default-branch-coverage.result }}
+            ${{ needs.test-suite-default-branch-coverage-blocks.result }}
             ${{ needs.test-zizmor-blocks.result }}
             ${{ needs.test-zizmor-action-lockstep.result }}
             ${{ needs.test-validate-go-lint-blocks.result }}
