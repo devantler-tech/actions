@@ -1,5 +1,12 @@
 # Changelog
 
+## [12.0.2](https://github.com/devantler-tech/actions/compare/v12.0.1...v12.0.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **auto-merge:** reject quoted clean review markers ([#856](https://github.com/devantler-tech/actions/issues/856)) ([e55bfec](https://github.com/devantler-tech/actions/commit/e55bfec61b516ebdbd16b7b31999c17a96fc401f))
+
 ## [12.0.1](https://github.com/devantler-tech/actions/compare/v12.0.0...v12.0.1) (2026-08-02)
 
 
