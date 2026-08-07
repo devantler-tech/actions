@@ -272,8 +272,30 @@ else
   fi
 fi
 
+# ── 8. The corrected coverage must be what a caller gets by DEFAULT ──────────────────
+# Checks 1-7 verify the gate can reach the default-branch run when a caller opts in. They
+# say nothing about what a caller who passes NOTHING gets, and that is the property that
+# actually decides whether the next consumer inherits the ksail#6373 defect: an input
+# defaulting to false makes the vacuous green the paved road and the correct behaviour the
+# detour, so every repo onboarded after this workflow starts out reporting a green default
+# branch over a suite it never ran.
+#
+# The rollout this completes is the one the input's own description prescribes — adopt
+# caller-by-caller, then flip the default. `ksail` is the only consumer and passes it
+# explicitly, so the flip changes no existing caller's behaviour; it changes what a NEW
+# caller gets, which is the whole point.
+#
+# Read through `.on` rather than a grep for `default: true`: the file declares several
+# inputs and a textual match cannot attribute a default to the input it belongs to.
+default_val="$(yq -r '.on.workflow_call.inputs["'"$flag_input"'"].default' "$workflow" 2>/dev/null || echo "MISSING")"
+if [[ "$default_val" == "MISSING" || "$default_val" == "null" ]]; then
+  fail "input '$flag_input' has no declared default, so what an unopted caller gets is implicit — see ksail#6373."
+elif [[ "$default_val" != "true" ]]; then
+  fail "input '$flag_input' defaults to '$default_val', so a caller that passes nothing still decides whether to run the Go suite on its default branch from the diff alone — the exact state ksail#6373 was filed against, now inherited by every new consumer instead of fixed. Flip the default to true (devantler-tech/actions#788 tracks the same flip for scan-default-branch)."
+fi
+
 if [[ "$status" -eq 0 ]]; then
-  echo "validate-go-project.yaml's test job covers the default branch behind '$flag_input' ✅"
+  echo "validate-go-project.yaml's test job covers the default branch, and '$flag_input' defaults to on ✅"
 fi
 
 exit "$status"

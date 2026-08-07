@@ -179,6 +179,66 @@ expect_block "unflagged-arm-widens" "$REPO && ( $FILTER || ( $RAN && $DB ) || ( 
 expect_block "flagged-arm-lacks-ran-proof" "$REPO && ( $FILTER || ( $FLAG && $DB ) )" \
   "does not require needs.changes.outputs.go != ''"
 
+# ── 10. The input's DEFAULT, which no gate fixture can reach ─────────────────────────
+# Every fixture above rewrites `.jobs.test.if`, so none of them can exercise check 8 —
+# that check reads the input's declared default, not the gate. Without these two the flip
+# to `default: true` would be unguarded: someone could set it back to false, all nine
+# assertions above would still pass, and the guard would report full default-branch
+# coverage over a workflow whose next consumer silently inherits the ksail#6373 defect.
+#
+# The gate is held at the KNOWN-GOOD expression throughout, so the only thing that differs
+# from a passing run is the default itself — which is what makes the rejection attributable
+# to check 8 rather than to some incidental malformation.
+run_guard_default() {
+  local name="$1" out rc
+  local path="$tmpdir/$name.yaml"
+  cp "$workflow" "$path"
+  GATE="$GOOD" yq -i '.jobs.test.if = strenv(GATE)' "$path"
+  case "$2" in
+    MISSING) yq -i 'del(.on.workflow_call.inputs["test-default-branch"].default)' "$path" ;;
+    *)       VAL="$2" yq -i '.on.workflow_call.inputs["test-default-branch"].default = (strenv(VAL) == "true")' "$path" ;;
+  esac
+  out="$(bash "$guard" "$path" 2>&1)" && rc=0 || rc=$?
+  printf '%s\n' "$out" > "$tmpdir/$name.out"
+  return "$rc"
+}
+
+expect_block_default() {
+  local name="$1" val="$2" expected="$3"
+  if run_guard_default "$name" "$val"; then
+    echo "::error::the guard PASSED the deliberately-bad fixture '$name' (default=$val) — check 8 has stopped biting. Expected it to report: $expected"
+    status=1
+  elif ! grep -qF "$expected" "$tmpdir/$name.out"; then
+    echo "::error::fixture '$name' was rejected, but not for the expected reason. Expected a message containing: $expected"
+    while IFS= read -r line; do echo "    got: $line"; done < "$tmpdir/$name.out"
+    status=1
+  else
+    echo "blocks $name ✅"
+  fi
+}
+
+# The pre-flip state: opt-in, so a new consumer inherits the vacuous green.
+expect_block_default "default-false" "false" "defaults to 'false'"
+
+# No default at all — what an unopted caller gets becomes implicit rather than declared.
+#
+# This one fixture covers BOTH YAML spellings of "no default", which is why there is no
+# separate `default: null` case. Measured, not assumed: `del(...)` and an explicit
+# `default: null` both make `yq -r` return the string `null`, so the guard receives
+# byte-identical input either way and a second fixture could not fail unless this one did
+# too. A test that cannot fail independently of another is not coverage, it is noise.
+expect_block_default "default-missing" "MISSING" "has no declared default"
+
+# Control for the pair above: same scaffold, correct default, must PASS. Without this a
+# `run_guard_default` that corrupted the file would make both rejections unattributable.
+if run_guard_default "default-true-control" "true"; then
+  echo "passes default-true-control ✅"
+else
+  echo "::error::control 'default-true-control' was REJECTED, so the default-fixture scaffold itself breaks the workflow — both 'blocks' results above are unattributable."
+  while IFS= read -r line; do echo "    got: $line"; done < "$tmpdir/default-true-control.out"
+  status=1
+fi
+
 if [[ "$status" -eq 0 ]]; then
   echo "test-suite-default-branch-coverage.sh bites on every modelled defect ✅"
 fi
