@@ -221,6 +221,12 @@ expect_block_default() {
 expect_block_default "default-false" "false" "defaults to 'false'"
 
 # No default at all — what an unopted caller gets becomes implicit rather than declared.
+#
+# This one fixture covers BOTH YAML spellings of "no default", which is why there is no
+# separate `default: null` case. Measured, not assumed: `del(...)` and an explicit
+# `default: null` both make `yq -r` return the string `null`, so the guard receives
+# byte-identical input either way and a second fixture could not fail unless this one did
+# too. A test that cannot fail independently of another is not coverage, it is noise.
 expect_block_default "default-missing" "MISSING" "has no declared default"
 
 # Control for the pair above: same scaffold, correct default, must PASS. Without this a
