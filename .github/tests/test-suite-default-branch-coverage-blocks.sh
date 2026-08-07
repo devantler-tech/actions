@@ -194,7 +194,6 @@ run_guard_default() {
   local path="$tmpdir/$name.yaml"
   cp "$workflow" "$path"
   GATE="$GOOD" yq -i '.jobs.test.if = strenv(GATE)' "$path"
-  # shellcheck disable=SC2016
   case "$2" in
     MISSING) yq -i 'del(.on.workflow_call.inputs["test-default-branch"].default)' "$path" ;;
     *)       VAL="$2" yq -i '.on.workflow_call.inputs["test-default-branch"].default = (strenv(VAL) == "true")' "$path" ;;
