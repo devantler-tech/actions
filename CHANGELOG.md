@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.1](https://github.com/devantler-tech/actions/compare/v13.0.0...v13.0.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **validate-go-project:** default test-default-branch to on ([#902](https://github.com/devantler-tech/actions/issues/902)) ([fbebef4](https://github.com/devantler-tech/actions/commit/fbebef4cbf09815b2f3704988b3b2411a8367ac8))
+
 ## [13.0.0](https://github.com/devantler-tech/actions/compare/v12.0.2...v13.0.0) (2026-08-03)
 
 
