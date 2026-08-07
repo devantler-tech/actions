@@ -2078,9 +2078,18 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
-  # ── Flag-ON counterpart for `test-default-branch` (the both-states rule) ──
-  # test-validate-go-project omits this input entirely, so it exercises the OFF state every
-  # existing consumer gets; this job passes it as true. Together they cover both states.
+  # ── Flag-OFF counterpart for `test-default-branch` (the both-states rule) ──
+  # `test-default-branch` defaults to TRUE, so test-validate-go-project above — which omits
+  # the input — is the ON state, and it is also what every consumer now gets. This job
+  # passes it as false, which is the only remaining way to instantiate the OFF path.
+  # Together they cover both states, per AGENTS.md "Shipping a new capability behind an
+  # opt-in flag": a flag whose off-path is untested can regress silently, and so can an
+  # on-path that was never instantiated.
+  #
+  # The direction is deliberate. While the input defaulted to false these two jobs were
+  # ON-explicit plus OFF-by-default; flipping the default without flipping this job would
+  # have left BOTH of them exercising ON and the off-path uninstantiated — a both-states
+  # pair that silently became a one-state pair.
   #
   # As with scan-default-branch, what this proves is that the input is declared and
   # accepted and that the workflow still behaves correctly in both states of it — NOT that
@@ -2090,11 +2099,11 @@ jobs:
   # in test-suite-default-branch-coverage.sh asserts instead.
   test-validate-go-project-test-default-branch:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    name: "[Test] Validate Go Project - Default-Branch Test Opted In"
+    name: "[Test] Validate Go Project - Default-Branch Test Opted Out"
     uses: ./.github/workflows/validate-go-project.yaml
     with:
       working-directory: .github/tests/go-valid-fixture
-      test-default-branch: true
+      test-default-branch: false
     permissions:
       contents: write
       pull-requests: write

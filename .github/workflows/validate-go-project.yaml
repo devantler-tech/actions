@@ -20,8 +20,8 @@ on:
       test-default-branch:
         required: false
         type: boolean
-        default: false
-        description: "Opt in to running the Go test suite on every default-branch invocation, rather than only when the diff touched a Go file. `go` answers 'did a Go source file change', which is narrower than 'could the suite's verdict have changed': a Go test may read a non-Go file as its subject, so a commit touching only those files skips the suite while breaking it, and the default branch keeps reporting green. Off by default because it is a behaviour change for every consumer — a default branch that was reporting green starts reporting whatever the suite actually says, which may be red. Callers that omit this input keep the previous behaviour exactly. Roll out caller-by-caller, then flip this default to true and remove the input (devantler-tech/ksail#6373)."
+        default: true
+        description: "Run the Go test suite on every default-branch invocation, rather than only when the diff touched a Go file. `go` answers 'did a Go source file change', which is narrower than 'could the suite's verdict have changed': a Go test may read a non-Go file as its subject, so a commit touching only those files skips the suite while breaking it, and the default branch keeps reporting green. On by default, so a consumer inherits the corrected coverage without knowing this input exists; the default branch then reports whatever the suite actually says, which may be red. Set it to false only to accept a default branch whose green does not mean the suite ran (devantler-tech/ksail#6373)."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App Private Key"
