@@ -141,8 +141,8 @@ aggregate_needs="$(
 aggregate_results="$(
   yq -r '
     .jobs.ci-required-checks.steps[]
-    | select(.uses == "./aggregate-job-checks")
-    | .with["job-results"]
+    | select(.name == "📊 Summarize workflow result")
+    | .env.JOB_RESULTS
   ' "$ci" |
     grep -oE 'needs\.[a-z0-9-]*zizmor[a-z0-9-]*\.result' |
     sed -E 's/^needs\.//; s/\.result$//' |

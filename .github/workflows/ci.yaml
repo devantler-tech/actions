@@ -17,8 +17,8 @@ jobs:
   # predicate: an explicit exclusion, or the push-only Zizmor self-test. Merge refs contain
   # PR-controlled local actions and fixtures, so test jobs must never run them with
   # repository secrets or write-capable tokens. Only `CI - Required Checks` completes
-  # the merge-queue requirement; it receives no repository secrets and retains only
-  # contents: read.
+  # the merge-queue requirement; it receives no repository secrets, has no token
+  # permissions, and aggregates the results inline without checking out candidate code.
   #
   # The suite is also skipped for a release-please
   # release commit — BOTH the release-please PR (head branch `release-please--*`) AND
@@ -26,7 +26,7 @@ jobs:
   # `github.head_ref` is empty so the branch-name check alone misses it). Those commits
   # only bump versions + the changelog — already tested in the PRs that introduced each
   # change — so there is nothing new to test. The `CI - Required Checks` gate still
-  # runs (aggregate-job-checks treats skipped as success), keeping the required status
+  # runs (the inline gate treats skipped as success), keeping the required status
   # check green so the release auto-merges.
   # ── approve-pr ──────────────────────────────────────────────
   test-approve-pr:
@@ -131,7 +131,8 @@ jobs:
     runs-on: ubuntu-latest
     # The underlying action only produces a diff on pull_request events; on push /
     # merge_group there is no PR to review, so the test is PR-gated (skipped
-    # otherwise, which aggregate-job-checks tolerates — like test-approve-pr).
+    # otherwise, which the inline required-check collector tolerates — like
+    # test-approve-pr).
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && startsWith(github.event_name, 'pull_request') }}"
     permissions:
       contents: read
@@ -1912,6 +1913,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-ci-merge-group-isolation-blocks.sh
 
+      - name: 🔒 Check required status gate stays workspace-independent
+        shell: bash
+        run: bash .github/tests/test-ci-required-checks-boundary.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
@@ -1921,9 +1926,9 @@ jobs:
           #        that does `uses: ./<action>`;
           #   (1b) every reusable workflow (workflow_call) is exercised by a job
           #        that does `uses: ./.github/workflows/<x>.yaml`; and
-          #   (2)  ci-required-checks.needs and the `job-results` input of its
-          #        ./aggregate-job-checks step name the SAME set of jobs — a job
-          #        in `needs:` but missing from `job-results` has its failure
+          #   (2)  ci-required-checks.needs and its trusted inline JOB_RESULTS
+          #        environment value name the SAME set of jobs — a job in
+          #        `needs:` but missing from `JOB_RESULTS` has its failure
           #        silently ignored (the single required check stays green).
           # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
           ci=".github/workflows/ci.yaml"
@@ -1950,12 +1955,12 @@ jobs:
             fi
           done
 
-          # (2) ci-required-checks: needs <-> job-results parity
+          # (2) ci-required-checks: needs <-> inline JOB_RESULTS parity
           needs="$(yq -r '.jobs.ci-required-checks.needs[]' "$ci" | sort -u)"
           results="$(
             yq -r '.jobs.ci-required-checks.steps[]
-                     | select(.uses == "./aggregate-job-checks")
-                     | .with["job-results"]' "$ci" \
+                     | select(.name == "📊 Summarize workflow result")
+                     | .env.JOB_RESULTS' "$ci" \
               | grep -oE 'needs\.[a-z0-9-]+\.result' \
               | sed -E 's/needs\.(.*)\.result/\1/' | sort -u
           )"
@@ -1964,7 +1969,7 @@ jobs:
           while IFS= read -r j; do
             [[ -z "$j" ]] && continue
             if ! grep -qxF "$j" <<<"$results"; then
-              echo "::error file=$ci::job '$j' is in ci-required-checks.needs but missing from the aggregate-job-checks job-results input — its failure would be silently ignored"
+              echo "::error file=$ci::job '$j' is in ci-required-checks.needs but missing from the trusted inline JOB_RESULTS value — its failure would be silently ignored"
               status=1
             fi
           done <<<"$needs"
@@ -1973,13 +1978,13 @@ jobs:
           while IFS= read -r j; do
             [[ -z "$j" ]] && continue
             if ! grep -qxF "$j" <<<"$needs"; then
-              echo "::error file=$ci::job '$j' is referenced in job-results but not in ci-required-checks.needs — its result will never be populated"
+              echo "::error file=$ci::job '$j' is referenced in JOB_RESULTS but not in ci-required-checks.needs — its result will never be populated"
               status=1
             fi
           done <<<"$results"
 
           if [[ "$status" -eq 0 ]]; then
-            echo "CI coverage parity OK: every action and reusable workflow has a test job, and ci-required-checks needs <-> job-results are in sync."
+            echo "CI coverage parity OK: every action and reusable workflow has a test job, and ci-required-checks needs <-> JOB_RESULTS are in sync."
           fi
           exit "$status"
 
@@ -3280,17 +3285,13 @@ jobs:
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    permissions: {}
     steps:
-      - name: 📑 Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: ./aggregate-job-checks
-        with:
-          job-results: >-
+      # Keep the required gate inline: checked-out pull request actions are attacker-controlled.
+      - name: 📊 Summarize workflow result
+        shell: bash
+        env:
+          JOB_RESULTS: >-
             ${{ needs.test-approve-pr.result }}
             ${{ needs.test-approve-pr-credential-boundary.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}
@@ -3381,3 +3382,28 @@ jobs:
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
+        run: |
+          set -Eeuo pipefail
+          set -f
+          if [[ ! "$JOB_RESULTS" =~ [^[:space:]] ]]; then
+            echo "❌ CI - Required Checks — no job results were provided."
+            exit 1
+          fi
+          read -r -a results <<< "$JOB_RESULTS"
+
+          for result in "${results[@]}"; do
+            case "$result" in
+              success|skipped)
+                ;;
+              failure|cancelled)
+                echo "❌ CI - Required Checks — at least one job failed or was cancelled."
+                exit 1
+                ;;
+              *)
+                echo "❌ CI - Required Checks — unknown job result: '$result'."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "✅ CI - Required Checks — all jobs succeeded or were skipped."

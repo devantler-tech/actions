@@ -16,7 +16,6 @@ jobs:
   ci-required-checks:
     if: "${{ always() }}"
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    permissions: {}
     steps:
       - run: echo "Required gate"
