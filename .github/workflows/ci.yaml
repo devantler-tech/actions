@@ -131,7 +131,8 @@ jobs:
     runs-on: ubuntu-latest
     # The underlying action only produces a diff on pull_request events; on push /
     # merge_group there is no PR to review, so the test is PR-gated (skipped
-    # otherwise, which aggregate-job-checks tolerates — like test-approve-pr).
+    # otherwise, which the inline required-check collector tolerates — like
+    # test-approve-pr).
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && startsWith(github.event_name, 'pull_request') }}"
     permissions:
       contents: read

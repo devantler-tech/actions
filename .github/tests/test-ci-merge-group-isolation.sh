@@ -45,12 +45,12 @@ required_condition="$(yq -r '.jobs.ci-required-checks.if // ""' "$ci")"
   fail "ci-required-checks must remain the always-running merge-queue completion gate"
 
 required_permissions="$(
-  yq -r \
-    '.jobs.ci-required-checks.permissions | to_entries | map(.key + "=" + .value) | sort | join(",")' \
+  yq -o=json -I=0 \
+    '.jobs.ci-required-checks.permissions' \
     "$ci"
 )"
-[[ "$required_permissions" == "contents=read" ]] ||
-  fail "ci-required-checks must retain only contents=read; got: $required_permissions"
+[[ "$required_permissions" == "{}" ]] ||
+  fail "ci-required-checks must retain zero token permissions; got: $required_permissions"
 
 required_job="$(yq -o=json -I=0 '.jobs.ci-required-checks' "$ci")"
 if grep -qF 'secrets.' <<<"$required_job"; then
