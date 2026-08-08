@@ -455,15 +455,15 @@ jobs:
           permission-pull-requests: write
 
       # Self-reference: check out THIS workflow's own repo at the exact commit
-      # it is running from (job.workflow_repository / job.workflow_sha) — never
+      # it is running from (the fixed repository / github.workflow_sha) — never
       # the caller's workspace (which does not carry the gate script) and never
       # a PR-controlled ref. Same idiom as the repo's other same-commit
       # self-checkouts (dependency-review.yaml).
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
+          repository: devantler-tech/actions
+          ref: ${{ github.workflow_sha }}
           path: .devantler-tech-actions
           persist-credentials: false
 
