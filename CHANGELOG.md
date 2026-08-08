@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.2](https://github.com/devantler-tech/actions/compare/v13.0.1...v13.0.2) (2026-08-08)
+
+
+### Bug Fixes
+
+* **go:** prevent clean vulnerability scans timing out ([#909](https://github.com/devantler-tech/actions/issues/909)) ([8c7e31c](https://github.com/devantler-tech/actions/commit/8c7e31c79290b72414548e47182e79ef232052bb))
+
 ## [13.0.1](https://github.com/devantler-tech/actions/compare/v13.0.0...v13.0.1) (2026-08-07)
 
 
