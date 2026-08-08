@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.3](https://github.com/devantler-tech/actions/compare/v13.0.2...v13.0.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* **ci:** keep required status gate trusted ([#679](https://github.com/devantler-tech/actions/issues/679)) ([0f40b95](https://github.com/devantler-tech/actions/commit/0f40b95db86a67f4baa405d34c180a148a52ef5d))
+
 ## [13.0.2](https://github.com/devantler-tech/actions/compare/v13.0.1...v13.0.2) (2026-08-08)
 
 
