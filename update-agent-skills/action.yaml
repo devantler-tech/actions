@@ -37,6 +37,7 @@ runs:
       env:
         REQUIRED: ${{ inputs.gh-version }}
         INSTALL_NAMESPACE: update-agent-skills
+        GH_TOKEN: ${{ inputs.github-token }}
       # Shared with setup-agent-skills via .scripts/ensure-gh-skill.sh. Composite
       # actions cannot share steps, but they can share a bundled script resolved
       # relative to ${GITHUB_ACTION_PATH} (works for both local `uses: ./<action>`

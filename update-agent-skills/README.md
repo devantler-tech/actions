@@ -95,4 +95,4 @@ For repositories that organise skills into subdirectories (e.g. a plugin marketp
 
 ## Requirements
 
-- `gh` **≥ 2.90.0** on the runner. Same bootstrap behaviour as `setup-agent-skills`: if the runner image ships an older `gh`, the action downloads the required release tarball on demand (Linux and macOS, amd64/arm64). Windows runners must pre-install `gh >= 2.90.0`.
+- A trusted runner-provided `gh` with `gh attestation` support. Same bootstrap behaviour as `setup-agent-skills`: if it is older than **2.90.0**, the action downloads the required GitHub CLI release archive on Linux or macOS (amd64/arm64) and verifies its GitHub artifact attestation before installation. Windows runners must pre-install `gh >= 2.90.0`.
