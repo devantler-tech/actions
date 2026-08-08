@@ -461,12 +461,12 @@ jobs:
     # ceiling instead of OOM-killing; timeout-minutes bounds the worst case to a clear,
     # fast failure rather than a hung runner.
     #
-    # 20 (not 15): a cold-cache scan of a large module (no setup-go cache) legitimately
-    # runs ~14 min and a clean run has crossed the old 15-min bound — Actions cancelled
-    # a scan one second after it printed "No blocking vulnerabilities", failing the
-    # required check on a passing result (actions#593). 20 keeps a finite ceiling with
-    # headroom over the observed cold-cache runtime. Guarded by test-govulncheck-timeout.
-    timeout-minutes: 20
+    # 25 (not 20): a cold-cache scan of a large module legitimately takes most of the
+    # previous limit. A KSail main run finished the scan after 17m44s, then setup-go's
+    # cache-save post-step hit the 20-minute ceiling and cancelled an otherwise-passing
+    # required check. 25 keeps a finite ceiling with headroom for both the scan and its
+    # post-job cleanup. Guarded by test-govulncheck-timeout.
+    timeout-minutes: 25
     env:
       # ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go toolchain
       # subprocesses and harden-runner.
