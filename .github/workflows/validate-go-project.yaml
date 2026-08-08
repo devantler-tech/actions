@@ -12,6 +12,16 @@ on:
         type: string
         default: ""
         description: "Go module directory to validate. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can run in a repo that is not itself a Go module."
+      scan-default-branch:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to the vulnerability scan's corrected coverage: it then runs on every default-branch invocation rather than only on pull requests, and a pull request that edits only a .govulncheck-allow.txt runs it too, so a risk acceptance is validated by the scanner it applies to. Off by default because both are behaviour changes for every consumer: a default branch that was reporting green can legitimately go red the moment an advisory is published against code that was already merged, and an allowlist-only pull request that used to skip the scan starts paying for it. Callers that omit this input keep the previous behaviour exactly. Roll out caller-by-caller, then flip this default to true and remove the input (devantler-tech/actions#788)."
+      test-default-branch:
+        required: false
+        type: boolean
+        default: true
+        description: "Run the Go test suite on every default-branch invocation, rather than only when the diff touched a Go file. `go` answers 'did a Go source file change', which is narrower than 'could the suite's verdict have changed': a Go test may read a non-Go file as its subject, so a commit touching only those files skips the suite while breaking it, and the default branch keeps reporting green. On by default, so a consumer inherits the corrected coverage without knowing this input exists; the default branch then reports whatever the suite actually says, which may be red. Set it to false only to accept a default branch whose green does not mean the suite ran (devantler-tech/ksail#6373)."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App Private Key"
@@ -21,15 +31,25 @@ on:
   merge_group:
   ##################################
 
-# Invocation-aware concurrency: keying on github.workflow keeps this workflow's
-# two invocations on the same ref in separate groups — the org-required direct
-# run (github.workflow == this workflow's name) versus a caller's reusable-workflow
-# self-test (a reusable workflow inherits the CALLER's github.workflow, e.g. the CI
-# workflow). Without it both share one group on the same repository+ref and
-# cancel each other, failing the aggregate required check nondeterministically
-# (devantler-tech/actions#587). Runs of the same logical invocation still supersede.
+# Invocation-aware concurrency: two invocations that differ in any way are different
+# logical invocations and must not cancel each other. Only reruns of the SAME invocation
+# supersede. Two discriminators are needed, for two separate collisions both seen live:
+#
+#   * github.workflow — separates the org-required direct run (github.workflow == this
+#     workflow's name) from a caller's reusable-workflow self-test (a reusable workflow
+#     inherits the CALLER's github.workflow, e.g. the CI workflow). Without it both share
+#     one group on the same repository+ref and cancel each other, failing the aggregate
+#     required check nondeterministically (devantler-tech/actions#587).
+#
+#   * the invocation's inputs — separates two calls from the SAME caller workflow on the
+#     same ref, which github.workflow alone cannot tell apart. The both-states self-tests
+#     for `scan-default-branch` are exactly that shape: same caller, same ref, differing
+#     only by input, so the second silently cancelled the first.
+#
+# Adding a discriminator only ever splits groups further; it cannot merge two that were
+# separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}"
   cancel-in-progress: true
 
 permissions: {}
@@ -49,6 +69,7 @@ jobs:
       pull-requests: read
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      govulncheck: ${{ steps.filter.outputs.govulncheck }}
       lintable: ${{ steps.filter.outputs.lintable }}
     steps:
       - name: 🛡️ Harden runner
@@ -57,7 +78,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -72,6 +93,23 @@ jobs:
               - 'go.sum'
               - '.golangci.yml'
               - '.golangci.yaml'
+            # The allowlist decides which advisories the vuln scan accepts, so a change to
+            # it changes the gate's verdict on unchanged code: without this filter, editing
+            # the allowlist skips the very scan that reads it.
+            #
+            # It is a filter of its OWN rather than an entry in `go:` on purpose. `go` is
+            # consumed by go-mod-tidy, golangci-lint, deadcode, the test matrix and the
+            # coverage upload as well; folding the allowlist into it would make an
+            # allowlist-only commit run all of those in every consumer repo, so an
+            # administrative risk-acceptance could be blocked by a pre-existing failure
+            # somewhere else entirely. This output is OR-ed into the govulncheck job alone.
+            #
+            # Both forms are listed because `working-directory` may point at a nested
+            # module, whose allowlist lives at e.g. `services/api/.govulncheck-allow.txt`
+            # — a root-only pattern would leave that edit unscanned.
+            govulncheck:
+              - '.govulncheck-allow.txt'
+              - '**/.govulncheck-allow.txt'
             # Files lintable by MegaLinter Go flavor (excluding Go files which are covered above)
             lintable:
               # Languages
@@ -162,13 +200,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -234,13 +272,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -318,12 +356,12 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -366,11 +404,52 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo; only on PRs
+    # A vulnerability scan's verdict depends on the vulnerability DATABASE as well as the
+    # diff: an advisory published after a merge makes unchanged, already-merged code
+    # vulnerable. Two separate conditions each hid that on the default branch —
+    # `event_name == 'pull_request'` meant it never scanned at all, and the path filter
+    # alone means a push touching no Go path (a README edit) skips the scan, so the branch
+    # keeps reporting green while a newly-published advisory already applies to it.
+    #
+    # Fixing that changes behaviour in EVERY consumer repo at once, and the intended
+    # consequence is that a default branch which was green CAN now go red. Per AGENTS.md
+    # (*Shipping a new capability behind an opt-in flag*) it therefore ships behind
+    # `scan-default-branch`, default false, to be rolled out caller-by-caller before the
+    # default flips and the input is removed (#788).
+    #
+    # The two arms, and why each is shaped this way:
+    #
+    #   * PULL-REQUEST ARM — unflagged, and identical to the behaviour shipped today
+    #     except that an allowlist-only change now also triggers it. A consumer that
+    #     passes nothing gets exactly what it got before, which is what makes this
+    #     backward-compatible. `govulncheck` is its own filter output rather than an entry
+    #     in `go` so an allowlist edit triggers THIS job and not tidy/lint/deadcode/tests.
+    #
+    #   * DEFAULT-BRANCH ARM — the new capability, reachable only when a caller opts in.
+    #     It tests `go != ''` rather than being unconditional because an EMPTY output means
+    #     the `changes` job did not run at all (it is itself gated); a concrete 'true' or
+    #     'false' proves the filter ran, so the arm stays independent of how skipped-`needs`
+    #     propagate. It is deliberately NOT diff-gated beyond that: on the default branch,
+    #     scanning is the point.
+    #
+    # The input is compared against both the boolean and the string because a workflow
+    # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
-      && github.event_name == 'pull_request'
+      && ((
+        (
+          needs.changes.outputs.go == 'true'
+          || (
+            (inputs.scan-default-branch == true || inputs.scan-default-branch == 'true')
+            && needs.changes.outputs.govulncheck == 'true'
+          )
+        )
+        && github.event_name == 'pull_request'
+      ) || (
+        (inputs.scan-default-branch == true || inputs.scan-default-branch == 'true')
+        && needs.changes.outputs.go != ''
+        && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      ))
     permissions:
       contents: read
     # govulncheck's default symbol scan builds a whole-program call graph in memory,
@@ -382,12 +461,12 @@ jobs:
     # ceiling instead of OOM-killing; timeout-minutes bounds the worst case to a clear,
     # fast failure rather than a hung runner.
     #
-    # 20 (not 15): a cold-cache scan of a large module (no setup-go cache) legitimately
-    # runs ~14 min and a clean run has crossed the old 15-min bound — Actions cancelled
-    # a scan one second after it printed "No blocking vulnerabilities", failing the
-    # required check on a passing result (actions#593). 20 keeps a finite ceiling with
-    # headroom over the observed cold-cache runtime. Guarded by test-govulncheck-timeout.
-    timeout-minutes: 20
+    # 25 (not 20): a cold-cache scan of a large module legitimately takes most of the
+    # previous limit. A KSail main run finished the scan after 17m44s, then setup-go's
+    # cache-save post-step hit the 20-minute ceiling and cancelled an otherwise-passing
+    # required check. 25 keeps a finite ceiling with headroom for both the scan and its
+    # post-job cleanup. Guarded by test-govulncheck-timeout.
+    timeout-minutes: 25
     env:
       # ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go toolchain
       # subprocesses and harden-runner.
@@ -399,7 +478,7 @@ jobs:
           egress-policy: audit
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -457,7 +536,17 @@ jobs:
           go-version-input: ''
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           # present ⇒ honour the allowlist (JSON mode, risk-accept listed IDs); absent ⇒ '' ⇒ strict.
-          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && '.govulncheck-allow.txt' || '' }}
+          #
+          # Root-relative, like `go-version-file` above: the action resolves both paths from the
+          # checkout root rather than from `work-dir`. The allowlist self-test in ci.yaml pins that
+          # semantics — it passes `work-dir: .github/tests/govulncheck-allowlist` alongside a fully
+          # prefixed `allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt`.
+          # `defaults.run.working-directory` does not apply here either, because it governs `run:`
+          # steps only, never a `uses:` step's inputs. So a bare literal would send the scanner to
+          # the ROOT allowlist while the detection step above — which IS a `run:` step, and so does
+          # honour the default — reports the NESTED one as present, and a nested module's risk
+          # acceptance would be silently dropped.
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
 
   lint:
     name: 🧹 Lint - mega-linter
@@ -493,13 +582,13 @@ jobs:
           permission-contents: write
 
       - name: 📄 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
           token: ${{ steps.generate-token.outputs.token || github.token }}
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
@@ -566,7 +655,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -594,7 +683,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -609,10 +698,41 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo
+    # Skip if no Go files changed or on reusable-workflows repo.
+    #
+    # `needs.changes.outputs.go` answers "did a Go SOURCE file change", which is a strictly
+    # narrower question than "could this suite's verdict have changed". A Go test may read a
+    # non-Go file as its subject: ksail's `internal/ciharness` package asserts against
+    # `.github/workflows/*.yaml` and `.github/scripts/*.sh`. A commit touching only those
+    # files therefore yields `go == 'false'` CORRECTLY — the filter is not misconfigured —
+    # and this job skips CORRECTLY by its own rule, while the suite is in fact broken.
+    # Measured on ksail: `a5ed9f85` (#6363) moved an EKS teardown guard out of a workflow's
+    # inline `run:` into a script, breaking `TestEKSSmokePreparesCloudGitOpsAndBoundsCleanup`.
+    # That push to `main` changed four files, none of them Go, so `go` was false, 🧪 Test was
+    # skipped, and `main` reported green. Every later `main` run repeated that verdict until
+    # an unrelated pull request that happened to touch Go files inherited the failure.
+    #
+    # On the default branch there is no diff worth trusting for this decision: that branch's
+    # green IS the branch-protection signal, so it has to mean the suite ran. Fixing it
+    # changes behaviour in every consumer at once, so it ships behind the opt-in
+    # `test-default-branch` — the same shape `scan-default-branch` uses for the vuln scan.
+    #
+    # `needs.changes.outputs.go != ''` proves the filter actually RAN: an empty string means
+    # the `changes` job itself was skipped (it is gated too), so a concrete 'true'/'false' is
+    # the only evidence that this arm is deciding on a real answer.
+    #
+    # The input is compared against both the boolean and the string because a workflow
+    # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      && (
+        needs.changes.outputs.go == 'true'
+        || (
+          (inputs.test-default-branch == true || inputs.test-default-branch == 'true')
+          && needs.changes.outputs.go != ''
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        )
+      )
     permissions:
       contents: write
     steps:
@@ -622,7 +742,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -650,7 +770,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -711,7 +831,7 @@ jobs:
           egress-policy: audit
 
       - name: 📑 Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -739,7 +859,7 @@ jobs:
           echo "Free disk on /: ${before}G -> ${after}G (gained $((after - before))G)"
 
       - name: ⚙️ Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           cache: true
@@ -784,7 +904,7 @@ jobs:
       # `go test ./...` so the extra tree never enters the caller's test scope.
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
         continue-on-error: true
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}

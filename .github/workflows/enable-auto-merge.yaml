@@ -21,6 +21,28 @@ on:
           issue_comment so review results that land after the pull_request
           events still re-evaluate the gate (a reusable workflow cannot
           schedule its callers).
+      enforce-actor-trust:
+        type: boolean
+        required: false
+        default: false
+        description: >-
+          Opt-in (default-off) enforcement that requires every privileged
+          trigger and rerun initiator on an allowlisted bot-authored PR to be
+          allowlisted. Rejected pull_request lifecycle triggers and rejected
+          removals of trusted review/comment evidence actively revoke stale
+          auto-merge and merge-queue state when review gates are also
+          enforced. Direct/required-workflow runs can opt in with the
+          ENFORCE_ACTOR_TRUST repository or organization variable.
+      concurrency-key:
+        type: string
+        required: false
+        default: ""
+        description: >-
+          Stable caller-unique key for workflow-level arbitration. Strongly
+          recommended for every workflow_call invocation that enables actor
+          trust. Existing opted-in callers that omit it remain safe in a
+          repository-wide compatibility lane; callers with distinct keys do
+          not cancel one another.
   ### Required Workflow Triggers ###
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -42,7 +64,106 @@ on:
   issue_comment:
     types: [created, edited, deleted]
 
+# Arbitrate at workflow-run creation rather than after the eligibility job.
+# A rejected lifecycle event or removal of trusted review evidence must cancel
+# an older privileged run before that run can reach a PR mutation. Other
+# review/comment updates serialize without cancelling the legacy default-off
+# pull_request arming path. Cross-repository required workflows retain this
+# file's source in github.workflow_ref while github.repository names the
+# consumer, so direct identity is matched against the reviewed source path.
+# Actor-enforced reusable callers without the newly added key share one stable
+# repository-wide compatibility lane rather than breaking on a patch update.
+concurrency:
+  group: >-
+    enable-auto-merge-${{ github.repository }}-${{
+      inputs.concurrency-key ||
+      (
+        startsWith(
+          github.workflow_ref,
+          'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'
+        ) &&
+        'direct'
+      ) ||
+      (
+        (
+          inputs.enforce-actor-trust ||
+          vars.ENFORCE_ACTOR_TRUST == 'true'
+        ) &&
+        'actor-trust-legacy'
+      ) ||
+      github.workflow_ref
+    }}-${{
+      github.event.pull_request.number ||
+      github.event.issue.number ||
+      github.run_id
+    }}-${{
+      (
+        (
+          inputs.concurrency-key != '' ||
+          startsWith(
+            github.workflow_ref,
+            'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'
+          ) ||
+          inputs.enforce-actor-trust ||
+          vars.ENFORCE_ACTOR_TRUST == 'true'
+        ) &&
+        (
+          (
+            github.event_name == 'pull_request' &&
+            !github.event.pull_request.draft &&
+            contains(
+              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              github.event.pull_request.user.login
+            )
+          ) ||
+          (
+            (
+              inputs.enforce-review-gates ||
+              vars.ENFORCE_MERGE_GATES == 'true'
+            ) &&
+            (
+              (
+                github.event_name == 'pull_request_review' &&
+                github.event.action == 'dismissed' &&
+                !github.event.pull_request.draft &&
+                contains(
+                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  github.event.review.user.login
+                ) &&
+                contains(
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  github.event.pull_request.user.login
+                )
+              ) ||
+              (
+                github.event_name == 'issue_comment' &&
+                github.event.action == 'deleted' &&
+                github.event.issue.pull_request &&
+                github.event.issue.state == 'open' &&
+                contains(
+                  fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
+                  github.event.comment.user.login
+                ) &&
+                contains(
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  github.event.issue.user.login
+                )
+              )
+            )
+          )
+        )
+      ) &&
+      'state' ||
+      github.run_id
+    }}
+  cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
+
 permissions: {}
+
+env:
+  TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
+  TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","chatgpt-codex-connector[bot]","devantler"]'
+  TRUSTED_REVIEW_ACTORS: '["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 
 jobs:
   # Required-workflow rules treat a workflow whose only job is SKIPPED as
@@ -52,8 +173,11 @@ jobs:
   eligibility:
     permissions: {}
     runs-on: ubuntu-latest
+    env:
+      ACTOR_TRUST_ENFORCED: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
     outputs:
       eligible: ${{ steps.classify.outputs.eligible }}
+      disarm: ${{ steps.classify-disarm.outputs.disarm }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -62,43 +186,135 @@ jobs:
 
       - name: 🔎 Classify privileged auto-merge trigger
         id: classify
+        # When actor-trust enforcement is enabled, every privileged trigger
+        # and rerun initiator must be trusted. This prevents an untrusted actor
+        # from reaching the App-token job by rerunning a trusted lifecycle,
+        # review, or comment event; `devantler` is the explicit maintainer
+        # reauthorization path.
         if: >-
           ${{
             (
-              github.event_name == 'pull_request' &&
-              !github.event.pull_request.draft &&
-              contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-                github.event.pull_request.user.login
+              (
+                github.event_name == 'pull_request' &&
+                !github.event.pull_request.draft &&
+                contains(
+                  fromJSON(env.TRUSTED_BOT_AUTHORS),
+                  github.event.pull_request.user.login
+                )
+              ) ||
+              (
+                github.event_name == 'pull_request_review' &&
+                contains(
+                  fromJSON(env.TRUSTED_REVIEW_ACTORS),
+                  github.event.review.user.login
+                ) &&
+                !github.event.pull_request.draft &&
+                contains(
+                  fromJSON(env.TRUSTED_BOT_AUTHORS),
+                  github.event.pull_request.user.login
+                )
+              ) ||
+              (
+                github.event_name == 'issue_comment' &&
+                github.event.issue.pull_request &&
+                github.event.issue.state == 'open' &&
+                contains(
+                  fromJSON(env.TRUSTED_REVIEW_ACTORS),
+                  github.event.comment.user.login
+                ) &&
+                contains(
+                  fromJSON(env.TRUSTED_BOT_AUTHORS),
+                  github.event.issue.user.login
+                )
               )
-            ) ||
+            ) &&
             (
-              github.event_name == 'pull_request_review' &&
-              contains(
-                fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
-                github.event.review.user.login
-              ) &&
-              !github.event.pull_request.draft &&
-              contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-                github.event.pull_request.user.login
-              )
-            ) ||
-            (
-              github.event_name == 'issue_comment' &&
-              github.event.issue.pull_request &&
-              github.event.issue.state == 'open' &&
-              contains(
-                fromJSON('["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'),
-                github.event.comment.user.login
-              ) &&
-              contains(
-                fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
-                github.event.issue.user.login
+              env.ACTOR_TRUST_ENFORCED != 'true' ||
+              (
+                contains(
+                  fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                  github.actor
+                ) &&
+                contains(
+                  fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                  github.triggering_actor
+                )
               )
             )
           }}
         run: echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: 🔒 Classify rejected state-removal trigger for disarm
+        id: classify-disarm
+        if: >-
+          ${{
+            env.ACTOR_TRUST_ENFORCED == 'true' &&
+            (
+              (
+                github.event_name == 'pull_request' &&
+                !github.event.pull_request.draft &&
+                contains(
+                  fromJSON(env.TRUSTED_BOT_AUTHORS),
+                  github.event.pull_request.user.login
+                )
+              ) ||
+              (
+                (inputs.enforce-review-gates ||
+                 vars.ENFORCE_MERGE_GATES == 'true') &&
+                (
+                  (
+                    github.event_name == 'pull_request_review' &&
+                    github.event.action == 'dismissed' &&
+                    contains(
+                      fromJSON(env.TRUSTED_REVIEW_ACTORS),
+                      github.event.review.user.login
+                    ) &&
+                    !github.event.pull_request.draft &&
+                    contains(
+                      fromJSON(env.TRUSTED_BOT_AUTHORS),
+                      github.event.pull_request.user.login
+                    )
+                  ) ||
+                  (
+                    github.event_name == 'issue_comment' &&
+                    github.event.action == 'deleted' &&
+                    github.event.issue.pull_request &&
+                    github.event.issue.state == 'open' &&
+                    contains(
+                      fromJSON(env.TRUSTED_REVIEW_ACTORS),
+                      github.event.comment.user.login
+                    ) &&
+                    contains(
+                      fromJSON(env.TRUSTED_BOT_AUTHORS),
+                      github.event.issue.user.login
+                    )
+                  )
+                )
+              )
+            ) &&
+            (
+              !contains(
+                fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                github.actor
+              ) ||
+              !contains(
+                fromJSON(env.TRUSTED_TRIGGER_ACTORS),
+                github.triggering_actor
+              )
+            )
+          }}
+        run: echo "disarm=true" >> "$GITHUB_OUTPUT"
+
+      - name: ℹ️ Identify legacy actor-trust compatibility lane
+        id: legacy-concurrency-key
+        if: >-
+          ${{
+            env.ACTOR_TRUST_ENFORCED == 'true' &&
+            job.workflow_ref != github.workflow_ref &&
+            inputs.concurrency-key == ''
+          }}
+        run: |
+          echo "::notice::This actor-enforced reusable call omitted concurrency-key and is using the safe repository-wide compatibility lane. Add a stable caller-unique key to isolate independent call sites."
 
       - name: ✅ Complete ineligible required-workflow run
         id: ineligible
@@ -107,9 +323,73 @@ jobs:
           echo "::notice::This event is not eligible for privileged bot auto-merge;
           completing the required workflow as a safe no-op."
 
+  # A trusted-bot PR may already be armed when an untrusted actor changes its
+  # lifecycle state or removes trusted review evidence. Revoke that stale state
+  # with the event's GITHUB_TOKEN in a separate least-privilege job: rejected
+  # events never receive the App private key. Workflow-level concurrency makes
+  # a rejected lifecycle/evidence-removal run cancel older arming before it
+  # revokes; a later trusted maintainer event is explicit reauthorization.
+  disarm-untrusted-update:
+    needs: eligibility
+    if: needs.eligibility.outputs.disarm == 'true'
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    # All arming/disarming mutations share one caller/PR lane. A stale rejected
+    # event therefore checks the current authorization timestamp without racing
+    # a newer arming; it either runs first and is followed by reauthorization,
+    # is replaced while pending, or observes and preserves the newer state.
+    concurrency:
+      group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Checkout trusted disarm script
+        # A direct self-repo pull_request run uses the PR base SHA because
+        # job.workflow_sha can include the rejected head. Every other event
+        # shape, including direct issue_comment deletion, uses the called
+        # workflow's immutable job.workflow_sha rather than a mutable branch.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ github.event.repository.full_name == job.workflow_repository && github.event.pull_request.base.sha || job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
+      - name: 🔒 Disarm auto-merge after rejected event
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          attempt_started_at=
+          if ! attempt_started_at=$(gh api \
+            "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT" \
+            --jq .run_started_at); then
+            echo "::warning::Unable to resolve rejected-event attempt start time; revoking fail-closed."
+          fi
+          bash .devantler-tech-actions/.scripts/disarm-auto-merge.sh \
+            "$REPOSITORY" "$PR_NUMBER" "$attempt_started_at"
+
   auto-merge:
     needs: eligibility
-    if: needs.eligibility.outputs.eligible == 'true'
+    # Default-off review/comment events are deliberate no-ops. Skipping this
+    # job keeps them outside the single-pending mutation lane, where they could
+    # otherwise replace a queued rejected-event revocation.
+    if: >-
+      needs.eligibility.outputs.eligible == 'true' &&
+      (github.event_name == 'pull_request' ||
+       inputs.enforce-review-gates ||
+       vars.ENFORCE_MERGE_GATES == 'true')
     # Legacy documented minimum ONLY — a called workflow's GITHUB_TOKEN
     # permissions must be a subset of what every caller grants (they can only
     # be downgraded, never elevated), so adding scopes here would fail
@@ -119,12 +399,11 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
-    # Serialize runs per PR so an older green gate run cannot interleave with
-    # a newer run that saw the gate turn red (the newer run's disarm always
-    # executes after the older run finishes). Enforced runs never auto-arm;
-    # their final step revokes any stale legacy arming before handing off.
+    # Every mutation shares the disarm job's caller/PR lane. Review/comment
+    # runs re-evaluate complete live state; pull-request runs also retain the
+    # earlier workflow-level state lease and durable lifecycle bindings.
     concurrency:
-      group: enable-auto-merge-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
 
@@ -181,7 +460,7 @@ jobs:
       # a PR-controlled ref. Same idiom as the repo's other same-commit
       # self-checkouts (dependency-review.yaml).
       - name: 📥 Checkout devantler-tech/actions (this workflow's commit)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -197,12 +476,77 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-base.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
+          ENFORCE_ACTOR_TRUST: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'true' || 'false' }}
         run: |
+          set -euo pipefail
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          eligible=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json isDraft,state \
-            --jq 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end')
+          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid,isDraft,state)
+          HEAD_SHA=$(jq -r .headRefOid <<<"$pr_json")
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          eligible=$(jq -r 'if (.isDraft | not) and .state == "OPEN" then "true" else "false" end' <<<"$pr_json")
+          superseded=false
+
+          # Concurrency cancels active/queued older runs, while GitHub does not
+          # promise start order across the group. Keep durable live bindings
+          # for both changed heads and same-head lifecycle events without
+          # treating unrelated title/label edits as supersession.
+          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$HEAD_SHA" != "$EVENT_HEAD" ]]; then
+            eligible=false
+            superseded=true
+            echo "::notice::PR #${PR_NUMBER} head changed after this event (${EVENT_HEAD} -> ${HEAD_SHA}); the newer event's run decides."
+          fi
+
+          if [[ "$ENFORCE_ACTOR_TRUST" == "true" && "$EVENT_NAME" == "pull_request" && "$superseded" != "true" ]]; then
+            OWNER="${REPOSITORY%%/*}"
+            NAME="${REPOSITORY#*/}"
+            lifecycle_file="$RUNNER_TEMP/pull-request-lifecycle-${GITHUB_RUN_ID}.json"
+            # shellcheck disable=SC2016 # GraphQL $variables, not shell expansion.
+            gh api graphql --paginate \
+              -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
+                repository(owner:$owner,name:$name){pullRequest(number:$number){
+                  timelineItems(first:100,after:$endCursor,itemTypes:[REOPENED_EVENT,READY_FOR_REVIEW_EVENT,HEAD_REF_FORCE_PUSHED_EVENT]){
+                    nodes{
+                      __typename
+                      ... on ReopenedEvent{createdAt}
+                      ... on ReadyForReviewEvent{createdAt}
+                      ... on HeadRefForcePushedEvent{createdAt beforeCommit{oid} afterCommit{oid}}
+                    }
+                    pageInfo{hasNextPage endCursor}
+                  }
+                }}
+              }' \
+              -f owner="$OWNER" -f name="$NAME" -F number="$PR_NUMBER" |
+              jq -s '[.[].data.repository.pullRequest.timelineItems.nodes[]? | {
+                type: .__typename,
+                createdAt: .createdAt,
+                before: (.beforeCommit.oid // null),
+                after: (.afterCommit.oid // null)
+              }]' > "$lifecycle_file"
+
+            if bash .devantler-tech-actions/.scripts/is-current-pull-request-lifecycle.sh \
+              "$EVENT_ACTION" "$EVENT_UPDATED_AT" "$EVENT_BEFORE" "$EVENT_HEAD" \
+              < "$lifecycle_file"; then
+              :
+            else
+              lifecycle_status=$?
+              if [[ "$lifecycle_status" -eq 1 ]]; then
+                eligible=false
+                superseded=true
+                echo "::notice::A later same-head pull-request lifecycle event exists; that event's run decides."
+              else
+                echo "::error::Unable to prove pull-request lifecycle order."
+                exit "$lifecycle_status"
+              fi
+            fi
+          fi
+
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          if [[ "$eligible" != "true" ]]; then
+          if [[ "$eligible" != "true" && "$superseded" != "true" ]]; then
             echo "::notice::PR #${PR_NUMBER} is draft or not open; skipping the auto-merge gate."
           fi
 
@@ -265,9 +609,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ENFORCE: ${{ (inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && 'true' || 'false' }}
           EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           set -euo pipefail
-          HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json headRefOid --jq .headRefOid)
 
           # The proven head is exported so approval is bound to the reviewed
           # commit and the legacy default-off arming path cannot ride a push.

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)../restore-config/NuGet.Config</RestoreConfigFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Fixture.Dependency" Version="1.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <Target Name="VerifySelectedRestoreConfigHasGitHubSource" BeforeTargets="Restore">
+    <XmlPeek
+      XmlInputPath="$(RestoreConfigFile)"
+      Query="/configuration/packageSources/add[@key='github']/@value">
+      <Output TaskParameter="Result" PropertyName="FixtureGitHubSource" />
+    </XmlPeek>
+    <Error
+      Condition="'$(FixtureGitHubSource)' != 'https://nuget.pkg.github.com/devantler-tech/index.json'"
+      Text="The explicitly selected RestoreConfigFile did not receive the temporary GitHub Packages source." />
+  </Target>
+</Project>

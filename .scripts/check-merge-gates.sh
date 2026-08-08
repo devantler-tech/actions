@@ -90,12 +90,14 @@ fi
 # a verdict, so a COMMENTED review at the head that lands after the latest
 # verdict (or with no verdict at all) must block a green outcome — it
 # supersedes an earlier approval AND pre-empts the Codex fallback below. Only
-# a body that explicitly proves clean ("Actionable comments posted: 0")
-# preserves the state; a blank or unparseable body counts as findings
+# a body whose authoritative first line explicitly proves clean
+# ("**Actionable comments posted: 0**") preserves the state; a blank or
+# unparseable body counts as findings. Quoted PR content later in the body is
+# untrusted and must not be able to spoof that counter.
 # (fail-closed — a bodyless COMMENTED review can still carry inline review
 # comments). GraphQL lastEditedAt makes an edited older review supersede a
-# later-submitted approval durably. The EXISTENCE marker line distinguishes
-# "no such review" from "review with an empty body".
+# later-submitted approval durably. The probe states distinguish "no such
+# review" from "review with an empty body".
 cr_commented_probe="$(jq -r --arg sha "$head_sha" '
   def effective_at:
     [.submitted_at, .last_edited_at] | map(select(. != null)) | max // "";
@@ -111,10 +113,13 @@ cr_commented_probe="$(jq -r --arg sha "$head_sha" '
      | select(.state == "COMMENTED")
      | select(effective_at >= $verdict_at)]
   | sort_by(effective_at) | last
-  | if . == null then "absent" else "present\n" + (.body // "") end' "$reviews_json")"
+  | if . == null then "absent"
+    elif ((.body // "") | split("\n")[0]) == "**Actionable comments posted: 0**"
+      then "clean"
+    else "findings"
+    end' "$reviews_json")"
 
-if [[ "$cr_commented_probe" == present* &&
-  "$cr_commented_probe" != *"Actionable comments posted: 0"* ]]; then
+if [[ "$cr_commented_probe" == "findings" ]]; then
   review_state="needs-fix"
 fi
 

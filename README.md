@@ -58,7 +58,7 @@ flowchart TD
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
 | [run-dotnet-tests](run-dotnet-tests/README.md) | Test .NET solution or project with coverage |
 | [setup-agent-skills](setup-agent-skills/README.md) | Install agent skills via `gh skill` from a newline list of `<owner/repo> <skill>[@pin]` entries, for one or more agents (e.g. Copilot, Claude Code) |
-| [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with optional private module support |
+| [setup-go-toolchain](setup-go-toolchain/README.md) | Setup Go with private module discovery |
 | [setup-ksail-cli](setup-ksail-cli/README.md) | Install KSail CLI via Homebrew |
 | [update-agent-skills](update-agent-skills/README.md) | Run `gh skill update --all` against installed skills and report changes |
 | [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |
@@ -225,6 +225,31 @@ click.
 **By default** it behaves as it always has: it approves the PR and arms auto-merge, bound to the
 commit it checked.
 
+**With actor-trust enforcement turned on** — the `enforce-actor-trust` input, or the
+`ENFORCE_ACTOR_TRUST` repository/organization variable — every privileged pull-request, review,
+or comment trigger on an allowlisted bot-authored PR must come from an allowlisted bot or the
+explicit `devantler` maintainer actor. Workflow reruns also require the initiating
+`github.triggering_actor` to be allowlisted; a trusted original event cannot be replayed by an
+untrusted collaborator. A rejected pull-request lifecycle trigger—or, when review gates are also
+enforced, an untrusted dismissal/deletion of trusted review evidence—receives no App token and
+actively revokes both classic auto-merge and merge-queue state with the caller's `GITHUB_TOKEN`.
+These state-removal runs arbitrate within each caller workflow at run creation, so they cancel an
+older privileged run before its jobs can mutate the PR without cancelling another caller's run.
+This caller-keyed state lease is acquired only when the reusable auto-merge lane actually executes,
+so unrelated or conditionally skipped runs of the surrounding caller workflow cannot suppress
+arming. Same-second lifecycle events share the lease, while unrelated title, label, or assignment
+edits create no replacement run. Before mutation, a live reopen/ready-for-review/force-push timeline
+binding rejects later events (including a head that moves away and returns) and treats any equal-time
+sequence it cannot uniquely identify as superseded. Arming and revocation share one mutation lane;
+a delayed rejected event preserves only auto-merge state whose authorization time is provably newer
+than that rejected run attempt. Default-off review/comment no-ops skip the mutation lane entirely, so
+they cannot replace a queued revocation.
+Every `workflow_call` invocation that enables actor trust should provide a globally caller-unique,
+ref-independent `concurrency-key`. Existing opted-in callers that omit it retain compatibility in a
+safe repository-wide actor-trust lane; explicit keys isolate independent callers from one another.
+The direct and cross-repository required-workflow paths have a built-in stable source identity.
+Legacy default-off callers retain their existing behavior.
+
 **With review enforcement turned on** — the `enforce-review-gates` input, or the
 `ENFORCE_MERGE_GATES` repository/organization variable — it additionally requires, on the PR's
 _current_ commit, both a passing review (CodeRabbit approved, or a clean Codex pass when CodeRabbit
@@ -262,27 +287,89 @@ jobs:
   auto-merge:
     uses: devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@{ref} # ref
     permissions:
+      actions: read
       pull-requests: write
       contents: write
     with:
+      enforce-actor-trust: false # default; enable after validating trusted trigger actors
       enforce-review-gates: false # default; flip after the repo's review lanes are validated
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-> **Note:** The caller grants only the legacy minimum above, with or without
-> enforcement — the enforced gate's read-only lookups run on a separate App
-> token minted only on enforced runs, so opting in requires the GitHub App
-> installation (not the caller's `GITHUB_TOKEN`) to include **Checks: read**,
-> **Actions: read**, and **Contents: read**. If the installation lacks them,
-> the gate fails closed (approval is withheld and stale arming is revoked) rather than open.
+> **Actor-trust note:** Callers that enable actor trust must grant `actions: read`,
+> `contents: write`, and `pull-requests: write` as shown above and should pass a stable,
+> globally caller-unique `concurrency-key`. An omitted key uses a safe repository-wide
+> compatibility lane, which can
+> cancel independent actor-trust call sites for the same PR but cannot let stale authority proceed;
+> explicit keys avoid that availability tradeoff. Workflow-level arbitration orders lifecycle state
+> only for the reusable lane that actually executes; skipped or unrelated caller runs do not
+> reauthorize or supersede it.
+> Both the original and rerun-triggering actors must be trusted for every privileged event. The
+> read scope binds stale-revocation decisions to the rejected run attempt's durable start time; the
+> write scopes revoke classic auto-merge or merge-queue state. Rejected events never receive the
+> App private key. Missing lookup or revoke authority fails the required workflow closed.
+>
+> **Note:** The caller grants the documented minimum above with or without enforcement.
+> Actor trust uses its caller `Actions: read` scope only to bind stale revocation to the
+> rejected run attempt's start time. Review enforcement uses a separate App token and additionally
+> requires the GitHub App installation to grant **Actions: read**, **Checks: read**, and
+> **Contents: read**. If a required scope is missing, the workflow fails closed rather than
+> approving or arming on unproven evidence.
 
 #### Secrets and Inputs
 
-| Key                    | Type   | Default | Required | Description                                                           |
-|------------------------|--------|---------|----------|-----------------------------------------------------------------------|
-| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                |
-| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad |
+| Key                    | Type   | Default | Required | Description                                                               |
+|------------------------|--------|---------|----------|---------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                    |
+| `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation            |
+| `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad     |
+| `concurrency-key`      | Input  | `""`    | No       | Recommended with actor trust; omitted calls share a safe fallback lane    |
+
+</details>
+
+### 🧹 Lint
+
+<details>
+<summary>Click to expand</summary>
+
+[.github/workflows/lint.yaml](.github/workflows/lint.yaml) lints a whole repository with [MegaLinter](https://megalinter.io) (Go flavor), auto-fixing what it can and committing the result back to the pull request.
+
+**Which one do I want?** If your repository *is* a Go module, use [✅ Validate Go Project](#-validate-go-project) — it already runs MegaLinter as one stage of a full Go pipeline. Reach for this workflow when Go is only part of a larger tree (a game client plus a Go server, for example): it lints everything and leaves the Go build and tests to your own job.
+
+The Go flavor covers Go, JSON, Markdown, YAML, shell, GitHub Actions, Dockerfile, Kubernetes, spelling, secrets and copy-paste. It has no GDScript, Python or Terraform linters — see [MegaLinter's flavor list](https://megalinter.io/latest/flavors/) if you need those.
+
+Configure the linters themselves in a `.mega-linter.yml` at your repository root, as usual.
+
+MegaLinter always runs read-only, without a GitHub token or persisted checkout credentials. When auto-fixing is enabled, the lint job exports a patch and a separate job on a fresh runner mints the write-scoped App token, applies that patch, and commits it. This isolation prevents pull-request-controlled MegaLinter configuration from accessing repository write credentials.
+
+**Fork pull requests lint read-only, automatically.** GitHub withholds secrets from forks, so fixes could never be committed back; auto-fixing there would only produce a failure an outside contributor cannot resolve. Real lint errors still fail on forks — only the auto-fix half is skipped.
+
+#### Usage
+
+```yaml
+jobs:
+  lint:
+    uses: devantler-tech/actions/.github/workflows/lint.yaml@{ref} # ref
+    permissions:
+      contents: read
+    with:
+      apply-fixes: false
+```
+
+To enable pull-request auto-fixes, set `apply-fixes: true` and pass
+`APP_PRIVATE_KEY`. MegaLinter still runs without that secret; only the separate
+patch-application job can access it.
+
+#### Secrets and Inputs
+
+| Key                 | Type            | Default | Required | Description                                                                                                          |
+|---------------------|-----------------|---------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `APP_PRIVATE_KEY`   | Secret          | -       | No       | GitHub App private key. Needed only to commit auto-fixes; without it a fixable finding fails the build instead        |
+| `working-directory` | Input           | `""`    | No       | Directory to lint. Empty lints the whole repository                                                                   |
+| `go-version-file`   | Input           | `""`    | No       | Path to a `go.mod`. When set, Go is installed first so the Go linters use the module's toolchain, not the container's |
+| `apply-fixes`       | Input (boolean) | `true`  | No       | Auto-fix and commit back to the pull request. Set `false` for a read-only gate                                        |
+| `pr-owner`          | Input           | `""`    | No       | Pull request author login. Auto-fix commits are suppressed for dependency-bot pull requests                           |
 
 </details>
 
@@ -321,6 +408,7 @@ jobs:
 |---------------|----------------|------------|----------|----------------------------------------------------------------------------|
 | `app-name`    | Input (string) | -          | Yes      | Container name in the deployment manifest to pin to the built image digest |
 | `deploy-path` | Input (string) | `./deploy` | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact    |
+| `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
 
@@ -361,6 +449,7 @@ jobs:
 |---------------|----------------|----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `oci-name`    | Input (string) | `${{ github.repository }}` | No       | OCI repository name (`<owner>/<name>`) the artifact is published under, without the registry prefix or trailing `/manifests`. Override for invalid OCI path components |
 | `deploy-path` | Input (string) | `./deploy`           | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact                                                              |
+| `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
 
@@ -395,7 +484,7 @@ jobs:
 <details>
 <summary>Click to expand</summary>
 
-[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. Coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
+[.github/workflows/run-dotnet-tests.yaml](.github/workflows/run-dotnet-tests.yaml) is a workflow used to test .NET solutions or projects across multiple operating systems. On authenticated runs, coverage is merged into a single Cobertura report and uploaded to **GitHub Code Quality** (native PR coverage).
 
 #### Usage
 
@@ -409,11 +498,21 @@ jobs:
       code-quality: write # required for GitHub Code Quality coverage upload
 ```
 
-> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
+> **Note:** The calling workflow must grant `code-quality: write` (otherwise the run fails at startup). Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_) and is skipped on credential-free pull-request runs.
 
 #### Secrets and Inputs
 
-This workflow needs no caller-provided secrets or inputs — it authenticates to the GHCR NuGet feed with the automatic `GITHUB_TOKEN` (requires the `packages: read` permission shown above).
+| Key                        | Type            | Default | Required | Description                                                                 |
+|----------------------------|-----------------|---------|----------|-----------------------------------------------------------------------------|
+| `enable-github-packages`   | Input (boolean) | `false` | No       | Use `GITHUB_TOKEN` for private packages and Code Quality on trusted same-repository non-bot pull-request code |
+| `working-directory`        | Input (string)  | `""`    | No       | Directory containing the .NET solution or project                           |
+
+Pull-request runs are credential-free by default. A trusted same-repository human-authored
+pull request that needs private GitHub Packages can set `enable-github-packages: true`.
+The workflow ignores that input for fork and bot pull requests, so their code cannot opt
+itself back into the token-bearing path. Merge-group and direct non-pull-request runs
+authenticate with the automatic `GITHUB_TOKEN` when the calling job grants `packages: read`.
+The same explicit token boundary keeps the Code Quality uploader out of credential-free runs.
 
 </details>
 
@@ -521,12 +620,33 @@ jobs:
   template-sync:
     uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
     with:
-      source-repo-path: devantler-tech/gitops-tenant-template
+      source-repo-path: devantler-tech/platform-tenant-template
+```
+
+By default the sync PR is opened with `GITHUB_TOKEN`, so GitHub does not trigger
+`on: pull_request` or `on: push` workflows for the resulting branch or PR. This
+prevents content copied from a compromised or malicious template from reaching a
+caller's CI trust boundary before review.
+
+Set `use-app-token: true` and pass `APP_PRIVATE_KEY` only when CI must run before
+the sync PR is reviewed. This opt-in mints a write-scoped App token and permits
+workflow-file updates, but it also causes the template-controlled PR content to
+trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
+expose secrets or write-scoped tokens to jobs that check out or execute its
+content, including local actions and scripts.
+
+An opt-in caller must wire both the input and the corresponding secret:
+
+```yaml
+jobs:
+  template-sync:
+    uses: devantler-tech/actions/.github/workflows/template-sync.yaml@{ref} # ref
+    with:
+      source-repo-path: devantler-tech/platform-tenant-template
+      use-app-token: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
-
-By default the sync PR is opened with a GitHub App token (`use-app-token: true`) so it triggers the caller's CI; this needs the `APP_CLIENT_ID` variable and the `APP_PRIVATE_KEY` secret. Set `use-app-token: false` to fall back to `GITHUB_TOKEN` (the PR then will not trigger `on: pull_request` checks).
 
 #### Secrets and Inputs
 
@@ -540,7 +660,7 @@ By default the sync PR is opened with a GitHub App token (`use-app-token: true`)
 | `pr-labels`                      | Input (string)  | `dependencies,automation`                        | No       | Comma-separated labels for the sync PR                                      |
 | `pr-branch-name-prefix`          | Input (string)  | `chore/template-sync`                            | No       | Prefix for the branch the sync PR is opened from                            |
 | `template-sync-ignore-file-path` | Input (string)  | `.templatesyncignore`                            | No       | Path to the file listing consumer-owned (non-synced) files                  |
-| `use-app-token`                  | Input (boolean) | `true`                                           | No       | Open the sync PR with a GitHub App token so it triggers the caller's CI     |
+| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to an App-authored sync PR that triggers the caller's CI             |
 | `dry-run`                        | Input (boolean) | `false`                                          | No       | Skip the sync and PR creation (validate workflow interface only)            |
 
 > **Note:** The calling workflow runs the sync job with `contents: write` and `pull-requests: write` (declared by the reusable workflow).
@@ -627,8 +747,11 @@ jobs:
 
 | Key               | Type           | Default | Required | Description                                                         |
 |-------------------|----------------|---------|----------|---------------------------------------------------------------------|
-| `APP_PRIVATE_KEY` | Secret         | -       | No       | GitHub App private key for authenticating the workflow              |
-| `pr-owner`        | Input (string) | -       | No       | Pull request author login (used to disable auto-commit for bot PRs) |
+| `APP_PRIVATE_KEY`     | Secret          | -       | No       | GitHub App private key for authenticating the workflow                                                                                                                                                                          |
+| `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
+| `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
+| `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
+| `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |
 
 </details>
 
