@@ -2622,6 +2622,30 @@ jobs:
       - name: 🧪 Assert govulncheck keeps a cold-cache-safe finite timeout + GOMEMLIMIT
         run: bash .github/tests/test-govulncheck-timeout.sh
 
+      - name: 🛡️ Assert the timeout floor blocks bad input
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          yq -i '.jobs.govulncheck."timeout-minutes" = 24' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 25 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The timeout guard accepted the deliberately-bad 24-minute fixture"
+            exit 1
+          fi
+          if [[ "$output" != *"timeout-minutes must be >= 25"* || "$output" != *"got 24"* ]]; then
+            echo "::error::The timeout guard rejected the fixture for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "Timeout guard correctly rejected 24 minutes with the expected finding ✅"
+
   test-govulncheck-main-coverage:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"
