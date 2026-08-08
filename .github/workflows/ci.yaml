@@ -94,28 +94,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: 🔒 Assert TODO action retries locally
+      - name: 🔒 Assert TODO action is immutable
         shell: bash
         run: |
           action_file="$GITHUB_WORKSPACE/create-issues-from-todos/action.yaml"
-          if grep -Eq '^[[:space:]]*-[[:space:]]*uses:[[:space:]]*Wandalen/wretry\.action@' "$action_file"; then
-            echo "::error::create-issues-from-todos must not depend on the external retry wrapper; it expands to an unpinned nested action ref in consumers with full-SHA policies."
+          if grep -qF "ghcr.io/alstr/todo-to-issue-action:" "$action_file"; then
+            echo "::error::create-issues-from-todos must not execute a mutable container tag."
             exit 1
           fi
-          grep -qF ".scripts/retry.sh" "$action_file" || {
-            echo "::error::create-issues-from-todos must use the bundled retry helper."
-            exit 1
-          }
-          grep -qF "retry_helper=\"\${RUNNER_TEMP}/devantler-actions-retry.sh\"" "$action_file" || {
-            echo "::error::create-issues-from-todos must preserve retry.sh outside the action checkout."
-            exit 1
-          }
-          grep -qF "retry() { bash \"\${RUNNER_TEMP}/devantler-actions-retry.sh\" \"\$@\"; }" "$action_file" || {
-            echo "::error::create-issues-from-todos must invoke the preserved retry helper."
-            exit 1
-          }
-          grep -qF "ghcr.io/alstr/todo-to-issue-action:v5.1.15" "$action_file" || {
-            echo "::error::create-issues-from-todos must keep the pinned todo-to-issue container image floor."
+          grep -qF "alstr/todo-to-issue-action@37bb7b56e58569ef273b60678048030a7f0c261a # v5.1.15" "$action_file" || {
+            echo "::error::create-issues-from-todos must keep todo-to-issue pinned to the reviewed v5.1.15 commit."
             exit 1
           }
 
