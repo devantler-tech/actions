@@ -148,5 +148,93 @@ for workflow in "${signing_workflows[@]}"; do
     fi
   done
 
+  # ---- resolve step: run the shipped decoder against a stubbed token endpoint ----
+  # The guard above is only as good as the ref it is handed, and it REJECTS an empty one — so a
+  # defect in this step does not surface as a bad pin, it fails every publish before checkout, in
+  # every consumer at once. That is invisible to CI otherwise: the guard only runs on a real
+  # publish, which the dry-run test skips. So execute the decoder here, extracted from the workflow
+  # exactly as the guard is, against a token we control.
+  resolve_script="$(yq -r \
+    '.jobs[].steps[] | select(.id == "caller") | .run' "$workflow")"
+  [[ -n "$resolve_script" ]] || fail "$workflow resolve step has an empty run: body"
+
+  # base64url, as a JWT carries it: standard base64 with +/ swapped for -_ and padding stripped.
+  b64url() { base64 | tr -d '\n' | tr '+/' '-_' | tr -d '='; }
+
+  # Runs the shipped decoder over a JWT built from $1 and echoes the ref it resolved.
+  # Returns non-zero only if the decoder itself failed.
+  run_resolve() {
+    local payload_json="$1" dir status
+    dir="$(mktemp -d)"
+    printf '{"value":"header.%s.signature"}' "$(printf '%s' "$payload_json" | b64url)" \
+      >"$dir/token.json"
+    # The decoder reaches the token endpoint through curl; stub it rather than the decoder.
+    # shellcheck disable=SC2016 # the stub must carry the literal $TOKEN_FIXTURE, not its value here.
+    printf '#!/usr/bin/env bash\ncat "$TOKEN_FIXTURE"\n' >"$dir/curl"
+    chmod +x "$dir/curl"
+    : >"$dir/github_output"
+    set +e
+    PATH="$dir:$PATH" TOKEN_FIXTURE="$dir/token.json" GITHUB_OUTPUT="$dir/github_output" \
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN="stub-token" \
+      ACTIONS_ID_TOKEN_REQUEST_URL="https://stub.invalid/token?api-version=2.0" \
+      bash -euo pipefail -c "$resolve_script" >/dev/null 2>&1
+    status=$?
+    set -e
+    sed -n 's/^ref=//p' "$dir/github_output"
+    rm -rf "$dir"
+    return "$status"
+  }
+
+  expected_ref="devantler-tech/actions/${workflow}@${sha40}"
+
+  # A JWT payload is arbitrary-length JSON, so the decoder's base64 padding arithmetic has to hold
+  # for every length class. Trailing spaces are insignificant to JSON and shift the byte length by
+  # one each, which is exactly what moves the encoding between the three padding cases.
+  for filler in "" " " "  "; do
+    payload="$(printf '{"job_workflow_ref":"%s"}%s' "$expected_ref" "$filler")"
+    encoded_len=$(( $(printf '%s' "$payload" | b64url | wc -c) ))
+    got="$(run_resolve "$payload")" ||
+      fail "$workflow resolve step exited non-zero for a valid token (payload len ${#payload})"
+    [[ "$got" == "$expected_ref" ]] ||
+      fail "$workflow resolve step decoded '$got', want '$expected_ref' (base64url len $encoded_len)"
+  done
+
+  # A real token's payload carries far more than the ref — audience, repository, run ids, timestamps
+  # — so its base64url encoding routinely contains '-' and '_'. GNU coreutils `base64 -d`, which is
+  # what the ubuntu runner ships, REJECTS those two characters as invalid input. So a decoder that
+  # dropped the alphabet translation would not return a wrong ref; it would fail the decode
+  # outright, resolve to empty, and the guard would then reject a correctly-pinned caller and fail
+  # every publish closed.
+  #
+  # ⚠️ This assertion is provable only against GNU base64. BSD/macOS `base64 -d` silently ACCEPTS
+  # the URL alphabet (measured while writing this test), so removing the translation locally is a
+  # no-op and this case cannot be RED-proved off-runner. It is kept because CI is where it bites.
+  # Note also what would NOT be a valid strengthening: requiring the special characters to land
+  # inside the ref's own encoding window is unsatisfiable, because a ref is alphanumeric plus
+  # `/.-@` and those bytes do not encode to '+' or '/'.
+  alphabet_payload=""
+  for probe in '~~~???' '???~~~' '~?~?~?'; do
+    candidate="$(printf '{"job_workflow_ref":"%s","probe":"%s"}' "$expected_ref" "$probe")"
+    encoded="$(printf '%s' "$candidate" | b64url)"
+    if [[ "$encoded" == *-* && "$encoded" == *_* ]]; then
+      alphabet_payload="$candidate"
+      break
+    fi
+  done
+  [[ -n "$alphabet_payload" ]] ||
+    fail "could not build a payload whose base64url encoding uses both '-' and '_'; the alphabet case would go untested"
+  got="$(run_resolve "$alphabet_payload")" ||
+    fail "$workflow resolve step exited non-zero on a base64url payload using '-' and '_'"
+  [[ "$got" == "$expected_ref" ]] ||
+    fail "$workflow resolve step mistranslated the base64url alphabet: got '$got', want '$expected_ref'"
+
+  # A token with no such claim must resolve to empty rather than to something the guard would
+  # accept. Empty is already in the guard's reject list above, so the two halves compose into a
+  # fail-closed path — asserted here so it stays deliberate rather than incidental.
+  got="$(run_resolve '{"aud":"sigstore"}')" ||
+    fail "$workflow resolve step exited non-zero on a token carrying no job_workflow_ref"
+  [[ -z "$got" ]] ||
+    fail "$workflow resolve step invented a ref from a claimless token: '$got'"
+
   echo "$workflow: caller pin enforced ✅"
 done
