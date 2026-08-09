@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.4](https://github.com/devantler-tech/actions/compare/v13.0.3...v13.0.4) (2026-08-09)
+
+
+### Bug Fixes
+
+* **publish:** cover the caller-pin decode on PRs and for publish-manifests ([#920](https://github.com/devantler-tech/actions/issues/920)) ([20677e3](https://github.com/devantler-tech/actions/commit/20677e38899bce1c53f209a0070cc0d35c8af357)), closes [#919](https://github.com/devantler-tech/actions/issues/919)
+
 ## [13.0.3](https://github.com/devantler-tech/actions/compare/v13.0.2...v13.0.3) (2026-08-08)
 
 
