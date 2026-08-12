@@ -1,0 +1,17 @@
+name: Deliberately unsafe scalar write-all fixture (workflow scope)
+
+on:
+  pull_request:
+  push:
+
+# At workflow scope the shorthand is inherited by every job that does not
+# override it, so no job needs a permissions block at all for the OIDC grant to
+# reach a pull_request-eligible job.
+permissions: write-all
+
+jobs:
+  inherits-the-grant:
+    if: "${{ github.event_name != 'merge_group' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Inherits write-all from the workflow"
