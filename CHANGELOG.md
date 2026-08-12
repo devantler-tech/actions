@@ -1,5 +1,17 @@
 # Changelog
 
+## [13.0.5](https://github.com/devantler-tech/actions/compare/v13.0.4...v13.0.5) (2026-08-12)
+
+
+### Bug Fixes
+
+* **ci:** stop granting id-token: write to pull_request-eligible test jobs ([#929](https://github.com/devantler-tech/actions/issues/929)) ([1879d39](https://github.com/devantler-tech/actions/commit/1879d397d0e919e299f3fbec89829edfff8dd62d))
+
+
+### Continuous Integration
+
+* stop pipefail SIGPIPE inverting two self-test assertions ([#935](https://github.com/devantler-tech/actions/issues/935)) ([6db5236](https://github.com/devantler-tech/actions/commit/6db5236af4b636601ace7da0c070cc85801e5c57))
+
 ## [13.0.4](https://github.com/devantler-tech/actions/compare/v13.0.3...v13.0.4) (2026-08-09)
 
 
