@@ -51,7 +51,8 @@ if [ "$(grep -c '^call:' "$log")" -ne 2 ]; then
   cat "$log"
   exit 1
 fi
-if ! tail -n 1 "$log" | grep -q -- '--force'; then
+last_call="$(tail -n 1 "$log")"
+if [[ $last_call != *"--force"* ]]; then
   echo "::error::expected second gh call to add --force"
   cat "$log"
   exit 1
