@@ -1,0 +1,35 @@
+name: Deliberately unsafe OIDC-grant fixture (trailing disjunction)
+
+on:
+  pull_request:
+  push:
+
+permissions: {}
+
+jobs:
+  # The offender. Its predicate OPENS with the exact push-only conjunct, so a
+  # guard classifying on the leading conjunct alone exempts it — but `&&` binds
+  # tighter than `||` in GitHub expressions, so this parses as
+  # `(github.event_name == 'push' && false) || true` and is unconditionally
+  # true. The job runs on a pull_request while looking push-only.
+  unsafe-trailing-disjunct:
+    if: "${{ github.event_name == 'push' && false || true }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "This job is deliberately eligible for pull_request"
+
+  # Positive control: a genuinely push-only job holding the same grant, whose
+  # predicate also carries a `&&`. The guard must leave this one alone, so a
+  # fixture failure cannot be explained by the guard having started rejecting
+  # every conjunctive predicate.
+  safe-push-only:
+    if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "Trusted ref, already merged"

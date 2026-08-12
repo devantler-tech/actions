@@ -1,0 +1,29 @@
+name: Deliberately unsafe scalar write-all fixture (job scope)
+
+on:
+  pull_request:
+  push:
+
+permissions: {}
+
+jobs:
+  # `write-all` is the scalar shorthand GitHub expands to write on EVERY scope,
+  # id-token included — so this job holds the OIDC grant without the string
+  # "id-token" appearing anywhere. A guard that reads only the map member sees
+  # an empty value here and waves it through.
+  unsafe-scalar-write-all:
+    if: "${{ github.event_name != 'merge_group' }}"
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - run: echo "This job is deliberately eligible for pull_request"
+
+  # Positive control: read-all grants no write on any scope, so the guard must
+  # leave it alone. Without this, a fixture failure could be explained by the
+  # guard rejecting every scalar permissions value it meets.
+  safe-scalar-read-all:
+    if: "${{ github.event_name != 'merge_group' }}"
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - run: echo "No write on any scope"
