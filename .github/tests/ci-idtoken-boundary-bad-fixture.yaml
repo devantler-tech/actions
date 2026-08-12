@@ -1,0 +1,33 @@
+name: Deliberately unsafe OIDC-grant fixture
+
+on:
+  pull_request:
+  push:
+
+permissions: {}
+
+jobs:
+  # The offender. Its predicate MENTIONS the push event, so a guard that merely
+  # searched the condition for `github.event_name == 'push'` would exempt it —
+  # but the leading `true ||` makes the arm dead and the job runs on a
+  # pull_request all the same.
+  unsafe-dead-disjunct:
+    if: "${{ true || github.event_name == 'push' }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "This job is deliberately eligible for pull_request"
+
+  # Positive control: a genuinely push-only job holding the same grant. The
+  # guard must leave this one alone, so a fixture failure cannot be explained by
+  # the guard rejecting every id-token grant it sees.
+  safe-push-only:
+    if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "Trusted ref, already merged"

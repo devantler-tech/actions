@@ -1913,6 +1913,14 @@ jobs:
         shell: bash
         run: bash .github/tests/test-ci-merge-group-isolation-blocks.sh
 
+      - name: 🔐 Check OIDC grants stay off pull_request-eligible jobs
+        shell: bash
+        run: bash .github/tests/test-ci-idtoken-boundary.sh
+
+      - name: 🔐 Check OIDC boundary guard blocks unsafe input
+        shell: bash
+        run: bash .github/tests/test-ci-idtoken-boundary-blocks.sh
+
       - name: 🔒 Check required status gate stays workspace-independent
         shell: bash
         run: bash .github/tests/test-ci-required-checks-boundary.sh
@@ -2284,10 +2292,12 @@ jobs:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Deploy GitHub Pages - Dry Run"
     uses: ./.github/workflows/deploy-github-pages.yaml
+    # No id-token: write. On a pull_request this job's workspace — including
+    # deploy-github-pages.yaml itself — is PR-controlled, so the grant would let a
+    # PR mint a real OIDC token. The dry-run reaches no job that uses one.
     permissions:
       contents: read
       pages: write
-      id-token: write
     with:
       dry-run: true
 
@@ -2305,10 +2315,11 @@ jobs:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish App - Dry Run"
     uses: ./.github/workflows/publish-app.yaml
+    # No id-token: write — see test-deploy-github-pages. The signing step lives in
+    # publish-app.yaml's publish job, which the dry-run skips.
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       app-name: app
       dry-run: true
@@ -2321,10 +2332,11 @@ jobs:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish App - Dry Run (caller-pin enabled)"
     uses: ./.github/workflows/publish-app.yaml
+    # No id-token: write — see test-deploy-github-pages. This job is a schema
+    # check; the guard it covers runs in the skipped publish job.
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       app-name: app
       dry-run: true
@@ -2408,10 +2420,11 @@ jobs:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish Manifests - Dry Run"
     uses: ./.github/workflows/publish-manifests.yaml
+    # No id-token: write — see test-deploy-github-pages. The signing step lives in
+    # publish-manifests.yaml's publish job, which the dry-run skips.
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       dry-run: true
       # Default-off half, as above: enable-caller-pin is deliberately omitted.
@@ -2420,10 +2433,11 @@ jobs:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Publish Manifests - Dry Run (caller-pin enabled)"
     uses: ./.github/workflows/publish-manifests.yaml
+    # No id-token: write — see test-deploy-github-pages. This job is a schema
+    # check; the guard it covers runs in the skipped publish job.
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       dry-run: true
       # Enabled half. publish-manifests.yaml's publish-manifests job is gated on
