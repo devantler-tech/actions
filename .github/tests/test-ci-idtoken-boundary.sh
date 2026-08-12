@@ -82,10 +82,21 @@ while IFS= read -r entry; do
   compact_condition="$(
     sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' <<<"$condition"
   )"
-  expression="${compact_condition#\$\{\{}"
+  # Only a scalar that is EXACTLY one interpolation carries the expression's
+  # boolean. `${{ <expr> }}<suffix>` is a string: on a pull_request the
+  # interpolation renders `false` and the scalar becomes `falsesuffix`, which
+  # Actions evaluates as true — so a suffixed predicate runs on every event
+  # however push-only its expression looks. The closing `}}` must therefore be
+  # the first one and must end the scalar; anything else is left unrecognised
+  # and stays pull_request-eligible.
+  body="${compact_condition#\$\{\{}"
+  expression="${body%%\}\}*}"
+  [[ "${body#"$expression"}" == '}}' ]] || expression=''
   expression="${expression#"${expression%%[![:space:]]*}"}"
-  if [[ "$expression" == "github.event_name == 'push' &&"* ||
-    "$expression" == "github.event_name == 'push' }}"* ]] &&
+  expression="${expression%"${expression##*[![:space:]]}"}"
+  if [[ -n "$expression" ]] &&
+    [[ "$expression" == "github.event_name == 'push' &&"* ||
+    "$expression" == "github.event_name == 'push'" ]] &&
     ! has_top_level_or "$expression"; then
     continue
   fi

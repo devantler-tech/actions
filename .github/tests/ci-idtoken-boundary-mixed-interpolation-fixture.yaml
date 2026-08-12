@@ -1,0 +1,35 @@
+name: Deliberately unsafe OIDC-grant fixture (mixed interpolation)
+
+on:
+  pull_request:
+  push:
+
+permissions: {}
+
+jobs:
+  # The offender. Its scalar OPENS with the exact push-only conjunct, but text
+  # follows the closing `}}`, so the value is a STRING rather than the
+  # expression's boolean: on a pull_request `${{ … }}` renders `false` and the
+  # scalar becomes `falsetrailing`, which Actions treats as true. A guard that
+  # classifies on the leading conjunct and ignores the suffix exempts a job that
+  # runs on every pull_request.
+  unsafe-mixed-interpolation:
+    if: "${{ github.event_name == 'push' && true }}trailing"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "This job is deliberately eligible for pull_request"
+
+  # Positive control: the same predicate as a plain, unsuffixed interpolation,
+  # so a fixture failure cannot be explained by the guard having started
+  # rejecting every conjunctive push-only predicate.
+  safe-push-only:
+    if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo "Trusted ref, already merged"
