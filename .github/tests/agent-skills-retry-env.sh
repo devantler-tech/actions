@@ -73,9 +73,14 @@ case "$fwd" in
   *inputs.experimental-rate-limit-retry*) : ;;
   *) echo "::error::setup-agent-skills must forward the experimental-rate-limit-retry input into INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY (got: $fwd)"; exit 1 ;;
 esac
+# Capture, then match in-shell. Under `set -o pipefail`, `<writer> | grep -q` reports
+# the pipeline as failed when grep exits at its first match before the writer has
+# finished writing: the writer takes SIGPIPE (141) and pipefail promotes that to the
+# pipeline status, so a SATISFIED assertion is recorded as a violation.
 # shellcheck disable=SC2016  # match the literal source line, not an expansion
-if ! yq -r '.runs.steps[] | select(.id=="install") | .run' "$ay" \
-  | grep -qF 'source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}"'; then
+src_needle='source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "${INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY:-false}"'
+install_run="$(yq -r '.runs.steps[] | select(.id=="install") | .run' "$ay")"
+if [[ $install_run != *"$src_needle"* ]]; then
   echo "::error::setup-agent-skills must source agent-skills-retry-env.sh with INPUT_EXPERIMENTAL_RATE_LIMIT_RETRY"
   exit 1
 fi
