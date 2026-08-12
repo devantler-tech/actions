@@ -25,6 +25,33 @@ grants_id_token() {
   return 1
 }
 
+# `&&` binds tighter than `||`, so `<push-check> && false || true` parses as
+# `(<push-check> && false) || true` — true on a pull_request however the
+# predicate opens. A leading push-only conjunct therefore proves nothing once a
+# top-level disjunction follows it, and classifying on that conjunct alone is a
+# fail-open. Only a disjunction the leading conjunct cannot bypass counts:
+# `||` inside parentheses is a sub-expression the conjunct still gates, and one
+# inside a single-quoted literal is not an operator at all. Doubled quotes are
+# GitHub's escape for a literal quote and toggle in pairs, so tracking the
+# string state alone reads them correctly.
+has_top_level_or() {
+  local expr=$1 i ch depth=0 in_str=0
+  for ((i = 0; i < ${#expr}; i++)); do
+    ch="${expr:i:1}"
+    if ((in_str)); then
+      [[ "$ch" == "'" ]] && in_str=0
+      continue
+    fi
+    case "$ch" in
+      "'") in_str=1 ;;
+      '(') ((depth++)) ;;
+      ')') ((depth > 0)) && ((depth--)) ;;
+      '|') [[ "${expr:i+1:1}" == '|' ]] && ((depth == 0)) && return 0 ;;
+    esac
+  done
+  return 1
+}
+
 # A workflow-level grant is inherited by every job that does not override it, so
 # it would defeat the per-job check below.
 root_tag="$(yq -r '.permissions | tag' "$ci")"
@@ -47,16 +74,19 @@ while IFS= read -r entry; do
   # Only a push-only job is exempt: its ref has already merged, so the workspace
   # is trusted. Classify on the LEADING top-level conjunct, matching
   # test-ci-merge-group-isolation.sh — a predicate that merely mentions the event
-  # elsewhere (`true || github.event_name == 'push'`) still runs on a pull_request.
-  # Anything unrecognised, including a job with no predicate, is treated as
-  # pull_request-eligible, so this fails closed.
+  # elsewhere (`true || github.event_name == 'push'`) still runs on a pull_request
+  # — and require that no top-level disjunction follows it, which would otherwise
+  # short-circuit past that conjunct entirely. Anything unrecognised, including a
+  # job with no predicate, is treated as pull_request-eligible, so this fails
+  # closed.
   compact_condition="$(
     sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' <<<"$condition"
   )"
   expression="${compact_condition#\$\{\{}"
   expression="${expression#"${expression%%[![:space:]]*}"}"
   if [[ "$expression" == "github.event_name == 'push' &&"* ||
-    "$expression" == "github.event_name == 'push' }}"* ]]; then
+    "$expression" == "github.event_name == 'push' }}"* ]] &&
+    ! has_top_level_or "$expression"; then
     continue
   fi
 

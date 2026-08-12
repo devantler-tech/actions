@@ -7,7 +7,9 @@
 #   2. the scalar `write-all` shorthand at JOB scope, which grants id-token
 #      without the string ever appearing;
 #   3. the same shorthand at WORKFLOW scope, inherited by a job that declares no
-#      permissions at all.
+#      permissions at all;
+#   4. a trailing top-level `||`, which short-circuits past a correct leading
+#      push-only conjunct because `&&` binds tighter than `||`.
 #
 # Each fixture also carries a job the guard must NOT flag (a genuinely push-only
 # job, or `read-all`), so a failure here can never be explained by the guard
@@ -55,6 +57,9 @@ check "$dir/ci-idtoken-boundary-writeall-job-fixture.yaml" \
 
 check "$dir/ci-idtoken-boundary-writeall-workflow-fixture.yaml" \
   "workflow-level permissions grant id-token: write"
+
+check "$dir/ci-idtoken-boundary-trailing-or-fixture.yaml" \
+  "pull_request-eligible jobs grant id-token: write to PR-editable workflows: unsafe-trailing-disjunct"
 
 if [[ "$status" -eq 0 ]]; then
   echo "PASS: OIDC boundary guard blocks every known fail-open shape"
