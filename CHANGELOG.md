@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.7](https://github.com/devantler-tech/actions/compare/v13.0.6...v13.0.7) (2026-08-14)
+
+
+### Bug Fixes
+
+* **create-issues-from-todos:** pin the scanner image to an immutable digest ([#943](https://github.com/devantler-tech/actions/issues/943)) ([74205b1](https://github.com/devantler-tech/actions/commit/74205b11d7f080937b1421b6f89a8769e2afea44)), closes [#942](https://github.com/devantler-tech/actions/issues/942)
+
 ## [13.0.6](https://github.com/devantler-tech/actions/compare/v13.0.5...v13.0.6) (2026-08-14)
 
 
