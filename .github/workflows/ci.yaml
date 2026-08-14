@@ -118,6 +118,13 @@ jobs:
             echo "::error::create-issues-from-todos must keep the pinned todo-to-issue container image floor."
             exit 1
           }
+          # The image runs with github.token and the App PROJECTS_SECRET, so a mutable
+          # tag would let an upstream retag execute unreviewed code with those
+          # credentials. Require an immutable digest (devantler-tech/actions#942).
+          grep -Eq 'TODO_TO_ISSUE_IMAGE:[[:space:]]*ghcr\.io/alstr/todo-to-issue-action:v[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$' "$action_file" || {
+            echo "::error::create-issues-from-todos must pin the todo-to-issue image to an immutable @sha256 digest, not a bare tag."
+            exit 1
+          }
 
       - name: 🧪 Run create-issues-from-todos
         uses: ./create-issues-from-todos
