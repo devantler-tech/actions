@@ -954,10 +954,20 @@ jobs:
           if [ "$1" = "skill" ]; then exit 1; fi
           exit 0
           EOF
+          # The archive is served with a MATCHING checksums entry, so the digest gate passes and the
+          # attestation gate is the one under test. Without this the substituted archive is rejected
+          # one step earlier and this case would silently stop covering attestation at all.
           cat > "$untrusted/curl" <<'EOF'
           #!/usr/bin/env bash
           while [ "$1" != "-o" ]; do shift; done
-          printf 'substituted archive' > "$2"
+          case "$2" in
+            *checksums.txt)
+              # Name the archive the script actually asked for, not a hard-coded os/arch: the
+              # checksums file lists the asset, and the script downloads it before this call.
+              a=$(ls "$(dirname "$2")" | grep -v 'checksums.txt$' | head -1)
+              printf '%s  %s\n' "$(sha256sum "$(dirname "$2")/$a" | awk '{print $1}')" "$a" > "$2" ;;
+            *) printf 'substituted archive' > "$2" ;;
+          esac
           EOF
           chmod +x "$untrusted/gh" "$untrusted/curl"
           set +e
@@ -967,6 +977,38 @@ jobs:
             echo "::error::expected substituted archive to be rejected; status=$status out=$out"; exit 1
           fi
           echo "✅ substituted-archive: rejected before extraction"
+
+          # 8b. An archive that passes attestation but does NOT match the digest the release published
+          #     for v${REQUIRED} must also be refused. This is the gate that binds the download to a
+          #     specific release: attestation alone cannot, because cli/cli attests every release from
+          #     refs/heads/trunk, so its certificate is identical across versions.
+          wrongsum=$(mktemp -d)
+          cat > "$wrongsum/gh" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 0; fi
+          if [ "$1" = "skill" ]; then exit 1; fi
+          exit 0
+          EOF
+          cat > "$wrongsum/curl" <<'EOF'
+          #!/usr/bin/env bash
+          while [ "$1" != "-o" ]; do shift; done
+          case "$2" in
+            *checksums.txt)
+              a=$(ls "$(dirname "$2")" | grep -v 'checksums.txt$' | head -1)
+              printf '%s  %s\n' \
+                "0000000000000000000000000000000000000000000000000000000000000000" "$a" > "$2" ;;
+            *) printf 'an archive from another release' > "$2" ;;
+          esac
+          EOF
+          chmod +x "$wrongsum/gh" "$wrongsum/curl"
+          set +e
+          out=$(PATH="$wrongsum:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "does not match the digest published"; then
+            echo "::error::expected digest mismatch to be rejected even with a passing attestation; status=$status out=$out"; exit 1
+          fi
+          echo "✅ digest-mismatch: rejected despite a passing attestation"
 
           # 9. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
           #    BEFORE any network download. A skill-LESS gh forces the install path;
