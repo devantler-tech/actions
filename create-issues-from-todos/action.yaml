@@ -70,7 +70,12 @@ runs:
         INPUT_ESCAPE: "true"
         INPUT_NO_STANDARD: "false"
         INPUT_INSERT_ISSUE_URLS: "false"
-        TODO_TO_ISSUE_IMAGE: ghcr.io/alstr/todo-to-issue-action:v5.1.15
+        # Pinned by DIGEST, not by tag: this image runs with `github.token` and the
+        # App `PROJECTS_SECRET`, so a retag of `:v5.1.15` upstream would otherwise
+        # execute unreviewed code with those credentials. The tag is kept in front of
+        # the digest for human-readable version context — Docker resolves the digest.
+        # When raising the floor, update BOTH halves in the same change.
+        TODO_TO_ISSUE_IMAGE: ghcr.io/alstr/todo-to-issue-action:v5.1.15@sha256:a1794cab7e7a0306d6f74dd5249734f2c0b49e47d7549c6cdca4421bced67c9d
       run: |
         retry() { bash "${RUNNER_TEMP}/devantler-actions-retry.sh" "$@"; }
 
