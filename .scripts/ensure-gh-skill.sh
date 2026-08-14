@@ -70,7 +70,42 @@ fi
 # Linux path downloads to a file rather than streaming `curl | tar` so the network
 # pull is a single retryable command.
 retry curl -fsSL -o "$tmp/$asset" "$url"
-if ! gh attestation verify "$tmp/$asset" --repo cli/cli; then
+
+# Attestation proves cli/cli's release workflow built this archive. It does NOT prove the archive is
+# the one published for v${REQUIRED}: every cli/cli release is attested from refs/heads/trunk, so the
+# certificate's source ref is identical across versions and cannot distinguish them. (Verified against
+# v2.81.0: sourceRepositoryRef is refs/heads/trunk, so pinning --source-ref refs/tags/v<version> would
+# reject every legitimate artifact.) The release's own checksums file is what binds a digest to a
+# version, so both checks are required and neither is sufficient alone.
+sums="gh_${REQUIRED}_checksums.txt"
+retry curl -fsSL -o "$tmp/$sums" "https://github.com/cli/cli/releases/download/v${REQUIRED}/${sums}"
+
+expected_digest=$(awk -v want="$asset" '$2 == want { print $1; exit }' "$tmp/$sums")
+if [ -z "$expected_digest" ]; then
+  echo "::error::$sums for v${REQUIRED} lists no entry for $asset; refusing to install it."
+  exit 1
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  actual_digest=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+  actual_digest=$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')
+else
+  echo "::error::Neither sha256sum nor shasum is available to verify $asset against $sums."
+  exit 1
+fi
+
+if [ "$actual_digest" != "$expected_digest" ]; then
+  echo "::error::$asset does not match the digest published for v${REQUIRED} (expected $expected_digest, got $actual_digest); refusing to install it."
+  exit 1
+fi
+
+# --signer-workflow narrows this from "any workflow in cli/cli" to the release workflow specifically.
+# If cli/cli ever renames that workflow this fails closed: read the new path from
+# `gh attestation verify <asset> --repo cli/cli --format json` (.buildSignerURI) and update it here.
+if ! gh attestation verify "$tmp/$asset" \
+  --repo cli/cli \
+  --signer-workflow 'cli/cli/.github/workflows/deployment.yml'; then
   echo "::error::GitHub artifact attestation verification failed for $asset; refusing to install it."
   exit 1
 fi
