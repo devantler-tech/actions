@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.6](https://github.com/devantler-tech/actions/compare/v13.0.5...v13.0.6) (2026-08-14)
+
+
+### Continuous Integration
+
+* **tests:** declare the currently-patched Go version in go-valid-fixture ([#947](https://github.com/devantler-tech/actions/issues/947)) ([e9d3fc8](https://github.com/devantler-tech/actions/commit/e9d3fc86d5b27c0082b512dd078896b0b97f2ade)), closes [#946](https://github.com/devantler-tech/actions/issues/946)
+
 ## [13.0.5](https://github.com/devantler-tech/actions/compare/v13.0.4...v13.0.5) (2026-08-12)
 
 
