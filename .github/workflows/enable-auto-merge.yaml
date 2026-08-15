@@ -112,7 +112,7 @@ concurrency:
             github.event_name == 'pull_request' &&
             !github.event.pull_request.draft &&
             contains(
-              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+              fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'),
               github.event.pull_request.user.login
             )
           ) ||
@@ -131,7 +131,7 @@ concurrency:
                   github.event.review.user.login
                 ) &&
                 contains(
-                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'),
                   github.event.pull_request.user.login
                 )
               ) ||
@@ -145,7 +145,7 @@ concurrency:
                   github.event.comment.user.login
                 ) &&
                 contains(
-                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'),
+                  fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'),
                   github.event.issue.user.login
                 )
               )
@@ -161,8 +161,8 @@ concurrency:
 permissions: {}
 
 env:
-  TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]"]'
-  TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","chatgpt-codex-connector[bot]","devantler"]'
+  TRUSTED_BOT_AUTHORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'
+  TRUSTED_TRIGGER_ACTORS: '["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]","chatgpt-codex-connector[bot]","devantler"]'
   TRUSTED_REVIEW_ACTORS: '["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'
 
 jobs:
