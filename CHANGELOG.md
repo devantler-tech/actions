@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.8](https://github.com/devantler-tech/actions/compare/v13.0.7...v13.0.8) (2026-08-15)
+
+
+### Bug Fixes
+
+* **auto-merge:** allow Cursor-authored pull requests ([#961](https://github.com/devantler-tech/actions/issues/961)) ([019300b](https://github.com/devantler-tech/actions/commit/019300b9f73d1939cd60aa9a149949be53a36e82)), closes [#960](https://github.com/devantler-tech/actions/issues/960)
+
 ## [13.0.7](https://github.com/devantler-tech/actions/compare/v13.0.6...v13.0.7) (2026-08-14)
 
 
