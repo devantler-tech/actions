@@ -77,6 +77,14 @@ retry curl -fsSL -o "$tmp/$asset" "$url"
 # v2.81.0: sourceRepositoryRef is refs/heads/trunk, so pinning --source-ref refs/tags/v<version> would
 # reject every legitimate artifact.) The release's own checksums file is what binds a digest to a
 # version, so both checks are required and neither is sufficient alone.
+#
+# Residual risk, stated honestly: the checksums file is served from the same release as the archive,
+# so it is not an independent authority. An actor able to rewrite that release's assets could pair a
+# genuinely-attested archive from a DIFFERENT version with a checksums entry naming it under this
+# version's asset name, and both gates above would pass — attestation cannot tell versions apart, and
+# the digest would match the substituted file. Closing that needs a version-to-digest pin held in
+# THIS repository (reviewed, not fetched); no independently-signed upstream manifest exists to use
+# instead. Tracked separately rather than widened into this change.
 sums="gh_${REQUIRED}_checksums.txt"
 retry curl -fsSL -o "$tmp/$sums" "https://github.com/cli/cli/releases/download/v${REQUIRED}/${sums}"
 
