@@ -78,13 +78,14 @@ retry curl -fsSL -o "$tmp/$asset" "$url"
 # reject every legitimate artifact.) The release's own checksums file is what binds a digest to a
 # version, so both checks are required and neither is sufficient alone.
 #
-# Residual risk, stated honestly: the checksums file is served from the same release as the archive,
-# so it is not an independent authority. An actor able to rewrite that release's assets could pair a
-# genuinely-attested archive from a DIFFERENT version with a checksums entry naming it under this
-# version's asset name, and both gates above would pass — attestation cannot tell versions apart, and
-# the digest would match the substituted file. Closing that needs a version-to-digest pin held in
-# THIS repository (reviewed, not fetched); no independently-signed upstream manifest exists to use
-# instead. Tracked separately rather than widened into this change.
+# The checksums file is served from the same release as the archive, so it is not an independent
+# authority: an actor able to rewrite that release's assets could pair a genuinely-attested archive
+# from a DIFFERENT version with a checksums entry naming it under this version's asset name, and both
+# gates here would pass — attestation cannot tell versions apart, and the digest would match the
+# substituted file. The post-install version assertion below is what rejects that substitution: a
+# cli/cli build reports its own version truthfully, so an older archive is caught after extraction
+# even though it clears both gates here. That leaves a same-version rewrite, which attestation
+# already covers, since a rewritten archive cannot be re-attested by cli/cli's release workflow.
 sums="gh_${REQUIRED}_checksums.txt"
 retry curl -fsSL -o "$tmp/$sums" "https://github.com/cli/cli/releases/download/v${REQUIRED}/${sums}"
 
@@ -129,6 +130,24 @@ echo "$install_dir" >> "$GITHUB_PATH"
 export PATH="$install_dir:$PATH"
 hash -r
 gh --version
+
+# Bind what was INSTALLED to what was REQUESTED. Attestation proves cli/cli built this
+# archive but cannot say which version it is (every release attests from refs/heads/trunk),
+# and the checksums file is served from the same mutable release as the archive — so a
+# genuinely-attested OLDER archive paired with a matching checksums entry passes both gates
+# above. A cli/cli build reports its own version truthfully, so asserting it here rejects
+# that substitution using only signals already verified. Same `sort -V -C` comparison as the
+# fast-return guard: success means REQUIRED <= installed.
+installed=$(gh --version | awk '/^gh version /{print $3; exit}')
+if [ -z "$installed" ]; then
+  echo "::error::Could not determine the installed gh version from 'gh --version' output."
+  exit 1
+fi
+if ! printf '%s\n%s\n' "$REQUIRED" "$installed" | sort -V -C; then
+  echo "::error::Installed gh ($installed) is older than the requested v${REQUIRED}; the downloaded archive is not the release it was published under. Refusing to use it."
+  exit 1
+fi
+
 if ! gh skill --help >/dev/null 2>&1; then
   echo "::error::Installed gh still does not expose the 'skill' command."
   exit 1

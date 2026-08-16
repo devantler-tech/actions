@@ -1015,6 +1015,61 @@ jobs:
           fi
           echo "✅ digest-mismatch: rejected despite a passing attestation"
 
+          # 8c. An archive can pass attestation AND match the published digest and still be a
+          #     DIFFERENT release: an actor rewriting the release's assets pairs a genuinely-attested
+          #     OLDER archive with a checksums entry under this version's asset name, so both gates
+          #     above are satisfied. The post-install version assertion is what rejects it, using the
+          #     installed binary's own truthful self-report. GITHUB_PATH/RUNNER_TEMP are redirected
+          #     because this case runs all the way THROUGH install, unlike 8 and 8b.
+          oldrelease=$(mktemp -d)
+          cat > "$oldrelease/gh" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 0; fi
+          if [ "$1" = "skill" ]; then exit 1; fi
+          echo "gh version 2.81.0 (2026-01-01)"
+          EOF
+          cat > "$oldrelease/curl" <<'EOF'
+          #!/usr/bin/env bash
+          while [ "$1" != "-o" ]; do shift; done
+          dest="$2"
+          case "$dest" in
+            *checksums.txt)
+              a=$(ls "$(dirname "$dest")" | grep -v 'checksums.txt$' | head -1)
+              printf '%s  %s\n' "$(sha256sum "$(dirname "$dest")/$a" | awk '{print $1}')" "$a" > "$dest" ;;
+            *)
+              d=$(mktemp -d); mkdir -p "$d/gh_999.0.0_linux_amd64/bin"
+              printf '#!/usr/bin/env bash\nif [ "$1" = "skill" ]; then exit 0; fi\necho "gh version 2.40.0 (2024-01-01)"\n' \
+                > "$d/gh_999.0.0_linux_amd64/bin/gh"
+              chmod +x "$d/gh_999.0.0_linux_amd64/bin/gh"
+              tar -czf "$dest" -C "$d" gh_999.0.0_linux_amd64 ;;
+          esac
+          EOF
+          chmod +x "$oldrelease/gh" "$oldrelease/curl"
+          set +e
+          out=$(PATH="$oldrelease:$PATH" GITHUB_PATH="$oldrelease/ghpath" RUNNER_TEMP="$oldrelease/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "is older than the requested"; then
+            echo "::error::expected a downgraded release archive to be rejected after install; status=$status out=$out"; exit 1
+          fi
+          echo "✅ downgraded-release: rejected despite passing attestation and matching digest"
+
+          # 8d. Positive control for 8c: an honest archive reporting the requested version must still
+          #     install cleanly, so the assertion above cannot be satisfied by rejecting everything.
+          okrelease=$(mktemp -d)
+          cp "$oldrelease/gh" "$okrelease/gh"
+          sed 's/2\.40\.0 (2024-01-01)/999.0.0 (2026-01-01)/' "$oldrelease/curl" > "$okrelease/curl"
+          chmod +x "$okrelease/gh" "$okrelease/curl"
+          set +e
+          out=$(PATH="$okrelease:$PATH" GITHUB_PATH="$okrelease/ghpath" RUNNER_TEMP="$okrelease/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error::expected an honest v999.0.0 archive to install cleanly; status=$status out=$out"; exit 1
+          fi
+          echo "✅ honest-release: installs cleanly (version assertion is not a blanket reject)"
+
           # 9. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
           #    BEFORE any network download. A skill-LESS gh forces the install path;
           #    uname is faked to Darwin/arm64 (valid arch → passes the arch check);
