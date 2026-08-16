@@ -123,32 +123,45 @@ if [ "$ext" = "zip" ]; then
 else
   tar -xzC "$tmp" -f "$tmp/$asset"
 fi
-install_dir="${RUNNER_TEMP:-/tmp}/${INSTALL_NAMESPACE}/bin"
-mkdir -p "$install_dir"
-install "$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh" "$install_dir/gh"
-echo "$install_dir" >> "$GITHUB_PATH"
-export PATH="$install_dir:$PATH"
-hash -r
-gh --version
+# Validate the candidate WHERE IT WAS EXTRACTED, and publish it only once every check has
+# passed. Installing first and appending to GITHUB_PATH before validating would expose a
+# rejected binary to every later step in the job: GITHUB_PATH is processed by the runner after
+# the step ends regardless of its exit status, so a `continue-on-error` caller — or any caller
+# that does not halt the job on this step — would inherit the very downgrade the checks below
+# exist to reject. Nothing reaches install_dir or PATH until the candidate is proven.
+candidate="$tmp/gh_${REQUIRED}_${os}_${arch}/bin/gh"
+if [ ! -x "$candidate" ]; then
+  echo "::error::Extracted archive does not contain an executable gh at the expected path."
+  exit 1
+fi
 
-# Bind what was INSTALLED to what was REQUESTED. Attestation proves cli/cli built this
+# Bind what was DOWNLOADED to what was REQUESTED. Attestation proves cli/cli built this
 # archive but cannot say which version it is (every release attests from refs/heads/trunk),
 # and the checksums file is served from the same mutable release as the archive — so a
 # genuinely-attested OLDER archive paired with a matching checksums entry passes both gates
 # above. A cli/cli build reports its own version truthfully, so asserting it here rejects
 # that substitution using only signals already verified. Same `sort -V -C` comparison as the
 # fast-return guard: success means REQUIRED <= installed.
-installed=$(gh --version | awk '/^gh version /{print $3; exit}')
+installed=$("$candidate" --version | awk '/^gh version /{print $3; exit}')
 if [ -z "$installed" ]; then
-  echo "::error::Could not determine the installed gh version from 'gh --version' output."
+  echo "::error::Could not determine the downloaded gh version from 'gh --version' output."
   exit 1
 fi
 if ! printf '%s\n%s\n' "$REQUIRED" "$installed" | sort -V -C; then
-  echo "::error::Installed gh ($installed) is older than the requested v${REQUIRED}; the downloaded archive is not the release it was published under. Refusing to use it."
+  echo "::error::Downloaded gh ($installed) is older than the requested v${REQUIRED}; the downloaded archive is not the release it was published under. Refusing to use it."
   exit 1
 fi
 
-if ! gh skill --help >/dev/null 2>&1; then
-  echo "::error::Installed gh still does not expose the 'skill' command."
+if ! "$candidate" skill --help >/dev/null 2>&1; then
+  echo "::error::Downloaded gh does not expose the 'skill' command."
   exit 1
 fi
+
+# Every check passed — now publish it.
+install_dir="${RUNNER_TEMP:-/tmp}/${INSTALL_NAMESPACE}/bin"
+mkdir -p "$install_dir"
+install "$candidate" "$install_dir/gh"
+echo "$install_dir" >> "$GITHUB_PATH"
+export PATH="$install_dir:$PATH"
+hash -r
+gh --version

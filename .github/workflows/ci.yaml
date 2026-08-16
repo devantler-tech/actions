@@ -951,11 +951,22 @@ jobs:
           #    verify must never reach extraction or installation. The fake curl
           #    models a substituted release asset; the trusted, preinstalled gh
           #    verifier deliberately rejects it.
+          # Every fake gh asserts the SCOPE of the attestation call, not just that one happened.
+          # Without this, dropping --repo or --signer-workflow from the installer would still let
+          # each case return its expected result, so these mocks would keep passing while the
+          # verification had silently widened to "any attestation from anyone".
+          # A violation is recorded out-of-band (a marker file) rather than via the exit status,
+          # because cases 8/8b/8c all EXPECT a non-zero script exit — an in-band failure would be
+          # indistinguishable from the rejection each case is asserting.
           untrusted=$(mktemp -d)
           cat > "$untrusted/gh" <<'EOF'
           #!/usr/bin/env bash
+          assert_scope() {
+            case " $* " in *" --repo cli/cli "*) ;; *) echo "missing --repo cli/cli" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+            case " $* " in *" --signer-workflow cli/cli/.github/workflows/deployment.yml "*) ;; *) echo "missing --signer-workflow" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+          }
           if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
-          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 1; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then assert_scope "$@"; exit 1; fi
           if [ "$1" = "skill" ]; then exit 1; fi
           exit 0
           EOF
@@ -976,12 +987,16 @@ jobs:
           EOF
           chmod +x "$untrusted/gh" "$untrusted/curl"
           set +e
-          out=$(PATH="$untrusted:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          out=$(PATH="$untrusted:$PATH" GH_MOCK_SCOPE_MARKER="$untrusted/scope" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
           set -e
           if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "attestation verification failed"; then
             echo "::error::expected substituted archive to be rejected; status=$status out=$out"; exit 1
           fi
-          echo "✅ substituted-archive: rejected before extraction"
+          if [ -s "$untrusted/scope" ]; then
+            echo "::error::attestation verify was called without its full scope: $(cat "$untrusted/scope")"; exit 1
+          fi
+          echo "✅ substituted-archive: rejected before extraction, attestation scoped"
 
           # 8b. An archive that passes attestation but does NOT match the digest the release published
           #     for v${REQUIRED} must also be refused. This is the gate that binds the download to a
@@ -990,8 +1005,12 @@ jobs:
           wrongsum=$(mktemp -d)
           cat > "$wrongsum/gh" <<'EOF'
           #!/usr/bin/env bash
+          assert_scope() {
+            case " $* " in *" --repo cli/cli "*) ;; *) echo "missing --repo cli/cli" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+            case " $* " in *" --signer-workflow cli/cli/.github/workflows/deployment.yml "*) ;; *) echo "missing --signer-workflow" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+          }
           if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
-          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 0; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then assert_scope "$@"; exit 0; fi
           if [ "$1" = "skill" ]; then exit 1; fi
           exit 0
           EOF
@@ -1008,24 +1027,33 @@ jobs:
           EOF
           chmod +x "$wrongsum/gh" "$wrongsum/curl"
           set +e
-          out=$(PATH="$wrongsum:$PATH" REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
+          out=$(PATH="$wrongsum:$PATH" GH_MOCK_SCOPE_MARKER="$wrongsum/scope" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
           set -e
           if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "does not match the digest published"; then
             echo "::error::expected digest mismatch to be rejected even with a passing attestation; status=$status out=$out"; exit 1
           fi
-          echo "✅ digest-mismatch: rejected despite a passing attestation"
+          if [ -s "$wrongsum/scope" ]; then
+            echo "::error::attestation verify was called without its full scope: $(cat "$wrongsum/scope")"; exit 1
+          fi
+          echo "✅ digest-mismatch: rejected despite a passing attestation, attestation scoped"
 
           # 8c. An archive can pass attestation AND match the published digest and still be a
           #     DIFFERENT release: an actor rewriting the release's assets pairs a genuinely-attested
           #     OLDER archive with a checksums entry under this version's asset name, so both gates
           #     above are satisfied. The post-install version assertion is what rejects it, using the
-          #     installed binary's own truthful self-report. GITHUB_PATH/RUNNER_TEMP are redirected
-          #     because this case runs all the way THROUGH install, unlike 8 and 8b.
+          #     candidate binary's own truthful self-report. GITHUB_PATH/RUNNER_TEMP are redirected
+          #     because this case runs all the way to the version assertion, unlike 8 and 8b — and
+          #     the redirect is also what lets it assert the rejected candidate is never PUBLISHED.
           oldrelease=$(mktemp -d)
           cat > "$oldrelease/gh" <<'EOF'
           #!/usr/bin/env bash
+          assert_scope() {
+            case " $* " in *" --repo cli/cli "*) ;; *) echo "missing --repo cli/cli" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+            case " $* " in *" --signer-workflow cli/cli/.github/workflows/deployment.yml "*) ;; *) echo "missing --signer-workflow" >> "${GH_MOCK_SCOPE_MARKER:-/dev/null}" ;; esac
+          }
           if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
-          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 0; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then assert_scope "$@"; exit 0; fi
           if [ "$1" = "skill" ]; then exit 1; fi
           echo "gh version 2.81.0 (2026-01-01)"
           EOF
@@ -1048,12 +1076,26 @@ jobs:
           chmod +x "$oldrelease/gh" "$oldrelease/curl"
           set +e
           out=$(PATH="$oldrelease:$PATH" GITHUB_PATH="$oldrelease/ghpath" RUNNER_TEMP="$oldrelease/rt" \
+                GH_MOCK_SCOPE_MARKER="$oldrelease/scope" \
                 REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$script" 2>&1); status=$?
           set -e
           if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "is older than the requested"; then
-            echo "::error::expected a downgraded release archive to be rejected after install; status=$status out=$out"; exit 1
+            echo "::error::expected a downgraded release archive to be rejected; status=$status out=$out"; exit 1
           fi
-          echo "✅ downgraded-release: rejected despite passing attestation and matching digest"
+          if [ -s "$oldrelease/scope" ]; then
+            echo "::error::attestation verify was called without its full scope: $(cat "$oldrelease/scope")"; exit 1
+          fi
+          # A non-zero exit is NOT enough on its own. GITHUB_PATH is processed by the runner after
+          # the step ends regardless of exit status, so a rejected binary published before the check
+          # would still reach every later step of a `continue-on-error` caller. Assert the rejected
+          # candidate was never published.
+          if [ -s "$oldrelease/ghpath" ]; then
+            echo "::error::rejected downgrade was published to GITHUB_PATH: $(cat "$oldrelease/ghpath")"; exit 1
+          fi
+          if [ -e "$oldrelease/rt/t/bin/gh" ]; then
+            echo "::error::rejected downgrade was installed to the shared bin dir"; exit 1
+          fi
+          echo "✅ downgraded-release: rejected, and never published to GITHUB_PATH"
 
           # 8d. Positive control for 8c: an honest archive reporting the requested version must still
           #     install cleanly, so the assertion above cannot be satisfied by rejecting everything.
@@ -1068,7 +1110,16 @@ jobs:
           if [ "$status" -ne 0 ]; then
             echo "::error::expected an honest v999.0.0 archive to install cleanly; status=$status out=$out"; exit 1
           fi
-          echo "✅ honest-release: installs cleanly (version assertion is not a blanket reject)"
+          # The mirror of 8c's publication check: deferring publication until after validation must
+          # still PUBLISH on the happy path. Without this, a script that simply never wrote
+          # GITHUB_PATH would satisfy 8c while breaking every consumer.
+          if [ ! -s "$okrelease/ghpath" ]; then
+            echo "::error::honest archive installed but was never published to GITHUB_PATH"; exit 1
+          fi
+          if [ ! -x "$okrelease/rt/t/bin/gh" ]; then
+            echo "::error::honest archive was never installed to the shared bin dir"; exit 1
+          fi
+          echo "✅ honest-release: installs cleanly AND is published (version assertion is not a blanket reject)"
 
           # 9. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
           #    BEFORE any network download. A skill-LESS gh forces the install path;
