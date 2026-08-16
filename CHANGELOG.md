@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.0.9](https://github.com/devantler-tech/actions/compare/v13.0.8...v13.0.9) (2026-08-16)
+
+
+### Bug Fixes
+
+* **agent-skills:** verify gh release attestations ([#678](https://github.com/devantler-tech/actions/issues/678)) ([eeb3731](https://github.com/devantler-tech/actions/commit/eeb37311d94caedb503cf75c489524e2d10960a9))
+
 ## [13.0.8](https://github.com/devantler-tech/actions/compare/v13.0.7...v13.0.8) (2026-08-15)
 
 
