@@ -3332,7 +3332,7 @@ jobs:
       - name: 🧹 Lint invalid fixture (expected to fail)
         id: ml
         continue-on-error: true
-        uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc # v9.6.0
+        uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
         env:
           DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
           REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
@@ -3389,7 +3389,7 @@ jobs:
           # Match the full `uses:` line, not the bare SHA — the SHA also appears in
           # comments, so a bare grep could false-pass if the real `uses:` changed while a
           # comment still named the old one.
-          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@ef3e84b8b836d76db562d0f3ed7da61e8fd538bc"
+          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c"
         run: |
           set -euo pipefail
           status=0
