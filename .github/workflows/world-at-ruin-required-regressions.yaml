@@ -1,0 +1,88 @@
+name: 🌌 World at Ruin trusted regressions
+
+# This is a ruleset workflow source, not a reusable workflow. World at Ruin's
+# repository ruleset pins the exact reviewed commit that contains these bytes.
+# Candidate code supplies only the product checkout; GitHub's event supplies
+# the trusted base revision that owns selection, harness, runner and aggregate.
+on:
+  pull_request:
+  merge_group:
+
+permissions: {}
+
+env:
+  GODOT_VERSION: 4.7.1
+  GODOT_SHA512: 4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9
+
+jobs:
+  eligibility:
+    name: Resolve trusted World at Ruin base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.resolve.outputs.run }}
+      trusted-sha: ${{ steps.resolve.outputs.trusted-sha }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Check out the exact ruleset workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: devantler-tech/actions
+          ref: ${{ github.workflow_sha }}
+          path: trusted-workflow-source
+          persist-credentials: false
+
+      - name: 🔒 Resolve the GitHub-supplied trusted base
+        id: resolve
+        env:
+          TARGET_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: >-
+          trusted-workflow-source/.github/scripts/resolve-world-at-ruin-regression-base.sh
+
+  trusted-client-regressions:
+    name: Trusted client regressions
+    needs: eligibility
+    if: needs.eligibility.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: 📥 Check out candidate product bytes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: 📥 Check out trusted base tests and controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ needs.eligibility.outputs.trusted-sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: 🎮 Install Godot (pinned, checksum-verified)
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          echo "${GODOT_SHA512}  godot.zip" | sha512sum -c -
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+
+      - name: 🧪 Run trusted regressions against candidate product bytes
+        run: trusted/tools/required-regression-control.sh trusted candidate
