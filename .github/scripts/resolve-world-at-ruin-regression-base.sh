@@ -11,8 +11,9 @@ source_repository="devantler-tech/actions"
 target_repository="devantler-tech/world-at-ruin"
 
 # Required-workflow source files also receive ordinary events in their own
-# repository until/if the workflow is disabled. Complete those runs without
-# evaluating this target-specific product gate. No other target may no-op.
+# repository. Keep the workflow active: this deliberate eligibility no-op
+# makes those source events safe without introducing imperative workflow state.
+# No other target may no-op.
 if [ "${TARGET_REPOSITORY}" = "${source_repository}" ]; then
 	printf '%s\n' 'run=false' >>"${GITHUB_OUTPUT}"
 	exit 0
