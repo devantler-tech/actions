@@ -107,6 +107,9 @@ else
 		"step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920" ]; then
 		fail "Harden Runner is not the first eligibility step at the reviewed pin"
 	fi
+	if [ "$(yq -r '.jobs.eligibility.timeout-minutes' "${workflow}")" != "5" ]; then
+		fail "trusted-base resolution does not fail closed within five minutes"
+	fi
 	if [ "$(yq -r '.jobs.eligibility.outputs.trusted-sha' "${workflow}")" != \
 		'${{ steps.resolve.outputs.trusted-sha }}' ]; then
 		fail "trusted base output is not owned by the source-controlled resolver"
@@ -118,18 +121,47 @@ else
 		"needs.eligibility.outputs.run == 'true'" ]; then
 		fail "regression job does not distinguish the source-repository no-op"
 	fi
-	if ! grep -qF 'repository: devantler-tech/actions' "${workflow}" || \
-		! grep -qF 'ref: ${{ github.workflow_sha }}' "${workflow}"; then
-		fail "resolver checkout is not bound to the exact ruleset workflow revision"
+	source_checkout="$(
+		yq -o=json -I=0 \
+			'.jobs.eligibility.steps[]
+			 | select(.name == "📥 Check out the exact ruleset workflow source")
+			 | .with | {"repository": .repository, "ref": .ref, "path": .path}' "${workflow}"
+	)"
+	if [ "${source_checkout}" != \
+		'{"repository":"devantler-tech/actions","ref":"${{ github.workflow_sha }}","path":"trusted-workflow-source"}' ]; then
+		fail "resolver checkout tuple is not bound to the exact ruleset workflow revision"
 	fi
-	if ! grep -qF 'ref: ${{ github.sha }}' "${workflow}"; then
-		fail "candidate checkout is not bound to the candidate event SHA"
+
+	candidate_checkout="$(
+		yq -o=json -I=0 \
+			'.jobs.trusted-client-regressions.steps[]
+			 | select(.name == "📥 Check out candidate product bytes")
+			 | .with | {"repository": .repository, "ref": .ref, "path": .path}' "${workflow}"
+	)"
+	if [ "${candidate_checkout}" != \
+		'{"repository":"${{ github.repository }}","ref":"${{ github.sha }}","path":"candidate"}' ]; then
+		fail "candidate checkout tuple is not bound to candidate event bytes"
 	fi
-	if ! grep -qF 'ref: ${{ needs.eligibility.outputs.trusted-sha }}' "${workflow}"; then
-		fail "trusted checkout is not bound to the GitHub-supplied base SHA"
+
+	trusted_checkout="$(
+		yq -o=json -I=0 \
+			'.jobs.trusted-client-regressions.steps[]
+			 | select(.name == "📥 Check out trusted base tests and controller")
+			 | .with | {"repository": .repository, "ref": .ref, "path": .path}' "${workflow}"
+	)"
+	if [ "${trusted_checkout}" != \
+		'{"repository":"${{ github.repository }}","ref":"${{ needs.eligibility.outputs.trusted-sha }}","path":"trusted"}' ]; then
+		fail "trusted checkout tuple is not bound to GitHub-supplied base bytes"
 	fi
-	if [ "$(grep -cF 'repository: ${{ github.repository }}' "${workflow}")" -ne 2 ]; then
-		fail "candidate and trusted checkouts are not both bound to the target repository"
+
+	install_step="$(
+		yq -r \
+			'.jobs.trusted-client-regressions.steps[]
+			 | select(.name == "🎮 Install Godot (pinned, checksum-verified)")
+			 | .run' "${workflow}"
+	)"
+	if ! grep -qF -- '--retry 4 --retry-delay 2 --retry-all-errors' <<<"${install_step}"; then
+		fail "Godot download does not retry bounded transient failures"
 	fi
 	if ! grep -qF 'trusted/tools/required-regression-control.sh trusted candidate' "${workflow}"; then
 		fail "trusted base controller is not the aggregate entrypoint"
