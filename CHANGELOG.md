@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.0](https://github.com/devantler-tech/actions/compare/v13.0.9...v13.1.0) (2026-08-20)
+
+
+### Features
+
+* **ci:** host World at Ruin trusted regressions ([#978](https://github.com/devantler-tech/actions/issues/978)) ([5fa359a](https://github.com/devantler-tech/actions/commit/5fa359aacfc580a3b35e346b3660f21383269d68))
+
 ## [13.0.9](https://github.com/devantler-tech/actions/compare/v13.0.8...v13.0.9) (2026-08-16)
 
 
