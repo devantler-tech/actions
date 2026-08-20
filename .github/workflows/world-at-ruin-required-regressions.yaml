@@ -1,9 +1,12 @@
 name: 🌌 World at Ruin trusted regressions
 
 # This is a ruleset workflow source, not a reusable workflow. World at Ruin's
-# repository ruleset pins the exact reviewed commit that contains these bytes.
-# Candidate code supplies only the product checkout; GitHub's event supplies
-# the trusted base revision that owns selection, harness, runner and aggregate.
+# declaratively managed organization ruleset selects this path from
+# refs/heads/main; provider-upjet-github v0.19.1 cannot express GitHub's
+# immutable workflow SHA selector. github.workflow_sha still binds each run to
+# the exact reviewed Actions revision GitHub selected. Candidate code supplies
+# only the product checkout; GitHub's event supplies the trusted base revision
+# that owns selection, harness, runner and aggregate.
 on:
   pull_request:
   merge_group:

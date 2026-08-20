@@ -79,20 +79,26 @@ them by path as shown above. The reasoning, and when it would be worth revisitin
 
 [`world-at-ruin-required-regressions.yaml`](.github/workflows/world-at-ruin-required-regressions.yaml)
 is a target-specific GitHub ruleset workflow source, not a caller-facing reusable workflow. The
-World at Ruin repository ruleset pins an exact reviewed commit from this repository. At runtime the
-workflow checks out candidate product bytes at `github.sha`, then separately checks out the target
-repository at GitHub's pull-request or merge-group base SHA. Only that trusted base snapshot supplies
-`client/tests`, `tools/required-regression-control.sh`, the test runner, and the aggregate verdict.
+World at Ruin organization ruleset is managed declaratively by `devantler-tech/.github` and selects
+this repository, path and `refs/heads/main`. provider-upjet-github v0.19.1 does not expose GitHub's
+immutable workflow SHA selector, so reviewed Actions `main` is the strongest source binding the
+deployed provider can express. `github.workflow_sha` still binds each individual run to the exact
+Actions revision GitHub selected. At runtime the workflow checks out candidate product bytes at
+`github.sha`, then separately checks out World at Ruin at GitHub's pull-request or merge-group base
+SHA. Only that trusted base snapshot supplies `client/tests`,
+`tools/required-regression-control.sh`, the test runner, and the aggregate verdict.
 
 The workflow deliberately completes as a no-op for ordinary events in this source repository and
-fails closed for every target other than `devantler-tech/world-at-ruin`. Once a reviewed source
-revision is installed in the World at Ruin ruleset, disable this workflow in `devantler-tech/actions`;
-ruleset invocations remain available while ordinary source-repository dispatch stays off.
+fails closed for every target other than `devantler-tech/world-at-ruin`. Keep the source workflow active:
+the eligibility no-op is the declarative-safe source-repository behavior, while disabling it would
+introduce unmanaged imperative state.
 
-Rotate the control boundary in this order: merge and review the source change here; update the World
-at Ruin ruleset to that exact merge SHA; verify the ruleset read-back and a live candidate-deletion
-control; then retire the prior SHA. Changes confined to World at Ruin tests or its controller need no
-source-workflow rotation because each run takes those bytes from the GitHub-supplied trusted base.
+Change the control boundary in this order: merge an exact-head-reviewed source change here, confirm a
+required-workflow run reports the merged `github.workflow_sha`, and verify live positive and negative
+World at Ruin controls. A repository/path/ref change additionally goes through a reviewed `.github`
+PR, released signed manifest bundle, reconciliation, and live ruleset read-back. Changes confined to
+World at Ruin tests or its controller need no source-workflow change because each run takes those
+bytes from the GitHub-supplied trusted base.
 
 ### 🎉 Create Release
 

@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="${repo_root}/.github/workflows/world-at-ruin-required-regressions.yaml"
 resolver="${repo_root}/.github/scripts/resolve-world-at-ruin-regression-base.sh"
+readme="${repo_root}/README.md"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 
@@ -167,6 +168,18 @@ else
 		fail "trusted base controller is not the aggregate entrypoint"
 	fi
 fi
+
+if ! grep -Fq 'refs/heads/main' "${readme}" ||
+	! grep -Fq 'provider-upjet-github v0.19.1' "${readme}" ||
+	! grep -Fq 'Keep the source workflow active' "${readme}"; then
+	fail "README does not describe the live declarative source-ref contract"
+fi
+
+for source in "${workflow}" "${resolver}" "${readme}"; do
+	if grep -Eq 'pins? (an |the )?exact reviewed commit|disable this workflow|until/if the workflow is disabled' "${source}"; then
+		fail "$(basename "${source}") still describes the abandoned exact-pin or disable rollout"
+	fi
+done
 
 if [ "${failures}" -ne 0 ]; then
 	printf 'world-at-ruin required regressions: %d failure(s)\n' "${failures}" >&2
