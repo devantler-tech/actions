@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.1](https://github.com/devantler-tech/actions/compare/v13.1.0...v13.1.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **ci:** correct World required-workflow source contract ([#985](https://github.com/devantler-tech/actions/issues/985)) ([6983337](https://github.com/devantler-tech/actions/commit/6983337981948a14420880e3d09477526799c13c))
+
 ## [13.1.0](https://github.com/devantler-tech/actions/compare/v13.0.9...v13.1.0) (2026-08-20)
 
 
