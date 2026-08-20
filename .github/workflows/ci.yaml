@@ -2111,6 +2111,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-ci-required-checks-boundary.sh
 
+      - name: 🌌 Check World at Ruin required-regression trust boundary
+        shell: bash
+        run: bash .github/tests/test-world-at-ruin-required-regressions.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |

@@ -75,6 +75,25 @@ them by path as shown above. The reasoning, and when it would be worth revisitin
 
 [Reusable workflows](https://docs.github.com/en/actions/how-tos/sharing-automations/reuse-workflows#creating-a-reusable-workflow) are designed to encapsulate common CI/CD patterns that can be shared across multiple repositories. They allow you to define a workflow once and reuse it in the job-scope of other workflows. This reduces duplication and enables building generic workflows for common tasks.
 
+### Ruleset workflow source: World at Ruin trusted regressions
+
+[`world-at-ruin-required-regressions.yaml`](.github/workflows/world-at-ruin-required-regressions.yaml)
+is a target-specific GitHub ruleset workflow source, not a caller-facing reusable workflow. The
+World at Ruin repository ruleset pins an exact reviewed commit from this repository. At runtime the
+workflow checks out candidate product bytes at `github.sha`, then separately checks out the target
+repository at GitHub's pull-request or merge-group base SHA. Only that trusted base snapshot supplies
+`client/tests`, `tools/required-regression-control.sh`, the test runner, and the aggregate verdict.
+
+The workflow deliberately completes as a no-op for ordinary events in this source repository and
+fails closed for every target other than `devantler-tech/world-at-ruin`. Once a reviewed source
+revision is installed in the World at Ruin ruleset, disable this workflow in `devantler-tech/actions`;
+ruleset invocations remain available while ordinary source-repository dispatch stays off.
+
+Rotate the control boundary in this order: merge and review the source change here; update the World
+at Ruin ruleset to that exact merge SHA; verify the ruleset read-back and a live candidate-deletion
+control; then retire the prior SHA. Changes confined to World at Ruin tests or its controller need no
+source-workflow rotation because each run takes those bytes from the GitHub-supplied trusted base.
+
 ### 🎉 Create Release
 
 <details>
