@@ -52,7 +52,7 @@ fi
 
 eligibility_first_uses="$(yq -r '.jobs.eligibility.steps[0].uses // ""' "$workflow")"
 eligibility_first_egress="$(yq -r '.jobs.eligibility.steps[0].with."egress-policy" // ""' "$workflow")"
-if [[ "$eligibility_first_uses" != "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920" ||
+if [[ "$eligibility_first_uses" != "step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c" ||
   "$eligibility_first_egress" != "audit" ]]; then
   echo "::error file=$workflow::eligibility must begin with the pinned harden-runner action in audit mode"
   status=1
