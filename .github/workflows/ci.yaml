@@ -2083,6 +2083,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-template-sync-token-routing.sh
 
+      - name: ✍️ Check Template Sync App commit signing
+        shell: bash
+        run: bash .github/tests/test-template-sync-signed-commit.sh
+
       - name: 🔀 Check Zizmor event routing
         shell: bash
         run: bash .github/tests/test-zizmor-routing.sh

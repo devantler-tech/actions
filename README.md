@@ -659,10 +659,12 @@ caller's CI trust boundary before review.
 
 Set `use-app-token: true` and pass `APP_PRIVATE_KEY` only when CI must run before
 the sync PR is reviewed. This opt-in mints a write-scoped App token and permits
-workflow-file updates, but it also causes the template-controlled PR content to
-trigger caller CI. Callers that opt in must treat the PR as untrusted: do not
-expose secrets or write-scoped tokens to jobs that check out or execute its
-content, including local actions and scripts.
+workflow-file updates. The workflow replaces the action's Git-created commit
+with an equivalent GitHub API commit made by the App and verifies its signature
+before moving the generated branch. The App-authored update also causes the
+template-controlled PR content to trigger caller CI. Callers that opt in must
+treat the PR as untrusted: do not expose secrets or write-scoped tokens to jobs
+that check out or execute its content, including local actions and scripts.
 
 An opt-in caller must wire both the input and the corresponding secret:
 
@@ -689,7 +691,7 @@ jobs:
 | `pr-labels`                      | Input (string)  | `dependencies,automation`                        | No       | Comma-separated labels for the sync PR                                      |
 | `pr-branch-name-prefix`          | Input (string)  | `chore/template-sync`                            | No       | Prefix for the branch the sync PR is opened from                            |
 | `template-sync-ignore-file-path` | Input (string)  | `.templatesyncignore`                            | No       | Path to the file listing consumer-owned (non-synced) files                  |
-| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to an App-authored sync PR that triggers the caller's CI             |
+| `use-app-token`                  | Input (boolean) | `false`                                          | No       | Opt in to a signed App-authored sync PR that triggers the caller's CI      |
 | `dry-run`                        | Input (boolean) | `false`                                          | No       | Skip the sync and PR creation (validate workflow interface only)            |
 
 > **Note:** The calling workflow runs the sync job with `contents: write` and `pull-requests: write` (declared by the reusable workflow).
