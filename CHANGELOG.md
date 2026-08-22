@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.2](https://github.com/devantler-tech/actions/compare/v13.1.1...v13.1.2) (2026-08-22)
+
+
+### Bug Fixes
+
+* **template-sync:** sign GitHub App commits ([#998](https://github.com/devantler-tech/actions/issues/998)) ([1447d09](https://github.com/devantler-tech/actions/commit/1447d09017bfb02dced3e2afa1222b913daec113))
+
 ## [13.1.1](https://github.com/devantler-tech/actions/compare/v13.1.0...v13.1.1) (2026-08-20)
 
 
