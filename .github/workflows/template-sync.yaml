@@ -146,3 +146,30 @@ jobs:
           pr_labels: ${{ inputs.pr-labels }}
           pr_branch_name_prefix: ${{ inputs.pr-branch-name-prefix }}
           template_sync_ignore_file_path: ${{ inputs.template-sync-ignore-file-path }}
+
+      - name: 📑 Checkout shared signing helper
+        if: ${{ inputs.use-app-token }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
+      - name: ✍️ Replace sync commit with a verified App commit
+        if: ${{ inputs.use-app-token }}
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.sha }}
+          BRANCH_PREFIX: ${{ inputs.pr-branch-name-prefix }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          result="$(bash .devantler-tech-actions/.github/scripts/replace-template-sync-commit.sh \
+            --base-sha "$BASE_SHA" \
+            --branch-prefix "$BRANCH_PREFIX")"
+          echo "Template-sync signing result: $result"
+
+      - name: 🧹 Remove shared signing helper
+        if: ${{ always() && inputs.use-app-token }}
+        shell: bash
+        run: rm -rf -- .devantler-tech-actions
