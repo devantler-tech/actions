@@ -49,40 +49,12 @@
     "eligible": true
   },
   {
-    "name": "maintainer marks Cursor Automation PR ready",
+    "name": "Cursor Automation is not a trusted author",
     "event_name": "pull_request",
     "action": "ready_for_review",
     "draft": false,
     "login": "cursor[bot]",
     "actor": "devantler",
-    "eligible": true
-  },
-  {
-    "name": "Cursor Automation updates its PR",
-    "event_name": "pull_request",
-    "action": "synchronize",
-    "draft": false,
-    "login": "cursor[bot]",
-    "actor": "cursor[bot]",
-    "triggering_actor": "cursor[bot]",
-    "eligible": true
-  },
-  {
-    "name": "Cursor lookalike",
-    "event_name": "pull_request",
-    "draft": false,
-    "login": "cursor-automation[bot]",
-    "actor": "devantler",
-    "eligible": false
-  },
-  {
-    "name": "Cursor Bugbot review is not trusted review evidence",
-    "event_name": "pull_request_review",
-    "draft": false,
-    "login": "cursor[bot]",
-    "reviewer": "cursor[bot]",
-    "actor": "cursor[bot]",
-    "triggering_actor": "cursor[bot]",
     "eligible": false
   },
   {
