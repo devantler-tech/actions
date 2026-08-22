@@ -247,10 +247,6 @@ jobs:
 requests opened by an allowlist of trusted single-author bots, so routine bot PRs do not need a human
 click.
 
-Cursor Automation PRs are eligible by the exact `cursor[bot]` author identity (`app/cursor` in the
-GitHub UI). This author check reads the pull request author; a `cursor[bot]` Bugbot comment or review
-does not count as trusted review evidence.
-
 **By default** it behaves as it always has: it approves the PR and arms auto-merge, bound to the
 commit it checked.
 
