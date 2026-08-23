@@ -28,8 +28,11 @@ run_block="$(yq -r "[${job}.steps[].run // \"\"] | join(\"\n\")" "$lint_workflow
 [[ -n "$run_block" ]] ||
   fail "apply-fixes has no run steps at all; this guard is not reading the job it thinks it is"
 
-# 1. The commit is created through the commit API, not by the git CLI.
-grep -q 'createCommitOnBranch' <<<"$run_block" ||
+# 1. The commit is created through the commit API, not by the git CLI. Matched on the
+#    mutation call itself, not the bare name: the run block also carries diagnostics like
+#    `::error::createCommitOnBranch failed`, so a bare-name match would still pass if the
+#    mutation were removed and only its error handling left behind.
+grep -q 'createCommitOnBranch(input:' <<<"$run_block" ||
   fail "apply-fixes must create its commit with the createCommitOnBranch API (a git CLI commit cannot be signed)"
 
 # 2. No step delegates the commit to a CLI-committing action. Checked against `uses:` rather

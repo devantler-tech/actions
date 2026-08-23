@@ -189,7 +189,20 @@ jobs:
       # A rebase resolves it.
       - name: Apply fixes
         shell: bash
-        run: git apply --index "${RUNNER_TEMP}/megalinter-fixes.patch"
+        run: |
+          set -euo pipefail
+          patch="${RUNNER_TEMP}/megalinter-fixes.patch"
+          # A replacement run can arrive with these fixes already on the branch: committing
+          # raises `synchronize`, and that run checks out github.head_ref, which now contains
+          # them. The patch then does not apply, and failing here would skip the signature
+          # verification the commit step performs for exactly that case.
+          # --reverse --check succeeds only when the patch is present in full, so a base
+          # change that touched one of the same files still falls through and fails below.
+          if git apply --reverse --check "$patch" 2>/dev/null; then
+            echo "Patch is already applied on this branch; nothing to stage."
+            exit 0
+          fi
+          git apply --index "$patch"
 
       # Commit through the GraphQL API rather than `git commit` + push. Commits created
       # through the API with an App token are signed by GitHub; a CLI commit from a runner
