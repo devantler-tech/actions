@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.3](https://github.com/devantler-tech/actions/compare/v13.1.2...v13.1.3) (2026-08-23)
+
+
+### Bug Fixes
+
+* **lint:** sign the applied-linter-fixes commit ([#1005](https://github.com/devantler-tech/actions/issues/1005)) ([3a1f73d](https://github.com/devantler-tech/actions/commit/3a1f73db52fc86d6a39467722dd3f3d9978681a4))
+
 ## [13.1.2](https://github.com/devantler-tech/actions/compare/v13.1.1...v13.1.2) (2026-08-22)
 
 
