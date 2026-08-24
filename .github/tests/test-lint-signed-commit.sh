@@ -108,7 +108,15 @@ job_if="$(yq -r "${job}.if // \"\"" "$signer_workflow")"
 grep -qE "$bot_suppression" <<<"$job_if" ||
   fail "apply-fixes must itself suppress dependency-bot pull requests; their branches are owned by their automation"
 
-# 8. Fork pull requests never reach the commit. They get no secrets, so the App token cannot be
+# 8. The pull-request event predicate moved here with the other gates, and lint.yaml no longer
+#    supplies it. Without this assertion a later edit could let a caller reach the signing job on a
+#    non-pull_request event, where github.head_ref is empty -- so the checkout and expectedHeadOid
+#    would resolve against nothing, and the branch the commit targets would not be the one under
+#    review.
+grep -q "github.event_name == 'pull_request'" <<<"$job_if" ||
+  fail "apply-fixes must itself require a pull_request event; lint.yaml no longer supplies that gate"
+
+# 9. Fork pull requests never reach the commit. They get no secrets, so the App token cannot be
 #    minted; committing there could only fail, and the caller lints them read-only instead.
 grep -q 'head.repo.fork' <<<"$job_if" ||
   fail "apply-fixes must itself refuse fork pull requests, which cannot mint the App token"
