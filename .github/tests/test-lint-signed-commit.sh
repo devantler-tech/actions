@@ -121,4 +121,17 @@ grep -q "github.event_name == 'pull_request'" <<<"$job_if" ||
 grep -q 'head.repo.fork' <<<"$job_if" ||
   fail "apply-fixes must itself refuse fork pull requests, which cannot mint the App token"
 
+# 10. Assertions 7-9 each check that one predicate is PRESENT, which cannot see a predicate that
+#     was ADDED. A fifth conjunct suppressing every eligible pull request -- a stray `&& false`,
+#     an author allowlist, a branch-name filter -- leaves all three green while the workflow
+#     silently stops committing anything, and the suppression self-test in ci.yaml cannot catch it
+#     either, because that test asserts a bot input is REFUSED and a dead gate refuses it too.
+#     There is no passes-on-good-input runtime test to fall back on: committing to the branch
+#     under test is exactly what a self-test must not do (the reasoned gap recorded in ci.yaml).
+#     So the gate is whitelisted rather than spot-checked -- the conjunct count is pinned, and a
+#     new predicate has to come here and be justified instead of landing silently.
+conjuncts="$(grep -o '&&' <<<"$job_if" | wc -l | tr -d ' ')"
+[[ "$conjuncts" == "3" ]] ||
+  fail "apply-fixes' if: must carry exactly the 4 audited conjuncts (pull_request, non-fork, non-bot author, non-bot pr-owner), found $((conjuncts + 1)); a predicate added here can suppress every eligible pull request while assertions 7-9 stay green"
+
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"
