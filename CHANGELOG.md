@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.5](https://github.com/devantler-tech/actions/compare/v13.1.4...v13.1.5) (2026-08-24)
+
+
+### Bug Fixes
+
+* **lint:** sign the org-required Go pipeline's applied linter fixes ([#1022](https://github.com/devantler-tech/actions/issues/1022)) ([8a0328b](https://github.com/devantler-tech/actions/commit/8a0328ba72b6b3a2e6272f663173494ffa876d5a))
+
 ## [13.1.4](https://github.com/devantler-tech/actions/compare/v13.1.3...v13.1.4) (2026-08-24)
 
 
