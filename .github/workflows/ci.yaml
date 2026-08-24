@@ -2254,19 +2254,26 @@ jobs:
     # Fixture-targeted: validate the known-good Go fixture (this repo is not itself a Go module).
     with:
       working-directory: .github/tests/go-valid-fixture
-      # Read-only: the self-test must never commit to the branch under test.
-      #
-      # RECORDED GAP: this means the input's DEFAULT (false) state — the one every org consumer
-      # runs — has no self-test here, unlike scan-default-branch/test-default-branch which each
-      # got a flag-ON/flag-OFF counterpart job. It is not instantiable in-repo: exercising the
-      # apply path means committing to the branch under test, which is exactly what a self-test
-      # must not do (the same reasoned gap recorded for apply-signed-fixes below). The off-state
-      # is NOT covered by test-multi-trigger-input-gate-polarity.sh: that guard only inspects inputs
-      # declared `default: true`, and this input is `default: false`, so it never examines it. What
-      # the guard does give is a tripwire on the SHAPE — were this input ever flipped to default:true,
-      # a bare truthy read of it would be rejected. The default-state behaviour itself is verified
-      # post-release against a real consumer (devantler-tech/.github#142, AC3).
-      skip-apply-fixes: true
+      # apply-signed-fixes is omitted deliberately: its default-off read-only state must run the
+      # fixers and reject an unexpected dirty tree without committing to the branch under test.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  # ── Flag-ON counterpart for signed auto-fixes ──
+  # The default-off job above proves the read-only path. This call opts in against the same
+  # known-clean fixture, so GitHub instantiates the privileged path without producing an
+  # artifact or mutating the pull request branch. A successful signing-path self-test would
+  # necessarily change that branch and remains a controlled post-release consumer proof.
+  test-validate-go-project-apply-signed-fixes:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Signed Fixes Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      apply-signed-fixes: true
     permissions:
       contents: write
       pull-requests: write
@@ -2292,8 +2299,7 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       scan-default-branch: true
-      # Read-only: the self-test must never commit to the branch under test.
-      skip-apply-fixes: true
+      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
     permissions:
       contents: write
       pull-requests: write
@@ -2326,8 +2332,7 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       test-default-branch: false
-      # Read-only: the self-test must never commit to the branch under test.
-      skip-apply-fixes: true
+      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
     permissions:
       contents: write
       pull-requests: write
@@ -3421,6 +3426,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-signed-commit.sh .github/workflows/validate-go-project.yaml
 
+      - name: 🔐 Assert the org-required Go pipeline applies signed fixes safely
+        shell: bash
+        run: bash .github/tests/test-validate-go-signed-fixes-contract.sh
+
       # A workflow_call input's default is applied only on the workflow_call path.
       # validate-go-project.yaml is also the org-required workflow, reached directly from
       # pull_request, where `inputs` is empty — so a default:true input read as a bare truthy
@@ -3543,6 +3552,7 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-apply-signed-fixes
       - test-validate-go-project-scan-default-branch
       - test-validate-go-project-test-default-branch
       - test-run-dotnet-tests-workflow
@@ -3642,6 +3652,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-apply-signed-fixes.result }}
             ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-validate-go-project-test-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}

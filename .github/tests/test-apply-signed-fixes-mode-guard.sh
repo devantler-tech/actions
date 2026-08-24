@@ -61,6 +61,7 @@ fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
 git -C "$fixture" init -q
 git -C "$fixture" config user.email t@t; git -C "$fixture" config user.name t
+git -C "$fixture" config commit.gpgsign false
 printf 'a\n' > "$fixture/plain.sh";  chmod 644 "$fixture/plain.sh"
 printf 'a\n' > "$fixture/exec.sh";   chmod 755 "$fixture/exec.sh"
 git -C "$fixture" add -A; git -C "$fixture" commit -qm base
