@@ -100,6 +100,25 @@ PR, released signed manifest bundle, reconciliation, and live ruleset read-back.
 World at Ruin tests or its controller need no source-workflow change because each run takes those
 bytes from the GitHub-supplied trusted base.
 
+### Internal: applied-fix signing
+
+[`apply-signed-fixes.yaml`](.github/workflows/apply-signed-fixes.yaml) commits a patch back to a
+pull request branch as a signed commit. It is an internal building block, not a caller-facing
+workflow: it expects a patch artifact uploaded earlier in the same run, so it does nothing useful on
+its own.
+
+Commits made with the git CLI on a runner are unsigned. A commit created through GitHub's commit API
+with an App token is signed by GitHub, so this workflow creates it that way and then reads the new
+commit's own verification object to prove it — an unsigned automation commit is what stops commit
+signature verification from being required on anything but the default branch.
+
+The caller runs the fixer and exports its result as a patch; this workflow mints the write credential
+on a fresh runner and commits it. A fixer configured from the pull request under review can execute
+arbitrary commands, so it never runs in a job holding a write-scoped token. Callers gate on whether
+auto-fixing is enabled and whether the fixer changed anything; everything visible from the pull
+request itself — event type, forks, and dependency-bot branches — is gated here, so a caller cannot
+omit it.
+
 ### 🎉 Create Release
 
 <details>

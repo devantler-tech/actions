@@ -3420,6 +3420,32 @@ jobs:
           fi
           echo "Both MegaLinter gates pin the self-tested image ✅"
 
+  # ── apply-signed-fixes.yaml self-test ────────────────────────────────────────
+  # A passes-on-good-input test is genuinely impractical here: this workflow's only good
+  # input is a real commit on the branch under test, and a self-test must never commit to
+  # it. Per the AGENTS.md convention that gap is recorded rather than covered by a fragile
+  # test — the signing path is asserted statically by test-lint-signed-commit.sh and proven
+  # at runtime by the workflow's own verify_signed, which fails the job when the commit it
+  # just created does not report verified=true.
+  #
+  # The gates that stop it committing where it must not are asserted statically instead, by
+  # test-lint-signed-commit.sh, whose assertions are each proven by ablation. So this job is
+  # the consumer-contract proof rather than a behavioural one: it is called the way a real
+  # caller calls it, with a dependency-bot pr-owner it must refuse, which exercises the input
+  # contract and -- as with test-lint-workflow -- the permission contract, since GitHub
+  # rejects a called workflow at startup if any of its jobs elevates beyond these caller
+  # permissions. The call commits nothing by construction as well as by gate: no patch
+  # artifact exists and no App key is passed.
+  test-apply-signed-fixes-suppresses-bots:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Apply Signed Fixes - Refuses A Dependency-Bot Branch"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    with:
+      pr-owner: "dependabot[bot]"
+      commit-message: "chore: apply-signed-fixes self-test sentinel, never commit this"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -3512,6 +3538,7 @@ jobs:
       - test-lint-workflow
       - test-lint-blocks
       - test-lint-gate-lockstep
+      - test-apply-signed-fixes-suppresses-bots
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -3610,6 +3637,7 @@ jobs:
             ${{ needs.test-lint-workflow.result }}
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
+            ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
