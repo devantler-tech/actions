@@ -24,6 +24,30 @@ fail() {
   exit 1
 }
 
+# Prove assertion 1b fails closed when its yq projection fails. The wrapper
+# delegates every other query to the real binary and fails only the
+# inline-commit projection below. Without this probe,
+# `|| true` on that projection's pipeline can convert the yq failure into a
+# zero grep count and let the whole guard print PASS.
+if [[ "${LINT_SIGNED_COMMIT_YQ_FAILURE_PROBE:-0}" != "1" ]]; then
+  real_yq="$(command -v yq)"
+  probe_dir="$(mktemp -d)"
+  cat >"${probe_dir}/yq" <<'YQ_PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" != *'[.jobs[].steps[]? | (.run // "")] | join("\n")'* ]] || exit 42
+exec "${REAL_YQ}" "$@"
+YQ_PROBE
+  chmod +x "${probe_dir}/yq"
+  if env LINT_SIGNED_COMMIT_YQ_FAILURE_PROBE=1 REAL_YQ="${real_yq}" \
+    PATH="${probe_dir}:${PATH}" bash "$0" "${caller_workflow}" \
+    "${signer_workflow}" >/dev/null 2>&1; then
+    rm -rf "${probe_dir}"
+    fail 'the inline-commit assertion passed when its yq projection failed'
+  fi
+  rm -rf "${probe_dir}"
+fi
+
 bot_suppression='dependabot\[bot\]'
 
 # ── The caller delegates, and commits nothing itself ─────────────────────────────────────
@@ -53,9 +77,9 @@ caller_cli_commits="$(
 #     assertion 0, and one left committing by hand would put unsigned commits back on
 #     contributors' branches while this guard stayed green.
 #     Read verbs, not the word `git`: the fork gates legitimately run `git status`/`git diff`.
+caller_run_blocks="$(yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow")"
 caller_inline_commits="$(
-  yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow" \
-    | grep -cE '(^|[;&|[:space:]])git[[:space:]]+(commit|push)([[:space:]]|$)' || true
+  grep -cE '(^|[;&|[:space:]])git[[:space:]]+(commit|push)([[:space:]]|$)' <<<"$caller_run_blocks" || true
 )"
 [[ "$caller_inline_commits" == "0" ]] ||
   fail "${caller_workflow} must not run 'git commit' or 'git push' in any job; those commits are unsigned — delegate to ./${signer_workflow#./} instead"

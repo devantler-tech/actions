@@ -35,6 +35,8 @@ flag_on='.jobs."test-validate-go-project-apply-signed-fixes"'
 grep -Eq '^\| `apply-signed-fixes`[[:space:]]+\| Input \(boolean\)[[:space:]]+\| `false`' "$readme" ||
   fail "README Validate Go Project inputs must document apply-signed-fixes default false"
 
+dependency_bots='["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'
+
 for job in tidy golangci-lint lint; do
   case "$job" in
     tidy) artifact_prefix=tidy-fixes ;;
@@ -63,13 +65,13 @@ for job in tidy golangci-lint lint; do
   [[ "$(yq -r '.with.path // ""' <<<"$upload")" == '${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch' ]] ||
     fail "${job}'s patch filename must match its invocation-unique artifact name"
   upload_if="$(yq -r '.if // ""' <<<"$upload")"
-  expected_upload_if="\${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && steps.fixes.outputs.changed == 'true' }}"
+  expected_upload_if="\${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}"
   [[ "$upload_if" == "$expected_upload_if" ]] ||
     fail "${job}'s artifact export must use the audited opt-in, same-repository PR gate"
 
   read_only="$(yq -r ".jobs.\"${job}\".steps[] | select(.name == \"❌ Fail if uncommitted changes remain (read-only mode)\")" "$workflow")"
   read_only_if="$(yq -r '.if // ""' <<<"$read_only")"
-  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true) }}"
+  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) || contains(fromJSON('${dependency_bots}'), inputs.pr-owner)) }}"
   [[ "$read_only_if" == "$expected_read_only_if" ]] ||
     fail "${job}'s dirty-tree gate must be the exact complement of the eligible write context"
 

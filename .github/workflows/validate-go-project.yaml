@@ -230,7 +230,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -238,7 +238,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -319,7 +319,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -327,7 +327,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -649,7 +649,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -662,7 +662,7 @@ jobs:
       # something they can act on locally. Gated on the fork flag directly now that this job no
       # longer mints a token whose failure used to stand in for it.
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -689,8 +689,10 @@ jobs:
   # the same signed way: a `git commit` on a runner cannot be signed, and an unsigned automation
   # commit is what keeps signature enforcement from being extendable past the default branch
   # (devantler-tech/.github#142). Only the gate this side can see stays here — whether that lane
-  # actually changed anything. The pull_request / non-fork / dependency-bot gates are enforced
-  # in the called workflow, so a lane cannot reach the commit by forgetting one.
+  # actually changed anything. The pull_request / non-fork / dependency-bot gates are repeated
+  # at the producer boundary so ineligible fix results take the explicit read-only failure path
+  # instead of being uploaded and then silently discarded. The called workflow repeats them as
+  # the write boundary, so a future caller cannot reach the commit by forgetting one.
   #
   # The three lanes are CHAINED rather than run in parallel, and that is load-bearing. Each
   # commit is created with `expectedHeadOid` pinned to the branch tip the job checked out, so
