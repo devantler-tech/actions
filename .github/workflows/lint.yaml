@@ -133,212 +133,22 @@ jobs:
           path: ${{ runner.temp }}/megalinter-fixes.patch
           if-no-files-found: error
 
+  # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo
+  # commits the same signed way. Only the two gates this side can see stay here: whether
+  # auto-fixing is enabled, and whether MegaLinter actually changed anything. The
+  # pull_request/non-fork/dependency-bot gates are enforced in the called workflow.
   apply-fixes:
     name: 🧹 Lint - apply fixes
     needs: lint
     if: |
       inputs.apply-fixes
       && needs.lint.outputs.fixes-created == 'true'
-      && github.event.pull_request.head.repo.fork != true
-      && github.event_name == 'pull_request'
-      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
-      && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
-    steps:
-      - name: 🛡️ Harden runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
-        with:
-          egress-policy: audit
-
-      - name: 🔑 Generate GitHub App Token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: generate-token
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      # Check out the PULL REQUEST BRANCH, not the default merge ref. Two things depend on
-      # it: the patch must apply to the tree the commit will be based on, and
-      # expectedHeadOid below must be that branch's tip. Resolving HEAD from a merge ref
-      # would pin the mutation to a commit that exists on no branch.
-      #
-      # persist-credentials stays false. The commit is created through the GitHub API, so
-      # nothing here pushes over git, and leaving a write-scoped token in .git/config would
-      # be a standing credential this job has no use for. The token is still passed to
-      # `with.token` because the checkout itself has to read the repository.
-      - name: 📄 Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.head_ref }}
-          persist-credentials: false
-          token: ${{ steps.generate-token.outputs.token }}
-
-      - name: 📥 Download applied fixes
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: megalinter-fixes
-          path: ${{ runner.temp }}
-
-      # The patch was produced against the merge ref and is applied here to the branch
-      # tip, so it fails when the base has since changed one of the same files. Failing is
-      # the correct outcome: the alternative is committing the MERGED content of that file
-      # onto the branch, which silently imports base changes into someone's pull request.
-      # A rebase resolves it.
-      - name: Apply fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          patch="${RUNNER_TEMP}/megalinter-fixes.patch"
-          # A replacement run can arrive with these fixes already on the branch: committing
-          # raises `synchronize`, and that run checks out github.head_ref, which now contains
-          # them. The patch then does not apply, and failing here would skip the signature
-          # verification the commit step performs for exactly that case.
-          # --reverse --check succeeds only when the patch is present in full, so a base
-          # change that touched one of the same files still falls through and fails below.
-          if git apply --reverse --check "$patch" 2>/dev/null; then
-            echo "Patch is already applied on this branch; nothing to stage."
-            exit 0
-          fi
-          git apply --index "$patch"
-
-      # Commit through the GraphQL API rather than `git commit` + push. Commits created
-      # through the API with an App token are signed by GitHub; a CLI commit from a runner
-      # is not, and unsigned automation commits are what keep signature enforcement from
-      # being extendable past the default branch (devantler-tech/.github#142).
-      #
-      # Limitation inherited from the API: FileAddition carries a path and its contents and
-      # nothing else, so file modes are not expressible. Anything that is not a regular
-      # non-executable file is rejected below rather than silently losing its mode or
-      # having a symlink dereferenced into an ordinary file.
-      - name: 📤 Commit the applied fixes
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
-          BRANCH: ${{ github.head_ref }}
-          REPO: ${{ github.repository }}
-          COMMIT_MESSAGE: "chore: Apply megalinter fixes"
-        run: |
-          set -euo pipefail
-
-          workdir="$(mktemp -d)"
-          trap 'rm -rf "$workdir"' EXIT
-          additions="$workdir/additions.ndjson"
-          deletions="$workdir/deletions.ndjson"
-          : >"$additions"
-          : >"$deletions"
-
-          # The whole point of using the API is that the commit is signed, so prove it
-          # rather than assume it. An unsigned commit here would re-create exactly the
-          # condition this step exists to remove, and would do it silently.
-          verify_signed() {
-            local sha="$1"
-            local verified
-            verified="$(gh api "repos/${REPO}/commits/${sha}" --jq '.commit.verification.verified')"
-            if [ "$verified" != "true" ]; then
-              echo "::error::Applied-fixes commit ${sha} is not signed (verified=${verified})."
-              exit 1
-            fi
-            echo "Verified signature on ${sha}."
-          }
-
-          # Written to a file rather than read through process substitution: a process
-          # substitution's exit status is invisible to both `set -e` and `pipefail`, so a
-          # failing `git status` would look exactly like "nothing to commit" and leave the
-          # branch silently unfixed with a green build.
-          # -uall lists untracked files individually; without it git collapses a new
-          # directory into a single "dir/" entry, which is not a file we can encode.
-          git status --porcelain -z --no-renames -uall >"$workdir/status"
-
-          while IFS= read -r -d '' entry; do
-            entry_status="${entry:0:2}"
-            entry_path="${entry:3}"
-            [ -n "$entry_path" ] || continue
-            case "$entry_status" in
-              *D*)
-                jq -n --arg p "$entry_path" '{path: $p}' >>"$deletions"
-                ;;
-              *)
-                if [ -L "$entry_path" ] || [ ! -f "$entry_path" ] || [ -x "$entry_path" ]; then
-                  echo "::error file=${entry_path}::Applied fix is not a regular non-executable file; the commit API cannot express its mode."
-                  exit 1
-                fi
-                # File content must never reach argv. Linux caps a single argv entry at
-                # MAX_ARG_STRLEN (128 KiB) independently of ARG_MAX, and a formatter can
-                # rewrite files far larger than that. --rawfile reads from disk instead,
-                # and base64 output is ASCII so binary inputs survive the round trip.
-                base64 -w0 <"$entry_path" >"$workdir/content.b64"
-                jq -n --arg p "$entry_path" --rawfile c "$workdir/content.b64" \
-                  '{path: $p, contents: ($c | gsub("\\s"; ""))}' >>"$additions"
-                ;;
-            esac
-          done <"$workdir/status"
-
-          if [ ! -s "$additions" ] && [ ! -s "$deletions" ]; then
-            echo "No applied fixes left to commit."
-            # Committing raises `synchronize` on the pull request. That new run shares this
-            # workflow's concurrency group with cancel-in-progress, so it can cancel the
-            # committing run before it verifies. The replacement run lands here with the
-            # work already done — so verify the head rather than exiting blind, or a signing
-            # regression escapes unreported.
-            if [ "$(git log -1 --format=%s)" = "${COMMIT_MESSAGE}" ]; then
-              echo "Head is an applied-fixes commit; verifying it here in case the run that created it was cancelled."
-              verify_signed "$(git rev-parse HEAD)"
-            fi
-            exit 0
-          fi
-
-          # --slurpfile keeps the aggregate off argv too: the combined payload is bounded by
-          # total changed content, which can exceed the same 128 KiB cap.
-          jq -n \
-            --arg repo "$REPO" \
-            --arg branch "$BRANCH" \
-            --arg message "$COMMIT_MESSAGE" \
-            --arg oid "$(git rev-parse HEAD)" \
-            --slurpfile additions "$additions" \
-            --slurpfile deletions "$deletions" \
-            '{
-              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
-              variables: {
-                input: {
-                  branch: {
-                    repositoryNameWithOwner: $repo,
-                    branchName: $branch
-                  },
-                  message: { headline: $message },
-                  expectedHeadOid: $oid,
-                  fileChanges: { additions: $additions, deletions: $deletions }
-                }
-              }
-            }' >"$workdir/mutation.json"
-
-          # `gh api graphql` exits non-zero on a GraphQL error, so the assignment itself
-          # would abort under `set -e` and skip these diagnostics. Handle the failure inline
-          # so the operator gets a labelled annotation instead of one stderr line.
-          if ! response="$(gh api graphql --input "$workdir/mutation.json" 2>"$workdir/stderr")"; then
-            echo "::error::createCommitOnBranch failed"
-            cat "$workdir/stderr" >&2
-            jq '.errors // .' <<<"$response" 2>/dev/null || printf '%s\n' "$response"
-            exit 1
-          fi
-          # Capture first, then assert with a builtin. `jq -e` as the if-condition cannot
-          # distinguish "the filter was false" (exit 1) from "jq itself failed" (exit 4 on
-          # empty input, 5 on malformed), so a truncated or non-JSON response would take the
-          # no-errors path and continue.
-          errors="$(jq -c '.errors // empty' <<<"$response")"
-          if [ -n "$errors" ]; then
-            echo "::error::createCommitOnBranch failed"
-            printf '%s\n' "$errors"
-            exit 1
-          fi
-
-          oid="$(jq -r '.data.createCommitOnBranch.commit.oid // empty' <<<"$response")"
-          if [ -z "$oid" ]; then
-            echo "::error::createCommitOnBranch returned no commit oid"
-            printf '%s\n' "$response"
-            exit 1
-          fi
-          echo "Committed applied linter fixes as ${oid}."
-          verify_signed "$oid"
+    with:
+      artifact-name: megalinter-fixes
+      commit-message: "chore: Apply megalinter fixes"
+      pr-owner: ${{ inputs.pr-owner }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
