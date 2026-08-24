@@ -7,6 +7,11 @@ on:
         required: false
         type: string
         description: "Pull request author login (used to disable auto-commit for bot PRs)"
+      skip-apply-fixes:
+        required: false
+        type: boolean
+        default: false
+        description: "Set true for a read-only gate: the fixer lanes (go mod tidy, golangci-lint --fix, MegaLinter) still run and still fail on real errors, but nothing is committed back to the pull request branch. Used by this repository's own self-tests, which must never commit to the branch under test. Phrased as an opt-OUT on purpose — see the note on the gate expression below."
       working-directory:
         required: false
         type: string
@@ -179,31 +184,23 @@ jobs:
       && github.ref != 'refs/heads/main'
       && github.ref != 'refs/heads/master'
       && github.event_name != 'merge_group'
+    outputs:
+      fixes-created: ${{ steps.fixes.outputs.changed }}
     permissions:
-      contents: write
-      pull-requests: write
+      # `go mod tidy` resolves and downloads modules named by the pull request under review,
+      # so this job holds no credential that can write to the branch. The commit is made on a
+      # fresh runner by apply-signed-fixes.yaml.
+      contents: read
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
 
-      - name: 🔑 Generate GitHub App Token
-        continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: generate-token
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # Least-privilege token scope: only pushes linter auto-fixes back to the PR
-          # branch (contents); the token is never used for PR/issue API calls.
-          permission-contents: write
-
       - name: 📄 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
-          token: ${{ steps.generate-token.outputs.token || github.token }}
+          persist-credentials: false
 
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -213,20 +210,32 @@ jobs:
       - name: 🧹 go mod tidy
         run: go mod tidy
 
-      - name: 💾 Commit and push applied linter fixes
-        if: |
-          steps.generate-token.outcome == 'success'
-          && github.event_name == 'pull_request'
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
+      # Anchored at the repository ROOT: `git add .` is cwd-scoped and this job's
+      # defaults.run.working-directory can be a nested module.
+      - name: 📦 Prepare applied fixes
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+        id: fixes
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          git add --intent-to-add .
+          if git diff --quiet HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/tidy-fixes.patch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📤 Upload applied fixes
+        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          commit_message: "chore: tidy go modules"
-          commit_user_name: tidy-bot
-          commit_user_email: tidy-bot@users.noreply.github.com
+          name: tidy-fixes
+          path: ${{ runner.temp }}/tidy-fixes.patch
+          if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -251,31 +260,23 @@ jobs:
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
       && needs.changes.outputs.go == 'true'
+    outputs:
+      fixes-created: ${{ steps.fixes.outputs.changed }}
     permissions:
-      contents: write
-      pull-requests: write
+      # golangci-lint's configuration comes from the pull request under review, so this job
+      # holds no credential that can write to the branch. The commit is made on a fresh
+      # runner by apply-signed-fixes.yaml.
+      contents: read
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
 
-      - name: 🔑 Generate GitHub App Token
-        continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: generate-token
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # Least-privilege token scope: only pushes linter auto-fixes back to the PR
-          # branch (contents); the token is never used for PR/issue API calls.
-          permission-contents: write
-
       - name: 📄 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
-          token: ${{ steps.generate-token.outputs.token || github.token }}
+          persist-credentials: false
 
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -295,20 +296,32 @@ jobs:
           # config is still validated at runtime by `golangci-lint run`.
           verify: false
 
-      - name: 💾 Commit and push applied linter fixes
-        if: |
-          steps.generate-token.outcome == 'success'
-          && github.event_name == 'pull_request'
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
+      # Anchored at the repository ROOT: `git add .` is cwd-scoped and this job's
+      # defaults.run.working-directory can be a nested module.
+      - name: 📦 Prepare applied fixes
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+        id: fixes
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          git add --intent-to-add .
+          if git diff --quiet HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/golangci-lint-fixes.patch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📤 Upload applied fixes
+        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          commit_message: "chore: apply golangci-lint fixes"
-          commit_user_name: golangci-lint-bot
-          commit_user_email: golangci-lint-bot@users.noreply.github.com
+          name: golangci-lint-fixes
+          path: ${{ runner.temp }}/golangci-lint-fixes.patch
+          if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -559,8 +572,14 @@ jobs:
     if: |
       github.repository != 'devantler-tech/reusable-workflows'
       && (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
+    outputs:
+      fixes-created: ${{ steps.fixes.outputs.changed }}
     permissions:
-      contents: write
+      # Deliberately NOT `contents: write`. MegaLinter's configuration comes from the pull
+      # request under review and can execute commands, so this job must never hold a token
+      # that can push. The write credential is minted on a fresh runner in
+      # apply-signed-fixes.yaml, which sees only the exported patch.
+      contents: read
       issues: write
       pull-requests: write
     steps:
@@ -569,29 +588,18 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: 🔑 Generate GitHub App Token
-        continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: generate-token
-        with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          # Least-privilege token scope: only pushes MegaLinter auto-fixes back to the
-          # PR branch (contents). MegaLinter's PR/issue reporting uses the default
-          # GITHUB_TOKEN (job permissions below), not this App token.
-          permission-contents: write
-
       - name: 📄 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: ${{ steps.generate-token.outcome == 'success' }}
-          token: ${{ steps.generate-token.outputs.token || github.token }}
+          persist-credentials: false
 
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
 
+      # Keep this `uses:` in lockstep with lint.yaml's MegaLinter step so both consumers run
+      # the same image and the failure-mode self-test always exercises the real gate.
       - name: 🧹 Lint
         id: ml
         uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
@@ -608,20 +616,44 @@ jobs:
           # reports a false "unknown permission scope" error. Ignore it until actionlint catches up.
           ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality
 
-      - name: Commit and push applied linter fixes
-        if: |
-          steps.generate-token.outcome == 'success'
-          && github.event_name == 'pull_request'
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login)
-          && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
-        with:
-          commit_message: "chore: Apply megalinter fixes"
-          commit_user_name: megalinter-bot
-          commit_user_email: 129584137+megalinter-bot@users.noreply.github.com
+      # MegaLinter leaves its fixes in the working tree and does not commit them itself; the
+      # commit was always a separate workflow step. Export that result as a patch instead, so
+      # the credential that writes it is minted somewhere this job's PR-controlled linter
+      # configuration cannot reach.
+      #
+      # Anchored at the repository ROOT on purpose: `git add .` is cwd-scoped and this job's
+      # defaults.run.working-directory can be a nested module, which would silently drop any
+      # untracked fix outside it. `git diff` emits root-relative paths regardless, which is what
+      # apply-signed-fixes.yaml applies against.
+      - name: 📦 Prepare applied fixes
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+        id: fixes
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          git add --intent-to-add .
+          if git diff --quiet HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/megalinter-fixes.patch"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
+      - name: 📤 Upload applied fixes
+        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: megalinter-fixes
+          path: ${{ runner.temp }}/megalinter-fixes.patch
+          if-no-files-found: error
+
+      # Fork pull requests get no secrets, so nothing can ever be committed back to them. That
+      # is unchanged by moving the commit to a signed lane, and so is the outcome a contributor
+      # sees: the fixes are applied here and the full diff is printed, so the build fails with
+      # something they can act on locally. Gated on the fork flag directly now that this job no
+      # longer mints a token whose failure used to stand in for it.
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: steps.generate-token.outcome != 'success' && inputs.working-directory == ''
+        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -634,6 +666,74 @@ jobs:
             git diff
             exit 1
           fi
+
+  # ── Applying fixes ───────────────────────────────────────────────────────────────────────
+  #
+  # `skip-apply-fixes` is an opt-OUT rather than lint.yaml's opt-IN `apply-fixes`, and the
+  # difference is forced by this workflow's triggers rather than a style choice. lint.yaml is
+  # `workflow_call` only, so its `inputs` are always populated and a default of true is honoured.
+  # This workflow is ALSO reachable directly from `pull_request` / `merge_group` as the
+  # org-required workflow — the path that runs on almost every consumer — and on those triggers
+  # the `inputs` context carries no workflow_call defaults at all. A gate reading
+  # `inputs.apply-fixes` would therefore evaluate falsey on exactly that path and silently stop
+  # committing fixes org-wide, while every self-test here (which DOES call it with inputs) kept
+  # passing. Phrased as an opt-out, an absent input means "apply", which is the behaviour every
+  # consumer has today.
+  #
+  # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo commits
+  # the same signed way: a `git commit` on a runner cannot be signed, and an unsigned automation
+  # commit is what keeps signature enforcement from being extendable past the default branch
+  # (devantler-tech/.github#142). Only the gate this side can see stays here — whether that lane
+  # actually changed anything. The pull_request / non-fork / dependency-bot gates are enforced
+  # in the called workflow, so a lane cannot reach the commit by forgetting one.
+  #
+  # The three lanes are CHAINED rather than run in parallel, and that is load-bearing. Each
+  # commit is created with `expectedHeadOid` pinned to the branch tip the job checked out, so
+  # two lanes committing at once would race: the second's expected tip is already stale and the
+  # mutation is rejected. Chaining costs latency only when a lane actually produced fixes, which
+  # is the uncommon case. `!cancelled()` rather than `always()`: a skipped predecessor must not
+  # skip its successors, but a cancelled run should stop.
+  apply-tidy-fixes:
+    name: 📦 Tidy - apply fixes
+    needs: tidy
+    if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.tidy.outputs.fixes-created == 'true' }}
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    permissions:
+      contents: read
+    with:
+      artifact-name: tidy-fixes
+      commit-message: "chore: tidy go modules"
+      pr-owner: ${{ inputs.pr-owner }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  apply-golangci-lint-fixes:
+    name: 🧹 Lint - golangci-lint - apply fixes
+    needs: [golangci-lint, apply-tidy-fixes]
+    if: ${{ !cancelled() && !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.golangci-lint.outputs.fixes-created == 'true' }}
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    permissions:
+      contents: read
+    with:
+      artifact-name: golangci-lint-fixes
+      commit-message: "chore: apply golangci-lint fixes"
+      pr-owner: ${{ inputs.pr-owner }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  apply-fixes:
+    name: 🧹 Lint - apply fixes
+    needs: [lint, apply-golangci-lint-fixes]
+    if: ${{ !cancelled() && !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.lint.outputs.fixes-created == 'true' }}
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    permissions:
+      contents: read
+    with:
+      artifact-name: megalinter-fixes
+      commit-message: "chore: Apply megalinter fixes"
+      pr-owner: ${{ inputs.pr-owner }}
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   build:
     name: 🏗️ Build
