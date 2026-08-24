@@ -235,7 +235,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event.pull_request.head.repo.fork == true }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -321,7 +321,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event.pull_request.head.repo.fork == true }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -653,7 +653,7 @@ jobs:
       # something they can act on locally. Gated on the fork flag directly now that this job no
       # longer mints a token whose failure used to stand in for it.
       - name: ❌ Fail if uncommitted changes remain (fork PR)
-        if: ${{ github.event.pull_request.head.repo.fork == true && inputs.working-directory == '' }}
+        if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && github.event.pull_request.head.repo.fork == true }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then

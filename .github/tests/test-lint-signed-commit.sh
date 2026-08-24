@@ -45,6 +45,29 @@ caller_cli_commits="$(
 [[ "$caller_cli_commits" == "0" ]] ||
   fail "${caller_workflow} must not commit with a CLI-committing action; those commits are unsigned"
 
+# 1b. No job anywhere in the caller commits inline either. Assertion 1 knows only the NAMED
+#     CLI-committing actions, and assertion 0 is scoped to the single `apply-fixes` job — so a
+#     lane that stops delegating and inlines `run: git commit && git push` is caught by neither.
+#     That matters most in validate-go-project.yaml, which carries THREE apply lanes
+#     (apply-tidy-fixes, apply-golangci-lint-fixes, apply-fixes): two of them are invisible to
+#     assertion 0, and one left committing by hand would put unsigned commits back on
+#     contributors' branches while this guard stayed green.
+#     Read verbs, not the word `git`: the fork gates legitimately run `git status`/`git diff`.
+caller_inline_commits="$(
+  yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow" \
+    | grep -cE '(^|[;&|[:space:]])git[[:space:]]+(commit|push)([[:space:]]|$)' || true
+)"
+[[ "$caller_inline_commits" == "0" ]] ||
+  fail "${caller_workflow} must not run 'git commit' or 'git push' in any job; those commits are unsigned — delegate to ./${signer_workflow#./} instead"
+
+# 1c. …and the delegation the whole file depends on is not vacuous: at least one job must
+#     actually call the signer, or every assertion below is about a workflow nothing reaches.
+caller_delegations="$(
+  yq -r "[.jobs[] | select((.uses // \"\") == \"./${signer_workflow#./}\")] | length" "$caller_workflow"
+)"
+[[ "$caller_delegations" -gt 0 ]] ||
+  fail "${caller_workflow} has no job delegating to ./${signer_workflow#./}; this guard would assert nothing"
+
 # ── The shared signing workflow commits the signing way ──────────────────────────────────
 
 job='.jobs["apply-fixes"]'

@@ -2261,7 +2261,11 @@ jobs:
       # got a flag-ON/flag-OFF counterpart job. It is not instantiable in-repo: exercising the
       # apply path means committing to the branch under test, which is exactly what a self-test
       # must not do (the same reasoned gap recorded for apply-signed-fixes below). The off-state
-      # is covered statically instead, by test-multi-trigger-input-gate-polarity.sh.
+      # is NOT covered by test-multi-trigger-input-gate-polarity.sh: that guard only inspects inputs
+      # declared `default: true`, and this input is `default: false`, so it never examines it. What
+      # the guard does give is a tripwire on the SHAPE — were this input ever flipped to default:true,
+      # a bare truthy read of it would be rejected. The default-state behaviour itself is verified
+      # post-release against a real consumer (devantler-tech/.github#142, AC3).
       skip-apply-fixes: true
     permissions:
       contents: write

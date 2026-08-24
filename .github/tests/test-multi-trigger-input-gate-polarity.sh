@@ -45,6 +45,14 @@ default_true_inputs="$(
   yq -r '.on.workflow_call.inputs // {} | to_entries[] | select(.value.default == true) | .key' "$workflow"
 )"
 
+# Same non-vacuity rule as the trigger and condition sets above, and for the same reason: with no
+# default:true input the loop below never runs, `violations` stays 0 and this prints PASS while
+# asserting nothing. The set is non-empty today only because `test-default-branch` defaults to
+# true, and ci.yaml names this script as the static substitute for a recorded coverage gap — so a
+# flipped default would silently retire that coverage rather than fail.
+[[ -n "${default_true_inputs//[[:space:]]/}" ]] ||
+  fail "$workflow declares no default:true workflow_call input, so this guard asserts nothing; delete it or point it at a workflow that has one"
+
 # Every if: expression in the file, job-level and step-level alike. Collected as compact JSON
 # so a multi-line `if: |` block stays ONE item: read line-by-line, a block condition would be
 # split across iterations and a violation spanning the break would never match.

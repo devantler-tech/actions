@@ -192,7 +192,17 @@ jobs:
                 if [ -x "$entry_path" ]; then wanted_mode=100755; else wanted_mode=100644; fi
                 # Empty when the path is new in this commit, so a new executable file is
                 # rejected (nothing to inherit) and a new ordinary file is accepted.
-                base_mode="$(git ls-tree --format='%(objectmode)' HEAD -- "$entry_path")"
+                # `--literal-pathspecs`: `git status --porcelain -z` emits raw unquoted paths, so a
+                # changed file whose name begins with `:` reaches here verbatim and git reads it as
+                # pathspec MAGIC rather than a path. Measured: for a tracked `:odd.sh` at mode
+                # 100755, `ls-tree -- ':odd.sh'` returns EMPTY and exit 0, while the same call with
+                # this flag returns 100755. That fails both ways — an empty base makes an existing
+                # executable look like a mode change and be wrongly rejected, and an existing 100755
+                # file turned non-executable reads as base 100644, so its real mode change is
+                # committed silently, which is what this guard exists to stop.
+                # (Glob characters are NOT the issue here: `ls-tree` applies no wildcard matching to
+                # pathspecs — measured, `a*.sh` matches nothing with or without the flag.)
+                base_mode="$(git --literal-pathspecs ls-tree --format='%(objectmode)' HEAD -- "$entry_path")"
                 if [ "${base_mode:-100644}" != "$wanted_mode" ]; then
                   echo "::error file=${entry_path}::Applied fix would change the file mode to ${wanted_mode} (base ${base_mode:-none}); the commit API cannot express a mode, so this change cannot be committed here. Apply it locally and push."
                   exit 1
