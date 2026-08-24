@@ -172,8 +172,29 @@ jobs:
                 jq -n --arg p "$entry_path" '{path: $p}' >>"$deletions"
                 ;;
               *)
-                if [ -L "$entry_path" ] || [ ! -f "$entry_path" ] || [ -x "$entry_path" ]; then
-                  echo "::error file=${entry_path}::Applied fix is not a regular non-executable file; the commit API cannot express its mode."
+                # FileAddition carries a path and its contents and nothing else, so a mode
+                # cannot be SET. It is, however, INHERITED: measured 2026-08-24 against this
+                # repository, createCommitOnBranch modifying a path already at 100755 in the
+                # base tree left it at 100755 (and the commit verified), while a NEWLY ADDED
+                # executable file landed at 100644 — the bit was silently dropped.
+                #
+                # So the test is not "is this file executable" but "does the mode this commit
+                # would produce differ from the mode the file has now". Rejecting every
+                # executable file also rejects the modify case, which is the overwhelmingly
+                # common one: a formatter rewriting an existing `.sh`. That would fail the job
+                # for a fix the API handles correctly (66 such files in `platform`, 48 in
+                # `ksail`, 30 here), so it is narrowed to the case that genuinely cannot be
+                # expressed.
+                if [ -L "$entry_path" ] || [ ! -f "$entry_path" ]; then
+                  echo "::error file=${entry_path}::Applied fix is not a regular file; the commit API can express only regular files."
+                  exit 1
+                fi
+                if [ -x "$entry_path" ]; then wanted_mode=100755; else wanted_mode=100644; fi
+                # Empty when the path is new in this commit, so a new executable file is
+                # rejected (nothing to inherit) and a new ordinary file is accepted.
+                base_mode="$(git ls-tree --format='%(objectmode)' HEAD -- "$entry_path")"
+                if [ "${base_mode:-100644}" != "$wanted_mode" ]; then
+                  echo "::error file=${entry_path}::Applied fix would change the file mode to ${wanted_mode} (base ${base_mode:-none}); the commit API cannot express a mode, so this change cannot be committed here. Apply it locally and push."
                   exit 1
                 fi
                 # File content must never reach argv. Linux caps a single argv entry at

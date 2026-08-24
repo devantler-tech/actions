@@ -693,10 +693,21 @@ jobs:
   # mutation is rejected. Chaining costs latency only when a lane actually produced fixes, which
   # is the uncommon case. `!cancelled()` rather than `always()`: a skipped predecessor must not
   # skip its successors, but a cancelled run should stop.
+  #
+  # `!cancelled()` also drops the implicit `success()` on EVERY `needs` entry, not just the
+  # chain predecessor, so each fixer job's own success is asserted explicitly. Without that a
+  # lane that set `fixes-created` and then failed — its upload step erroring, say — would
+  # still dispatch a commit for an artifact that is not there. `apply-tidy-fixes` needs no
+  # such clause: it has one predecessor and keeps the implicit `success()`.
+  #
+  # The gates deliberately do NOT re-test `skip-apply-fixes`. `fixes-created` can only be
+  # 'true' if the step that sets it ran, and that step is already gated on the input, so a
+  # second copy here cannot change any outcome — it would only be two more places for a
+  # subtle expression to drift out of step with the other three.
   apply-tidy-fixes:
     name: 📦 Tidy - apply fixes
     needs: tidy
-    if: ${{ !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.tidy.outputs.fixes-created == 'true' }}
+    if: ${{ needs.tidy.outputs.fixes-created == 'true' }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -710,7 +721,7 @@ jobs:
   apply-golangci-lint-fixes:
     name: 🧹 Lint - golangci-lint - apply fixes
     needs: [golangci-lint, apply-tidy-fixes]
-    if: ${{ !cancelled() && !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.golangci-lint.outputs.fixes-created == 'true' }}
+    if: ${{ !cancelled() && needs.golangci-lint.result == 'success' && needs.golangci-lint.outputs.fixes-created == 'true' }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -724,7 +735,7 @@ jobs:
   apply-fixes:
     name: 🧹 Lint - apply fixes
     needs: [lint, apply-golangci-lint-fixes]
-    if: ${{ !cancelled() && !(inputs.skip-apply-fixes == true || inputs.skip-apply-fixes == 'true') && needs.lint.outputs.fixes-created == 'true' }}
+    if: ${{ !cancelled() && needs.lint.result == 'success' && needs.lint.outputs.fixes-created == 'true' }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read

@@ -2255,6 +2255,13 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       # Read-only: the self-test must never commit to the branch under test.
+      #
+      # RECORDED GAP: this means the input's DEFAULT (false) state — the one every org consumer
+      # runs — has no self-test here, unlike scan-default-branch/test-default-branch which each
+      # got a flag-ON/flag-OFF counterpart job. It is not instantiable in-repo: exercising the
+      # apply path means committing to the branch under test, which is exactly what a self-test
+      # must not do (the same reasoned gap recorded for apply-signed-fixes below). The off-state
+      # is covered statically instead, by test-multi-trigger-input-gate-polarity.sh.
       skip-apply-fixes: true
     permissions:
       contents: write
@@ -3418,6 +3425,15 @@ jobs:
       - name: 🎚️ Assert multi-trigger input gates cannot silently evaluate false
         shell: bash
         run: bash .github/tests/test-multi-trigger-input-gate-polarity.sh
+
+      # The commit API can inherit a file mode from the base tree but cannot set one. Measured:
+      # modifying a path already at 100755 keeps it; adding a NEW executable file lands at
+      # 100644. Rejecting every executable file instead of only the inexpressible change would
+      # fail the job for the common case — a formatter rewriting an existing `.sh`, of which
+      # platform has 66 and ksail 48 — so the boundary is pinned against real git fixtures.
+      - name: 🔐 Assert the applied-fixes mode guard matches what the commit API can express
+        shell: bash
+        run: bash .github/tests/test-apply-signed-fixes-mode-guard.sh
 
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
       # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
