@@ -13,9 +13,11 @@ name: 📤 Apply Signed Fixes
 # configured from the pull request under review may execute arbitrary commands, so it must
 # never run in a job that holds a write-scoped token.
 #
-# Callers own the two gates this workflow cannot see — whether auto-fixing is enabled at all,
-# and whether the fixer actually produced anything. Everything observable from the pull
-# request itself is gated here, so a caller cannot forget it.
+# Callers own the one gate this workflow cannot see: whether auto-fixing is enabled at all.
+# Whether the fixer produced anything is passed IN as `fixes-created` rather than used by the
+# caller to skip the call, because the branch tip still has to be checked when it produced
+# nothing — that is exactly the replacement run after a cancelled committing run. Everything
+# observable from the pull request itself is gated here, so a caller cannot forget it.
 #
 # Patch convention: the artifact named `artifact-name` contains one file, `<artifact-name>.patch`.
 
@@ -37,6 +39,11 @@ on:
         type: string
         default: ""
         description: "Pull request author login. Commits are suppressed for dependency-bot pull requests, whose branches are owned by their automation."
+      fixes-created:
+        required: false
+        type: boolean
+        default: true
+        description: "Whether the caller's fixer produced a patch on THIS run. False means the fixer ran clean, so no artifact exists: the signing steps are skipped and only the branch-tip signature check runs."
     secrets:
       APP_PRIVATE_KEY:
         description: "GitHub App private key. Required: the signing commit API needs an App token, and there is no unsigned fallback."
@@ -61,7 +68,58 @@ jobs:
         with:
           egress-policy: audit
 
+      # Runs on EVERY call, including the ones where the fixer produced nothing, and needs
+      # only a read — which is why it sits before the App token rather than inside the
+      # signing steps below.
+      #
+      # Committing raises `synchronize`, and that run can cancel the committing one before it
+      # verifies. The replacement run's fixer then finds its own work already done and reports
+      # no patch, so every signing step here is skipped — and with them, historically, the
+      # verification too: the caller's `fixes-created` gate skipped this whole workflow, and
+      # the already-applied fallback inside the commit step was unreachable in the one case it
+      # was written for. So the tip check lives here, where nothing gates it.
+      #
+      # It reads the head commit through the API rather than checking out: the commit that
+      # triggered this run is exactly the one to verify, and its message and verification
+      # object come back in the same call.
+      #
+      # Scoped by commit message, so a lane verifies only its OWN applied-fixes commit. Every
+      # lane calls this workflow with its own `commit-message`, so between them they cover
+      # each message, and an ordinary contributor commit at the tip matches none of them and
+      # is correctly held to no signature it was never supposed to carry.
+      - name: 🔏 Verify an applied-fixes head is signed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Capture, then test with a builtin: `gh api` failing mid-pipeline must not read as
+          # "not an applied-fixes commit", which would silently skip the check this step is.
+          if ! head_json="$(gh api "repos/${REPO}/commits/${HEAD_SHA}")"; then
+            echo "::error::Could not read head commit ${HEAD_SHA} to check its signature."
+            exit 1
+          fi
+          headline="$(jq -r '.commit.message | split("\n")[0]' <<<"$head_json")"
+          if [ "$headline" != "${COMMIT_MESSAGE}" ]; then
+            echo "Head ${HEAD_SHA} is not this lane's applied-fixes commit; nothing to verify."
+            exit 0
+          fi
+          verified="$(jq -r '.commit.verification.verified' <<<"$head_json")"
+          if [ "$verified" != "true" ]; then
+            echo "::error::Applied-fixes commit ${HEAD_SHA} is not signed (verified=${verified})."
+            exit 1
+          fi
+          echo "Verified signature on ${HEAD_SHA}."
+
+      # `== true` rather than the bare truthiness test: a `workflow_call` boolean input arrives
+      # as a real boolean, but if one ever reached here as a STRING the bare form would treat
+      # "false" as truthy and run the privileged path. Comparing to `true` fails the other way —
+      # an unexpected type skips the signing rather than performing it unasked.
       - name: 🔑 Generate GitHub App Token
+        if: ${{ inputs.fixes-created == true }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: generate-token
         with:
@@ -79,6 +137,7 @@ jobs:
       # be a standing credential this job has no use for. The token is still passed to
       # `with.token` because the checkout itself has to read the repository.
       - name: 📄 Checkout
+        if: ${{ inputs.fixes-created == true }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.head_ref }}
@@ -86,6 +145,7 @@ jobs:
           token: ${{ steps.generate-token.outputs.token }}
 
       - name: 📥 Download applied fixes
+        if: ${{ inputs.fixes-created == true }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.artifact-name }}
@@ -97,6 +157,7 @@ jobs:
       # onto the branch, which silently imports base changes into someone's pull request.
       # A rebase resolves it.
       - name: Apply fixes
+        if: ${{ inputs.fixes-created == true }}
         env:
           ARTIFACT_NAME: ${{ inputs.artifact-name }}
         shell: bash
@@ -125,6 +186,7 @@ jobs:
       # non-executable file is rejected below rather than silently losing its mode or
       # having a symlink dereferenced into an ordinary file.
       - name: 📤 Commit the applied fixes
+        if: ${{ inputs.fixes-created == true }}
         shell: bash
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}

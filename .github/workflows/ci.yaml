@@ -3499,6 +3499,30 @@ jobs:
       pr-owner: "dependabot[bot]"
       commit-message: "chore: apply-signed-fixes self-test sentinel, never commit this"
 
+  # ── Flag-OFF counterpart: the fixer produced nothing ──────────────────────────
+  # The job above proves the workflow refuses a branch it must not touch. This one proves the
+  # OTHER state of `fixes-created`, and unlike a static assertion it actually RUNS the path: on
+  # a replacement run the fixer finds its own work already done and reports no patch, and the
+  # branch-tip signature check still has to execute. This call reaches that step for real.
+  #
+  # It is safe to run against this repository's own pull request because it commits nothing by
+  # construction: the sentinel message matches no commit, so the check reports "nothing to
+  # verify" and exits.
+  #
+  # And it is self-enforcing rather than merely illustrative. No App key is passed, so if the
+  # `fixes-created` gating ever regressed and the token step ran, `create-github-app-token`
+  # would fail with an empty private key and take this job red. A green here therefore asserts
+  # both halves at once: the check ran, and nothing privileged did.
+  test-apply-signed-fixes-verifies-without-a-patch:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Apply Signed Fixes - Verifies The Tip With No Patch"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    with:
+      fixes-created: false
+      commit-message: "chore: apply-signed-fixes fixes-created=false sentinel, never commit this"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -3593,6 +3617,7 @@ jobs:
       - test-lint-blocks
       - test-lint-gate-lockstep
       - test-apply-signed-fixes-suppresses-bots
+      - test-apply-signed-fixes-verifies-without-a-patch
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -3693,6 +3718,7 @@ jobs:
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
+            ${{ needs.test-apply-signed-fixes-verifies-without-a-patch.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}

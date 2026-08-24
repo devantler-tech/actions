@@ -10,6 +10,7 @@ set -euo pipefail
 workflow="${1:-.github/workflows/validate-go-project.yaml}"
 ci_workflow="${2:-.github/workflows/ci.yaml}"
 readme="${3:-README.md}"
+apply_workflow="${4:-.github/workflows/apply-signed-fixes.yaml}"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -19,6 +20,7 @@ fail() {
 [[ -f "$workflow" ]] || fail "workflow not found: $workflow"
 [[ -f "$ci_workflow" ]] || fail "CI workflow not found: $ci_workflow"
 [[ -f "$readme" ]] || fail "README not found: $readme"
+[[ -f "$apply_workflow" ]] || fail "apply-signed-fixes workflow not found: $apply_workflow"
 
 input='.["on"].workflow_call.inputs."apply-signed-fixes"'
 [[ "$(yq -r "${input}.type // \"\"" "$workflow")" == "boolean" ]] ||
@@ -95,6 +97,12 @@ for job in tidy golangci-lint lint; do
   rm -rf "$fixture"
 done
 
+# The caller no longer skips the signer when its fixer produced nothing. It passes that fact in
+# as `fixes-created`, because the branch tip still has to be checked in exactly that case: the
+# replacement run after a cancelled committing run finds the work already done, so a caller-side
+# skip made the called workflow's own tip check unreachable in the one scenario it was written
+# for. These assertions pin both halves — the gate that no longer mentions fixes-created, and
+# the input that now carries it — so neither can be quietly reintroduced as a skip.
 for apply_job in apply-tidy-fixes apply-golangci-lint-fixes apply-fixes; do
   case "$apply_job" in
     apply-tidy-fixes) source_job=tidy ;;
@@ -106,17 +114,55 @@ for apply_job in apply-tidy-fixes apply-golangci-lint-fixes apply-fixes; do
   apply_if="$(yq -r ".jobs.\"${apply_job}\".if // \"\"" "$workflow")"
   case "$apply_job" in
     apply-tidy-fixes)
-      expected_apply_if="\${{ inputs.apply-signed-fixes == true && needs.tidy.outputs.fixes-created == 'true' }}"
+      expected_apply_if="\${{ inputs.apply-signed-fixes == true }}"
       ;;
     apply-golangci-lint-fixes)
-      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') && needs.golangci-lint.outputs.fixes-created == 'true' }}"
+      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}"
       ;;
     apply-fixes)
-      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') && needs.lint.outputs.fixes-created == 'true' }}"
+      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}"
       ;;
   esac
   [[ "$apply_if" == "$expected_apply_if" ]] ||
     fail "${apply_job} must use the audited opt-in and predecessor-result gate"
+
+  if grep -qF 'fixes-created' <<<"$apply_if"; then
+    fail "${apply_job} must not gate the call on fixes-created; the tip check would be unreachable on a replacement run"
+  fi
+
+  [[ "$(yq -r ".jobs.\"${apply_job}\".with.\"fixes-created\" // \"\"" "$workflow")" == "\${{ needs.${source_job}.outputs.fixes-created == 'true' }}" ]] ||
+    fail "${apply_job} must pass ${source_job}'s fixes-created through as an input"
 done
+
+# The called workflow's half of the same contract: the tip check must be reachable whatever the
+# caller reports, and everything that needs the write-scoped App token must not be.
+asf_input='.["on"].workflow_call.inputs."fixes-created"'
+[[ "$(yq -r "${asf_input}.type // \"\"" "$apply_workflow")" == "boolean" ]] ||
+  fail "apply-signed-fixes must expose fixes-created as a boolean workflow_call input"
+[[ "$(yq -r "${asf_input}.default" "$apply_workflow")" == "true" ]] ||
+  fail "fixes-created must default to true so an existing caller keeps its signing behaviour"
+
+verify_step='.jobs."apply-fixes".steps[] | select(.name == "🔏 Verify an applied-fixes head is signed")'
+[[ -n "$(yq -r "${verify_step}" "$apply_workflow")" ]] ||
+  fail "apply-signed-fixes must carry the branch-tip signature check"
+[[ "$(yq -r "${verify_step} | .if // \"\"" "$apply_workflow")" == "" ]] ||
+  fail "the branch-tip signature check must be ungated; gating it recreates the unreachable-fallback defect"
+
+for privileged_step in "🔑 Generate GitHub App Token" "📄 Checkout" "📥 Download applied fixes" "Apply fixes" "📤 Commit the applied fixes"; do
+  step_if="$(yq -r ".jobs.\"apply-fixes\".steps[] | select(.name == \"${privileged_step}\") | .if // \"\"" "$apply_workflow")"
+  [[ "$step_if" == "\${{ inputs.fixes-created == true }}" ]] ||
+    fail "step '${privileged_step}' must be gated exactly '\${{ inputs.fixes-created == true }}': ungated, an absent artifact fails every clean pull request; written bare, a string-valued input would be truthy and run the privileged path anyway"
+done
+
+
+# Both states of `fixes-created` must be instantiated in CI, not merely declared. The false arm is
+# the one that regresses silently: it is the only path on which the tip check runs alone, and a
+# static assertion cannot tell whether the step actually executed. That job passes no App key, so
+# it also fails if the gating regresses and the token step runs.
+flag_off='.jobs."test-apply-signed-fixes-verifies-without-a-patch"'
+[[ "$(yq -r "${flag_off}.with.\"fixes-created\"" "$ci_workflow")" == "false" ]] ||
+  fail "CI must instantiate apply-signed-fixes with fixes-created=false, the arm where the tip check runs alone"
+[[ "$(yq -r "${flag_off}.secrets // \"none\"" "$ci_workflow")" == "none" ]] ||
+  fail "the fixes-created=false self-test must pass no App key; that absence is what makes a gating regression fail it"
 
 echo "PASS: validate-go signed fixes are opt-in, collision-free, strict when read-only, and fail-closed in sequence"

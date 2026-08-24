@@ -688,8 +688,10 @@ jobs:
   # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo commits
   # the same signed way: a `git commit` on a runner cannot be signed, and an unsigned automation
   # commit is what keeps signature enforcement from being extendable past the default branch
-  # (devantler-tech/.github#142). Only the gate this side can see stays here — whether that lane
-  # actually changed anything. The pull_request / non-fork / dependency-bot gates are repeated
+  # (devantler-tech/.github#142). Whether a lane changed anything is passed IN as
+  # `fixes-created` rather than used to skip the call, because the branch tip still has to be
+  # checked when it changed nothing — the replacement run after a cancelled committing run is
+  # exactly that case. The pull_request / non-fork / dependency-bot gates are repeated
   # at the producer boundary so ineligible fix results take the explicit read-only failure path
   # instead of being uploaded and then silently discarded. The called workflow repeats them as
   # the write boundary, so a future caller cannot reach the commit by forgetting one.
@@ -697,8 +699,12 @@ jobs:
   # The three lanes are CHAINED rather than run in parallel, and that is load-bearing. Each
   # commit is created with `expectedHeadOid` pinned to the branch tip the job checked out, so
   # two lanes committing at once would race: the second's expected tip is already stale and the
-  # mutation is rejected. Chaining costs latency only when a lane actually produced fixes, which
-  # is the uncommon case. `!cancelled()` rather than `always()`: a skipped predecessor must not
+  # mutation is rejected. Because the calls no longer skip, the chain now costs three short
+  # job start-ups on every opted-in run. That is the price of the tip check being reachable at
+  # all; only the signing steps INSIDE those jobs are gated on `fixes-created`, so a run whose
+  # fixers were clean still mints no write-scoped token.
+  #
+  # `!cancelled()` rather than `always()`: a skipped predecessor must not
   # skip its successors, but a cancelled run should stop. Each successor explicitly accepts only
   # a successful or skipped signer predecessor; a failed signer leaves the branch tip uncertain.
   #
@@ -710,7 +716,7 @@ jobs:
   apply-tidy-fixes:
     name: 📦 Tidy - apply fixes
     needs: tidy
-    if: ${{ inputs.apply-signed-fixes == true && needs.tidy.outputs.fixes-created == 'true' }}
+    if: ${{ inputs.apply-signed-fixes == true }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -718,13 +724,14 @@ jobs:
       artifact-name: ${{ needs.tidy.outputs.fixes-artifact }}
       commit-message: "chore: tidy go modules"
       pr-owner: ${{ inputs.pr-owner }}
+      fixes-created: ${{ needs.tidy.outputs.fixes-created == 'true' }}
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   apply-golangci-lint-fixes:
     name: 🧹 Lint - golangci-lint - apply fixes
     needs: [golangci-lint, apply-tidy-fixes]
-    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') && needs.golangci-lint.outputs.fixes-created == 'true' }}
+    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -732,13 +739,14 @@ jobs:
       artifact-name: ${{ needs.golangci-lint.outputs.fixes-artifact }}
       commit-message: "chore: apply golangci-lint fixes"
       pr-owner: ${{ inputs.pr-owner }}
+      fixes-created: ${{ needs.golangci-lint.outputs.fixes-created == 'true' }}
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   apply-fixes:
     name: 🧹 Lint - apply fixes
     needs: [lint, apply-golangci-lint-fixes]
-    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') && needs.lint.outputs.fixes-created == 'true' }}
+    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -746,6 +754,7 @@ jobs:
       artifact-name: ${{ needs.lint.outputs.fixes-artifact }}
       commit-message: "chore: Apply megalinter fixes"
       pr-owner: ${{ inputs.pr-owner }}
+      fixes-created: ${{ needs.lint.outputs.fixes-created == 'true' }}
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 

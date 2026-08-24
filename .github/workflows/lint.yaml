@@ -134,15 +134,16 @@ jobs:
           if-no-files-found: error
 
   # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo
-  # commits the same signed way. Only the two gates this side can see stay here: whether
-  # auto-fixing is enabled, and whether MegaLinter actually changed anything. The
-  # pull_request/non-fork/dependency-bot gates are enforced in the called workflow.
+  # commits the same signed way. Only the gate this side can see stays here: whether
+  # auto-fixing is enabled. Whether MegaLinter changed anything is passed IN, not used to
+  # skip the call, so the called workflow still checks the branch tip on a replacement run
+  # where the fixer finds its own work already done. The pull_request/non-fork/dependency-bot
+  # gates are enforced in the called workflow.
   apply-fixes:
     name: 🧹 Lint - apply fixes
     needs: lint
     if: |
       inputs.apply-fixes
-      && needs.lint.outputs.fixes-created == 'true'
     uses: ./.github/workflows/apply-signed-fixes.yaml
     permissions:
       contents: read
@@ -150,5 +151,6 @@ jobs:
       artifact-name: megalinter-fixes
       commit-message: "chore: Apply megalinter fixes"
       pr-owner: ${{ inputs.pr-owner }}
+      fixes-created: ${{ needs.lint.outputs.fixes-created == 'true' }}
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

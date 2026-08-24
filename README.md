@@ -115,9 +115,16 @@ signature verification from being required on anything but the default branch.
 The caller runs the fixer and exports its result as a patch; this workflow mints the write credential
 on a fresh runner and commits it. A fixer configured from the pull request under review can execute
 arbitrary commands, so it never runs in a job holding a write-scoped token. Callers gate on whether
-auto-fixing is enabled and whether the fixer changed anything; everything visible from the pull
-request itself — event type, forks, and dependency-bot branches — is gated here, so a caller cannot
-omit it.
+auto-fixing is enabled; everything visible from the pull request itself — event type, forks, and
+dependency-bot branches — is gated here, so a caller cannot omit it.
+
+Whether the fixer actually changed anything is passed in as `fixes-created` (boolean, default `true`)
+rather than used by the caller to skip the call. Committing raises `synchronize`, which can start a
+replacement run and cancel the committing one before it verifies its own commit; the replacement
+run's fixer then finds the work already done and reports no patch. The branch-tip signature check
+therefore runs on every call, before the App token is minted and independently of `fixes-created`,
+while every step that needs write access is skipped when it is `false`. A caller that omits the input
+keeps its previous behaviour.
 
 ### 🎉 Create Release
 
