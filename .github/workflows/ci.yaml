@@ -3420,6 +3420,66 @@ jobs:
           fi
           echo "Both MegaLinter gates pin the self-tested image ✅"
 
+  # ── apply-signed-fixes.yaml self-test ────────────────────────────────────────
+  # A passes-on-good-input test is genuinely impractical here: this workflow's only good
+  # input is a real commit on the branch under test, and a self-test must never commit to
+  # it. Per the AGENTS.md convention that gap is recorded rather than covered by a fragile
+  # test — the signing path is asserted statically by test-lint-signed-commit.sh and proven
+  # at runtime by the workflow's own verify_signed, which fails the job when the commit it
+  # just created does not report verified=true.
+  #
+  # What is testable is the gate that stops it committing where it must not, so this is the
+  # blocks-on-bad-input half. A dependency bot owns its own branch, so the call below must
+  # commit nothing. It is safe by construction as well as by gate: no patch artifact exists
+  # and no App key is passed, so a regression fails loudly instead of committing.
+  test-apply-signed-fixes-suppresses-bots:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Apply Signed Fixes - Refuses A Dependency-Bot Branch"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    with:
+      pr-owner: "dependabot[bot]"
+      commit-message: "chore: apply-signed-fixes self-test sentinel, never commit this"
+
+  test-apply-signed-fixes-suppression-asserted:
+    if: "${{ always() && github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Apply Signed Fixes - Suppression Asserted"
+    needs: test-apply-signed-fixes-suppresses-bots
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Asserted against the branch itself, not against the called job's reported result.
+      # Whether GitHub renders a wholly-skipped nested workflow as 'skipped' or 'success' is
+      # its own detail; "no commit was created" is the property that actually matters, and it
+      # is unambiguous.
+      - name: ✍️ Assert the suppressed call committed nothing
+        shell: bash
+        env:
+          SENTINEL: "chore: apply-signed-fixes self-test sentinel, never commit this"
+          CALL_RESULT: ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
+        run: |
+          set -euo pipefail
+          echo "called workflow reported: ${CALL_RESULT}"
+          found="$(git log --all --format=%s | grep -cxF "$SENTINEL" || true)"
+          if [ "$found" != "0" ]; then
+            echo "::error::apply-signed-fixes committed on a dependency-bot branch ($found sentinel commit(s)); the suppression gate is not biting"
+            exit 1
+          fi
+          echo "No sentinel commit exists; the dependency-bot suppression held ✅"
+
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
     name: CI - Required Checks
@@ -3512,6 +3572,8 @@ jobs:
       - test-lint-workflow
       - test-lint-blocks
       - test-lint-gate-lockstep
+      - test-apply-signed-fixes-suppresses-bots
+      - test-apply-signed-fixes-suppression-asserted
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -3610,6 +3672,8 @@ jobs:
             ${{ needs.test-lint-workflow.result }}
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
+            ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
+            ${{ needs.test-apply-signed-fixes-suppression-asserted.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}
