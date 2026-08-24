@@ -2254,6 +2254,26 @@ jobs:
     # Fixture-targeted: validate the known-good Go fixture (this repo is not itself a Go module).
     with:
       working-directory: .github/tests/go-valid-fixture
+      # apply-signed-fixes is omitted deliberately: its default-off read-only state must run the
+      # fixers and reject an unexpected dirty tree without committing to the branch under test.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+
+  # ── Flag-ON counterpart for signed auto-fixes ──
+  # The default-off job above proves the read-only path. This call opts in against the same
+  # known-clean fixture, so GitHub instantiates the privileged path without producing an
+  # artifact or mutating the pull request branch. A successful signing-path self-test would
+  # necessarily change that branch and remains a controlled post-release consumer proof.
+  test-validate-go-project-apply-signed-fixes:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Signed Fixes Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      apply-signed-fixes: true
     permissions:
       contents: write
       pull-requests: write
@@ -2279,6 +2299,7 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       scan-default-branch: true
+      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
     permissions:
       contents: write
       pull-requests: write
@@ -2311,6 +2332,7 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       test-default-branch: false
+      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
     permissions:
       contents: write
       pull-requests: write
@@ -3395,6 +3417,37 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-signed-commit.sh
 
+      # validate-go-project.yaml is the ORG-REQUIRED workflow: it runs on every Go pull request
+      # in the organisation and carries three fixer lanes (tidy, golangci-lint, MegaLinter), so
+      # it writes far more automation commits than lint.yaml does. The assertion is file-scoped,
+      # which is what makes it meaningful here — one lane left on a CLI commit would keep
+      # unsigned commits on the branch and hold #142's option open on its own.
+      - name: 🔏 Assert the org-required Go pipeline commits fixes through the signing API
+        shell: bash
+        run: bash .github/tests/test-lint-signed-commit.sh .github/workflows/validate-go-project.yaml
+
+      - name: 🔐 Assert the org-required Go pipeline applies signed fixes safely
+        shell: bash
+        run: bash .github/tests/test-validate-go-signed-fixes-contract.sh
+
+      # A workflow_call input's default is applied only on the workflow_call path.
+      # validate-go-project.yaml is also the org-required workflow, reached directly from
+      # pull_request, where `inputs` is empty — so a default:true input read as a bare truthy
+      # gate is false there, and every self-test here (which does use workflow_call) stays green
+      # while the guarded behaviour is off for every consumer.
+      - name: 🎚️ Assert multi-trigger input gates cannot silently evaluate false
+        shell: bash
+        run: bash .github/tests/test-multi-trigger-input-gate-polarity.sh
+
+      # The commit API can inherit a file mode from the base tree but cannot set one. Measured:
+      # modifying a path already at 100755 keeps it; adding a NEW executable file lands at
+      # 100644. Rejecting every executable file instead of only the inexpressible change would
+      # fail the job for the common case — a formatter rewriting an existing `.sh`, of which
+      # platform has 66 and ksail 48 — so the boundary is pinned against real git fixtures.
+      - name: 🔐 Assert the applied-fixes mode guard matches what the commit API can express
+        shell: bash
+        run: bash .github/tests/test-apply-signed-fixes-mode-guard.sh
+
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
       # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
       # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
@@ -3445,6 +3498,30 @@ jobs:
     with:
       pr-owner: "dependabot[bot]"
       commit-message: "chore: apply-signed-fixes self-test sentinel, never commit this"
+
+  # ── Flag-OFF counterpart: the fixer produced nothing ──────────────────────────
+  # The job above proves the workflow refuses a branch it must not touch. This one proves the
+  # OTHER state of `fixes-created`, and unlike a static assertion it actually RUNS the path: on
+  # a replacement run the fixer finds its own work already done and reports no patch, and the
+  # branch-tip signature check still has to execute. This call reaches that step for real.
+  #
+  # It is safe to run against this repository's own pull request because it commits nothing by
+  # construction: the sentinel message matches no commit, so the check reports "nothing to
+  # verify" and exits.
+  #
+  # And it is self-enforcing rather than merely illustrative. No App key is passed, so if the
+  # `fixes-created` gating ever regressed and the token step ran, `create-github-app-token`
+  # would fail with an empty private key and take this job red. A green here therefore asserts
+  # both halves at once: the check ran, and nothing privileged did.
+  test-apply-signed-fixes-verifies-without-a-patch:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Apply Signed Fixes - Verifies The Tip With No Patch"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/apply-signed-fixes.yaml
+    with:
+      fixes-created: false
+      commit-message: "chore: apply-signed-fixes fixes-created=false sentinel, never commit this"
 
   # ── gate ────────────────────────────────────────────────────
   ci-required-checks:
@@ -3499,6 +3576,7 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-apply-signed-fixes
       - test-validate-go-project-scan-default-branch
       - test-validate-go-project-test-default-branch
       - test-run-dotnet-tests-workflow
@@ -3539,6 +3617,7 @@ jobs:
       - test-lint-blocks
       - test-lint-gate-lockstep
       - test-apply-signed-fixes-suppresses-bots
+      - test-apply-signed-fixes-verifies-without-a-patch
       - test-run-dotnet-tests-blocks
       - test-run-dotnet-tests-gate-lockstep
       - test-run-dotnet-tests-coverage-inline-lockstep
@@ -3598,6 +3677,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-apply-signed-fixes.result }}
             ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-validate-go-project-test-default-branch.result }}
             ${{ needs.test-run-dotnet-tests-workflow.result }}
@@ -3638,6 +3718,7 @@ jobs:
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
+            ${{ needs.test-apply-signed-fixes-verifies-without-a-patch.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}
             ${{ needs.test-run-dotnet-tests-gate-lockstep.result }}
             ${{ needs.test-run-dotnet-tests-coverage-inline-lockstep.result }}

@@ -24,6 +24,30 @@ fail() {
   exit 1
 }
 
+# Prove assertion 1b fails closed when its yq projection fails. The wrapper
+# delegates every other query to the real binary and fails only the
+# inline-commit projection below. Without this probe,
+# `|| true` on that projection's pipeline can convert the yq failure into a
+# zero grep count and let the whole guard print PASS.
+if [[ "${LINT_SIGNED_COMMIT_YQ_FAILURE_PROBE:-0}" != "1" ]]; then
+  real_yq="$(command -v yq)"
+  probe_dir="$(mktemp -d)"
+  cat >"${probe_dir}/yq" <<'YQ_PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" != *'[.jobs[].steps[]? | (.run // "")] | join("\n")'* ]] || exit 42
+exec "${REAL_YQ}" "$@"
+YQ_PROBE
+  chmod +x "${probe_dir}/yq"
+  if env LINT_SIGNED_COMMIT_YQ_FAILURE_PROBE=1 REAL_YQ="${real_yq}" \
+    PATH="${probe_dir}:${PATH}" bash "$0" "${caller_workflow}" \
+    "${signer_workflow}" >/dev/null 2>&1; then
+    rm -rf "${probe_dir}"
+    fail 'the inline-commit assertion passed when its yq projection failed'
+  fi
+  rm -rf "${probe_dir}"
+fi
+
 bot_suppression='dependabot\[bot\]'
 
 # ── The caller delegates, and commits nothing itself ─────────────────────────────────────
@@ -44,6 +68,41 @@ caller_cli_commits="$(
 )"
 [[ "$caller_cli_commits" == "0" ]] ||
   fail "${caller_workflow} must not commit with a CLI-committing action; those commits are unsigned"
+
+# 1b. No job anywhere in the caller commits inline either. Assertion 1 knows only the NAMED
+#     CLI-committing actions, and assertion 0 is scoped to the single `apply-fixes` job — so a
+#     lane that stops delegating and inlines `run: git commit && git push` is caught by neither.
+#     That matters most in validate-go-project.yaml, which carries THREE apply lanes
+#     (apply-tidy-fixes, apply-golangci-lint-fixes, apply-fixes): two of them are invisible to
+#     assertion 0, and one left committing by hand would put unsigned commits back on
+#     contributors' branches while this guard stayed green.
+#     Read verbs, not the word `git`: the fork gates legitimately run `git status`/`git diff`.
+caller_run_blocks="$(yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow")"
+#     Match the SUBCOMMAND, not the token right after `git`. Git accepts global options before the
+#     subcommand, and a command may sit inside a substitution, so a pattern requiring `git`
+#     immediately followed by the verb misses `git -C "$GITHUB_WORKSPACE" commit`,
+#     `git --no-pager push` and `$(git commit …)`. This is a SECURITY assertion: each miss is an
+#     unsigned commit reaching a contributor's branch while the guard reports zero and stays green.
+#     Git's global options are a closed, documented set, so they can be consumed exactly — which
+#     keeps `git status`/`git diff` in the fork gates unmatched, rather than skipping arbitrary
+#     tokens and turning legitimate reads into failures.
+git_global_opt='(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)[=[:space:]][^[:space:]]+|--no-pager|--paginate|-P|--bare|--(literal|glob|noglob|icase)-pathspecs|--no-optional-locks|--no-replace-objects)'
+#     Leading class admits a substitution opener; trailing class admits a substitution closer, so
+#     `$(git commit)` and `` `git push` `` are both bounded correctly.
+git_inline_commit_re='(^|[;&|(`[:space:]])git([[:space:]]+'"$git_global_opt"')*[[:space:]]+(commit|push)([[:space:];&|)`]|$)'
+caller_inline_commits="$(
+  grep -cE "$git_inline_commit_re" <<<"$caller_run_blocks" || true
+)"
+[[ "$caller_inline_commits" == "0" ]] ||
+  fail "${caller_workflow} must not run 'git commit' or 'git push' in any job; those commits are unsigned — delegate to ./${signer_workflow#./} instead"
+
+# 1c. …and the delegation the whole file depends on is not vacuous: at least one job must
+#     actually call the signer, or every assertion below is about a workflow nothing reaches.
+caller_delegations="$(
+  yq -r "[.jobs[] | select((.uses // \"\") == \"./${signer_workflow#./}\")] | length" "$caller_workflow"
+)"
+[[ "$caller_delegations" -gt 0 ]] ||
+  fail "${caller_workflow} has no job delegating to ./${signer_workflow#./}; this guard would assert nothing"
 
 # ── The shared signing workflow commits the signing way ──────────────────────────────────
 

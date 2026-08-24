@@ -115,9 +115,16 @@ signature verification from being required on anything but the default branch.
 The caller runs the fixer and exports its result as a patch; this workflow mints the write credential
 on a fresh runner and commits it. A fixer configured from the pull request under review can execute
 arbitrary commands, so it never runs in a job holding a write-scoped token. Callers gate on whether
-auto-fixing is enabled and whether the fixer changed anything; everything visible from the pull
-request itself — event type, forks, and dependency-bot branches — is gated here, so a caller cannot
-omit it.
+auto-fixing is enabled; everything visible from the pull request itself — event type, forks, and
+dependency-bot branches — is gated here, so a caller cannot omit it.
+
+Whether the fixer actually changed anything is passed in as `fixes-created` (boolean, default `true`)
+rather than used by the caller to skip the call. Committing raises `synchronize`, which can start a
+replacement run and cancel the committing one before it verifies its own commit; the replacement
+run's fixer then finds the work already done and reports no patch. The branch-tip signature check
+therefore runs on every call, before the App token is minted and independently of `fixes-created`,
+while every step that needs write access is skipped when it is `false`. A caller that omits the input
+keeps its previous behaviour.
 
 ### 🎉 Create Release
 
@@ -771,7 +778,7 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 #### Features
 
 - **Automated Linting**: Runs `golangci-lint` and `mega-linter` to ensure code quality
-- **Auto-fix**: Automatically applies linter fixes and commits them
+- **Auto-fix**: Runs fixers in every validation and, when explicitly enabled, commits their fixes through the signed-commit workflow. Read-only runs fail with the remaining diff instead of discarding it
 - **Copilot Integration**: When linting fails, automatically prompts Copilot on the PR to fix the remaining issues
 - **Supply-chain Scanning**: Runs [`govulncheck`](https://go.dev/blog/govulncheck) via the official [`golang/govulncheck-action`](https://github.com/golang/govulncheck-action) to fail the PR on known vulnerabilities your code actually calls (call-graph reachability, so imported-but-unreachable advisories don't block). A consumer can risk-accept a reachable advisory that has no upstream fix (`Fixed in: N/A`) by committing an optional `.govulncheck-allow.txt` at the repo root (one `GO-YYYY-NNNN  # justification` per line; `#` comments and blank lines ignored); the gate stays strict for everything else. Repos with no allowlist file keep using the official action unchanged — only opt-in repos take the allowlist-aware path.
 - **Code Coverage**: Generates a Cobertura report and uploads it to **GitHub Code Quality** (native PR coverage).
@@ -789,6 +796,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     with:
       pr-owner: ${{ github.event.pull_request.user.login }} # optional
+      apply-signed-fixes: false # optional; default-off rollout gate for signed branch writes
 ```
 
 > **Note:** The calling workflow must grant `code-quality: write` so coverage can be uploaded to GitHub Code Quality. Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
@@ -799,6 +807,7 @@ jobs:
 |-------------------|----------------|---------|----------|---------------------------------------------------------------------|
 | `APP_PRIVATE_KEY`     | Secret          | -       | No       | GitHub App private key for authenticating the workflow                                                                                                                                                                          |
 | `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
+| `apply-signed-fixes`  | Input (boolean) | `false` | No       | Opt in to signed auto-fix commits on same-repository pull requests. When off, on forks, and on non-PR events, fixers remain read-only and fail with their diff if changes remain                                                                                                               |
 | `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
 | `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 | `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |
