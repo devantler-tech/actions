@@ -78,8 +78,20 @@ caller_cli_commits="$(
 #     contributors' branches while this guard stayed green.
 #     Read verbs, not the word `git`: the fork gates legitimately run `git status`/`git diff`.
 caller_run_blocks="$(yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow")"
+#     Match the SUBCOMMAND, not the token right after `git`. Git accepts global options before the
+#     subcommand, and a command may sit inside a substitution, so a pattern requiring `git`
+#     immediately followed by the verb misses `git -C "$GITHUB_WORKSPACE" commit`,
+#     `git --no-pager push` and `$(git commit …)`. This is a SECURITY assertion: each miss is an
+#     unsigned commit reaching a contributor's branch while the guard reports zero and stays green.
+#     Git's global options are a closed, documented set, so they can be consumed exactly — which
+#     keeps `git status`/`git diff` in the fork gates unmatched, rather than skipping arbitrary
+#     tokens and turning legitimate reads into failures.
+git_global_opt='(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace|exec-path)[=[:space:]][^[:space:]]+|--no-pager|--paginate|-P|--bare|--(literal|glob|noglob|icase)-pathspecs|--no-optional-locks|--no-replace-objects)'
+#     Leading class admits a substitution opener; trailing class admits a substitution closer, so
+#     `$(git commit)` and `` `git push` `` are both bounded correctly.
+git_inline_commit_re='(^|[;&|(`[:space:]])git([[:space:]]+'"$git_global_opt"')*[[:space:]]+(commit|push)([[:space:];&|)`]|$)'
 caller_inline_commits="$(
-  grep -cE '(^|[;&|[:space:]])git[[:space:]]+(commit|push)([[:space:]]|$)' <<<"$caller_run_blocks" || true
+  grep -cE "$git_inline_commit_re" <<<"$caller_run_blocks" || true
 )"
 [[ "$caller_inline_commits" == "0" ]] ||
   fail "${caller_workflow} must not run 'git commit' or 'git push' in any job; those commits are unsigned — delegate to ./${signer_workflow#./} instead"
