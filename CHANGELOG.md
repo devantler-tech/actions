@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.4](https://github.com/devantler-tech/actions/compare/v13.1.3...v13.1.4) (2026-08-24)
+
+
+### Bug Fixes
+
+* **lint:** share one signed-commit workflow across fixer lanes ([#1011](https://github.com/devantler-tech/actions/issues/1011)) ([335d880](https://github.com/devantler-tech/actions/commit/335d8807be330d7e3f462e420e57fd046d3df671))
+
 ## [13.1.3](https://github.com/devantler-tech/actions/compare/v13.1.2...v13.1.3) (2026-08-23)
 
 
