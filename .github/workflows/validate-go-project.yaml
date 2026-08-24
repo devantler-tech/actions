@@ -54,7 +54,7 @@ on:
 # Adding a discriminator only ever splits groups further; it cannot merge two that were
 # separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.skip-apply-fixes }}"
   cancel-in-progress: true
 
 permissions: {}
