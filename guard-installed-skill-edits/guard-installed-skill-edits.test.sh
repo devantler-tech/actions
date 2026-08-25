@@ -1014,4 +1014,141 @@ if CHANGED_PATHS=".agents/skills/normal/SKILL.md"$'\n' run_guard >/dev/null 2>&1
   fail "control 28e: an ordinary local skill must stay editable: rc=${rc} want=0"
 fi
 pass "control: an ordinary local skill stays editable under key normalisation"
+
+# 29. AN ENCODED KEY IS NOT THE KEY. `"github-repo"` resolves to `github-repo` in any YAML
+#     parser; comparing the literal spelling read it as an unrelated key, so provenance came back
+#     empty and empty means LOCAL. Decoding YAML escapes in bash is its own defect source, so this
+#     fails closed instead.
+export FAKE_GIT_STORE="${tmp}/objects49"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/escaped"
+store_exists "origin/main:.agents/skills/escaped" "dir"
+store_exists "HEAD:.agents/skills/escaped" "dir"
+store_exists "origin/main:.agents/skills/escaped/SKILL.md" \
+  $'---\nmetadata:\n  "github\\u002drepo": https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/escaped/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "escaped key: expected UNKNOWN, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "escaped key: rc=${rc} want=2"
+fi
+pass "an escaped quoted key fails closed as UNKNOWN"
+
+# 30. YAML NULL NAMES NO UPSTREAM — and refusing it is a FALSE REFUSAL shipped to every consumer.
+#     `github-repo: null` is a valid way for a local skill to carry the key while recording no
+#     provenance; returning the literal token made the guard refuse every edit and print
+#     `upstream: null`.
+for nul in 'null' '~' 'Null'; do
+  export FAKE_GIT_STORE="${tmp}/objects50-${nul}"
+  mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+  mkdir -p "${tmp}/.agents/skills/nullprov"
+  store_exists "origin/main:.agents/skills/nullprov" "dir"
+  store_exists "HEAD:.agents/skills/nullprov" "dir"
+  store_exists "origin/main:.agents/skills/nullprov/SKILL.md" \
+    "---"$'\n'"metadata:"$'\n'"  github-repo: ${nul}"$'\n'"---"$'\n'
+  if CHANGED_PATHS=".agents/skills/nullprov/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+    rc=$?
+    fail "null provenance (${nul}): must be local: rc=${rc} want=0"
+  fi
+done
+pass "YAML null provenance (null / ~ / Null) is absent, not an upstream"
+
+# 30b. A comment-only value names no upstream either.
+export FAKE_GIT_STORE="${tmp}/objects51"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/commentprov"
+store_exists "origin/main:.agents/skills/commentprov" "dir"
+store_exists "HEAD:.agents/skills/commentprov" "dir"
+store_exists "origin/main:.agents/skills/commentprov/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: # intentionally local\n---\n'
+if CHANGED_PATHS=".agents/skills/commentprov/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "comment-only provenance: must be local: rc=${rc} want=0"
+fi
+pass "a comment-only provenance value is absent, not an upstream"
+
+# 30c. CONTROL for 30: a URL carrying a FRAGMENT keeps its tail. `#` opens a comment only after
+#      whitespace, so a narrow strip must not truncate `https://example.test/x#y`.
+export FAKE_GIT_STORE="${tmp}/objects52"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/fragment"
+store_exists "origin/main:.agents/skills/fragment" "dir"
+store_exists "HEAD:.agents/skills/fragment" "dir"
+store_exists "origin/main:.agents/skills/fragment/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills#frag\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/fragment/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "fragment URL: expected refusal, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "fragment URL: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "agent-skills#frag" \
+    || fail "fragment URL: the fragment must survive the comment strip"
+fi
+pass "control: a '#' fragment inside a URL survives the comment strip"
+
+# 31. SPLITTING EVERY COMMA IS A FALSE REFUSAL. `{tags: [a, b]}` is ordinary local metadata; an
+#     unconditional split made the second fragment unreadable, so the guard reported UNKNOWN and
+#     EVERY legitimate edit to that skill exited 2.
+export FAKE_GIT_STORE="${tmp}/objects53"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowseq"
+store_exists "origin/main:.agents/skills/flowseq" "dir"
+store_exists "HEAD:.agents/skills/flowseq" "dir"
+store_exists "origin/main:.agents/skills/flowseq/SKILL.md" \
+  $'---\nmetadata: {tags: [a, b], version: 1}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowseq/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "flow sequence comma: must stay local: rc=${rc} want=0"
+fi
+pass "a comma inside a flow sequence does not split the entry"
+
+# 31b. The same for a comma inside a QUOTED scalar.
+export FAKE_GIT_STORE="${tmp}/objects54"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowquote"
+store_exists "origin/main:.agents/skills/flowquote" "dir"
+store_exists "HEAD:.agents/skills/flowquote" "dir"
+store_exists "origin/main:.agents/skills/flowquote/SKILL.md" \
+  $'---\nmetadata: {note: "a,b"}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowquote/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "flow quoted comma: must stay local: rc=${rc} want=0"
+fi
+pass "a comma inside a quoted flow scalar does not split the entry"
+
+# 31c. CONTROL for 31: provenance is STILL FOUND past a comma-bearing entry, so the splitter did
+#      not simply stop parsing. Without this, 31/31b would also pass if flow parsing had been
+#      disabled altogether.
+export FAKE_GIT_STORE="${tmp}/objects55"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowfind"
+store_exists "origin/main:.agents/skills/flowfind" "dir"
+store_exists "HEAD:.agents/skills/flowfind" "dir"
+store_exists "origin/main:.agents/skills/flowfind/SKILL.md" \
+  $'---\nmetadata: {tags: [a, b], github-repo: https://github.com/devantler-tech/agent-skills}\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/flowfind/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "flow find past comma: expected refusal, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "flow find past comma: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "flow find past comma: should name the upstream"
+fi
+pass "control: provenance is still found in an entry after a comma-bearing one"
+
+# 31d. An UNTERMINATED quote inside a flow mapping is undecidable, not local.
+export FAKE_GIT_STORE="${tmp}/objects56"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowbadquote"
+store_exists "origin/main:.agents/skills/flowbadquote" "dir"
+store_exists "HEAD:.agents/skills/flowbadquote" "dir"
+store_exists "origin/main:.agents/skills/flowbadquote/SKILL.md" \
+  $'---\nmetadata: {note: "a,b}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowbadquote/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "unterminated flow quote: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "unterminated flow quote: rc=${rc} want=2"
+fi
+pass "an unterminated quote in a flow mapping is UNKNOWN, not local"
 echo "ALL PASS"

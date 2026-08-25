@@ -142,6 +142,15 @@ yaml_key_of() {
         *"$q"*) k="${s%%"$q"*}"; rest="${s#*"$q"}" ;;
         *) return 1 ;;
       esac
+      # 🔴 A BACKSLASH MEANS THE KEY IS ENCODED, AND AN ENCODED KEY IS NOT THE KEY.
+      # `"github\u002drepo"` resolves to `github-repo` in any YAML parser, but comparing the
+      # literal spelling reads it as an unrelated key, so provenance comes back empty and empty
+      # means LOCAL — the edit to a synced skill is permitted. Decoding YAML escapes correctly
+      # in bash is its own source of defects, so this fails closed instead: a quoted key
+      # carrying an escape is undecidable, which the callers already handle.
+      case "$k" in
+        *\\*) return 1 ;;
+      esac
       # After the closing quote a colon must follow, optionally after whitespace.
       rest="${rest#"${rest%%[![:space:]]*}"}"
       case "$rest" in
@@ -169,20 +178,86 @@ yaml_key_of() {
 }
 
 # Strips surrounding whitespace, then one layer of matching quotes, from a mapping value.
+# Reads a mapping value: strips an unquoted trailing comment, trims, removes one layer of
+# matching quotes, and reports YAML null as ABSENT.
+#
+# 🔴 YAML NULL NAMES NO UPSTREAM. `github-repo: null`, `github-repo: ~`, and a key whose value
+# is only a comment are all valid ways for a LOCAL skill to carry the key while recording no
+# provenance. Returning the literal token made the guard refuse every edit to such a skill and
+# print `upstream: null` while doing it — a false refusal shipped to every consumer.
+#
+# The comment strip is deliberately narrow: `#` opens a comment only after whitespace, so a
+# fragment URL such as `https://example.test/x#y` keeps its tail. A quoted scalar is literal,
+# so `"null"` stays the string it is.
 yaml_scalar_value() {
   local v="$1"
   v="${v#"${v%%[![:space:]]*}"}"
+  case "$v" in
+    '"'*|"'"*) : ;;
+    *)
+      # Strip ` #…` / <tab>#… , and a value that is only a comment.
+      case "$v" in
+        '#'*) v="" ;;
+        *[[:space:]]'#'*) v="${v%%[[:space:]]#*}" ;;
+      esac
+      ;;
+  esac
+  v="${v#"${v%%[![:space:]]*}"}"
   v="${v%"${v##*[![:space:]]}"}"
   case "$v" in
-    '"'*'"') v="${v#\"}"; v="${v%\"}" ;;
-    "'"*"'") v="${v#\'}"; v="${v%\'}" ;;
+    '"'*'"') v="${v#\"}"; v="${v%\"}"; printf '%s' "$v"; return 0 ;;
+    "'"*"'") v="${v#\'}"; v="${v%\'}"; printf '%s' "$v"; return 0 ;;
+  esac
+  case "$v" in
+    null|Null|NULL|'~') v="" ;;
   esac
   printf '%s' "$v"
+}
+# Splits a flow mapping's body into its top-level entries, respecting quotes and brackets.
+# `s` is everything after the opening `{`. Sets `_entries` and returns 0 when a matching `}`
+# closes the mapping with balanced quoting; returns 1 (undecidable) otherwise.
+#
+# 🔴 SPLITTING ON EVERY COMMA IS A FALSE REFUSAL, NOT A FAIL-OPEN — and it breaks working
+# consumers rather than letting a bad edit through. `{tags: [a, b]}` and `{note: "a,b"}` are
+# ordinary local metadata; an unconditional split turns each into fragments, the second of
+# which is not a readable key, so the guard reports UNKNOWN and EVERY legitimate edit to that
+# skill exits 2. A guard that blocks correct work teaches people to remove the guard.
+parse_flow_mapping() {
+  local s="$1" i=0 n c q="" depth=0 cur="" closed=0
+  _entries=()
+  n=${#s}
+  while [ "$i" -lt "$n" ]; do
+    c="${s:i:1}"
+    if [ -n "$q" ]; then
+      cur="$cur$c"
+      [ "$c" = "$q" ] && q=""
+    else
+      case "$c" in
+        '"'|"'") q="$c"; cur="$cur$c" ;;
+        '['|'{') depth=$((depth + 1)); cur="$cur$c" ;;
+        ']') depth=$((depth - 1)); cur="$cur$c" ;;
+        '}')
+          if [ "$depth" -eq 0 ]; then closed=1; break; fi
+          depth=$((depth - 1)); cur="$cur$c"
+          ;;
+        ',')
+          if [ "$depth" -eq 0 ]; then _entries+=("$cur"); cur=""; else cur="$cur$c"; fi
+          ;;
+        *) cur="$cur$c" ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+  # An unterminated quote or an unclosed mapping is undecidable, never "no provenance".
+  [ -z "$q" ] || return 1
+  [ "$closed" = 1 ] || return 1
+  _entries+=("$cur")
+  return 0
 }
 
 provenance_repo() {
   local file="$1" line first=1 in_fm=0 in_meta=0 meta_indent="" indent content
-  local flow_rest flow_inner old_ifs entry
+  local flow_rest flow_inner entry
   # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested deeper
   # (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
   # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu runners
@@ -225,37 +300,33 @@ provenance_repo() {
         # `metadata: {github-repo: ...}` is the same key in flow style.
         if [ "${flow_rest#\{}" != "$flow_rest" ]; then
           flow_inner="${flow_rest#\{}"
-          # A line parser can decide a flow mapping only when it CLOSES on this line and
-          # nests nothing. Anything else is undecidable.
-          case "$flow_inner" in
-            *'}'*) : ;;
-            *) printf '%s\n' "__UNKNOWN__"; return 0 ;;
-          esac
+          # A nested mapping is undecidable for a line parser. Checked before splitting so the
+          # existing nested-flow verdict is preserved.
           case "$flow_inner" in
             *'{'*) printf '%s\n' "__UNKNOWN__"; return 0 ;;
           esac
-          flow_inner="${flow_inner%\}*}"
-          old_ifs="$IFS"
-          IFS=','
-          for entry in $flow_inner; do
+          # Split at TOP-LEVEL commas only, respecting quotes and brackets. An unterminated
+          # quote or an unclosed mapping is undecidable.
+          if ! parse_flow_mapping "$flow_inner"; then
+            printf '%s\n' "__UNKNOWN__"
+            return 0
+          fi
+          for entry in "${_entries[@]}"; do
             entry="${entry#"${entry%%[![:space:]]*}"}"
             entry="${entry%"${entry##*[![:space:]]}"}"
             # An EMPTY entry is not undecidable: `metadata: {}` and `metadata: { }` genuinely
             # record no provenance, which is the LOCAL case.
             [ -n "$entry" ] || continue
             if ! yaml_key_of "$entry"; then
-              IFS="$old_ifs"
               printf '%s\n' "__UNKNOWN__"
               return 0
             fi
             if [ "$_key" = "github-repo" ]; then
-              IFS="$old_ifs"
               yaml_scalar_value "$_rest"
               printf '\n'
               return 0
             fi
           done
-          IFS="$old_ifs"
           # A well-formed flow mapping whose keys are all readable and none of them
           # github-repo genuinely records no provenance — the LOCAL case.
           continue
