@@ -1,0 +1,40 @@
+name: Guard Installed Skill Edits
+author: devantler-tech
+description: Refuse a hand-edit to a synced installed-skill tree, naming its upstream
+inputs:
+  skill-root:
+    description: Repository-relative installed-skill root
+    required: false
+    default: ".agents/skills"
+  sync-actor:
+    description: Exact GitHub login of the programmed updater App
+    required: false
+    default: "botantler-1[bot]"
+  sync-branch:
+    description: Exact head-branch name of the programmed updater PR
+    required: false
+    default: "deps/agent-skills-update"
+runs:
+  using: composite
+  steps:
+    - name: Guard installed skill edits
+      shell: bash
+      env:
+        SKILL_ROOT: ${{ inputs.skill-root }}
+        SYNC_ACTOR: ${{ inputs.sync-actor }}
+        SYNC_BRANCH: ${{ inputs.sync-branch }}
+        # `merge_group` carries no `pull_request` object, so without these fallbacks both
+        # SHAs are empty on a merge-queue run and the guard exits UNKNOWN before checking
+        # anything — which blocks the queue for every consumer that requires this gate.
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        # Deliberately PR-only: a merge_group event carries no PR identity, so the
+        # programmed-sync exemption cannot be evaluated there. See the README.
+        PR_ACTOR: ${{ github.event.pull_request.user.login }}
+        PR_HEAD_BRANCH: ${{ github.head_ref }}
+        # `CHANGED_PATHS` is a TEST SEAM. A composite step inherits workflow- and job-level
+        # env, so a consumer that happens to define that name would have its value trusted in
+        # place of the real diff — and any value outside the skill root makes the guard skip
+        # every edit and exit 0. Pinning it empty here fences production from the seam.
+        CHANGED_PATHS: ""
+      run: bash "${{ github.action_path }}/guard-installed-skill-edits.sh"

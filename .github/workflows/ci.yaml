@@ -1109,6 +1109,36 @@ jobs:
 
           rm -f "$counter" "$flaky"
 
+  # ── guard-installed-skill-edits (composite + hermetic suite) ─────────────
+  test-guard-installed-skill-edits:
+    name: 🧪 Test Guard Installed Skill Edits
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: ⬇️ Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The consumer-style invocation below needs BOTH the PR base and head commits to
+          # be locally readable. The default depth-1 checkout has neither (the checked-out
+          # ref is the synthetic merge commit), so the guard correctly exits 2 UNKNOWN and
+          # this REQUIRED job can never pass. fetch-depth: 0 is what the action's own README
+          # tells consumers to use, so the CI job must invoke it the documented way.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 🧪 Run hermetic guard suite
+        run: bash ./guard-installed-skill-edits/guard-installed-skill-edits.test.sh
+
+      - name: 🧪 Invoke composite as a consumer would
+        uses: ./guard-installed-skill-edits
+
   # ── .scripts/ensure-gh-skill.sh (shared gh-skill bootstrap) ─
   test-ensure-gh-skill-script:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -3775,6 +3805,7 @@ jobs:
       - test-setup-go-toolchain-private-modules
       - test-setup-ksail-cli
       - test-retry-script
+      - test-guard-installed-skill-edits
       - test-ensure-gh-skill-script
       - test-gh-skill-install-script
       - test-agent-skills-retry-env
@@ -3876,6 +3907,7 @@ jobs:
             ${{ needs.test-setup-go-toolchain-private-modules.result }}
             ${{ needs.test-setup-ksail-cli.result }}
             ${{ needs.test-retry-script.result }}
+            ${{ needs.test-guard-installed-skill-edits.result }}
             ${{ needs.test-ensure-gh-skill-script.result }}
             ${{ needs.test-gh-skill-install-script.result }}
             ${{ needs.test-agent-skills-retry-env.result }}
