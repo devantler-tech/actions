@@ -44,7 +44,16 @@ case "${cmd}" in
     spec="${2:-}"
     key="${spec//\//_}"
     key="${key//:/_}"
-    [ -f "${store}/show/${key}" ] || exit 1
+    # A DIRECTORY resolves when anything is stored UNDER it, which is what real git answers
+    # for `cat-file -e <sha>:<dir>`. Requiring an explicit entry per directory made the stub
+    # answer "absent" for a tree that demonstrably contains files — so a guard asking about
+    # the skill ROOT was tested against a fiction. Glob rather than a regex: the key holds
+    # dots and dashes that a `grep "^${key}_"` anchor would treat as metacharacters.
+    if [ -f "${store}/show/${key}" ]; then exit 0; fi
+    for entry in "${store}/show/${key}"_*; do
+      if [ -e "${entry}" ]; then exit 0; fi
+    done
+    exit 1
     ;;
   ls-tree)
     [ "${1:-}" = "-r" ] && [ "${2:-}" = "--name-only" ] || exit 1
@@ -140,6 +149,11 @@ mkdir -p "${tmp}/.agents/skills/brand-new"
 printf '%s\n' ".agents/skills/brand-new/SKILL.md" >"${tmp}/lstree-head"
 export FAKE_GIT_STORE="${tmp}/objects2"
 mkdir -p "${FAKE_GIT_STORE}/lstree" "${FAKE_GIT_STORE}/show"
+# The root exists at HEAD because the new skill is in it; it is absent at base. Without
+# this the root-existence check short-circuits and the case never reaches the loop it is
+# meant to exercise.
+store_exists "HEAD:.agents/skills/brand-new" "dir"
+store_exists "HEAD:.agents/skills/brand-new/SKILL.md" $'---\nname: brand-new\n---\n'
 printf '%s\n' ".agents/skills/brand-new/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
 if CHANGED_PATHS=".agents/skills/brand-new/SKILL.md"$'\n' run_guard; then :; else
   fail "new skill directory should be allowed"
@@ -279,6 +293,9 @@ pass "SKILL.md gone at BASE while directory remains is UNKNOWN"
 export FAKE_GIT_STORE="${tmp}/objects9"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills"
+# The root must exist in a referenced TREE, not merely in the checkout, or the guard
+# correctly no-ops before it ever runs the diff this case is about.
+store_exists "origin/main:.agents/skills/installed/SKILL.md" $'---\nname: installed\n---\n'
 : >"${FAKE_GIT_STORE}/diff_fail"
 if run_guard; then
   fail "failing diff: expected UNKNOWN, got success (this is the fail-open)"
@@ -294,6 +311,9 @@ pass "a failing changed-path diff is UNKNOWN, not a silent pass"
 export FAKE_GIT_STORE="${tmp}/objects10"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills"
+# An unrelated installed skill, so the ROOT exists in a referenced tree and the guard
+# reaches the diff. The changed path below still names a directory that is absent.
+store_exists "origin/main:.agents/skills/present/SKILL.md" $'---\nname: present\n---\n'
 printf '%s\0' ".agents/skills/absent/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
 run_guard >/dev/null 2>&1 || true
 [ -f "${FAKE_GIT_STORE}/diff_args" ] || fail "three-dot: the guard never invoked git diff"
@@ -557,4 +577,153 @@ else
 fi
 rm -f "${FAKE_GIT_STORE}/not_worktree"
 pass "a missing work tree is UNKNOWN, not a clean pass"
+
+# 21. Repository-root mode must not treat every top-level directory as a skill.
+#     With the documented `skill-root: .` the first path component of every changed file is
+#     a skill candidate, so editing `.github/workflows/ci.yaml` selected `.github` — present
+#     in both trees, no SKILL.md — and the guard failed an unrelated PR with UNKNOWN. That
+#     fires on essentially every PR in a root-mode consumer.
+export FAKE_GIT_STORE="${tmp}/objects25"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+store_exists "origin/main:.github" "dir"
+store_exists "HEAD:.github" "dir"
+store_exists "origin/main:.github/workflows/ci.yaml" "on: push"
+if out="$(SKILL_ROOT="." CHANGED_PATHS=".github/workflows/ci.yaml"$'\n' run_guard 2>&1)"; then :; else
+  rc=$?
+  fail "root mode: a non-skill top-level dir must not block: rc=${rc} want=0 — got: ${out}"
+fi
+pass "root mode: a non-skill top-level directory is not a skill"
+
+# 21b. Control for 21: root mode must STILL refuse a genuine synced skill. Without this,
+#      case 21 would also pass if root mode had simply stopped checking anything.
+export FAKE_GIT_STORE="${tmp}/objects26"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+store_exists "origin/main:synced" "dir"
+store_exists "HEAD:synced" "dir"
+store_exists "origin/main:synced/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(SKILL_ROOT="." CHANGED_PATHS="synced/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "control: root mode should still refuse a synced skill"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "control root mode: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "control root mode: should name upstream"
+fi
+pass "control: root mode still refuses a synced skill"
+
+# 22. A root present in the referenced TREES but absent from the CHECKOUT must still be
+#     checked. Every decision this guard makes reads git objects, so asking `-d` about the
+#     worktree tested something the script does not use: a sparse checkout that omits the
+#     root, or a step that removed it, exited 0 without examining the diff at all.
+export FAKE_GIT_STORE="${tmp}/objects27"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+rm -rf "${tmp}/.agents"
+store_exists "origin/main:.agents/skills/sparse" "dir"
+store_exists "HEAD:.agents/skills/sparse" "dir"
+store_exists "origin/main:.agents/skills/sparse/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/sparse/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "sparse checkout: expected a refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "sparse checkout: rc=${rc} want=1"
+fi
+pass "a root absent from the checkout but present in the trees is still checked"
+
+# 22b. Control for 22: a root absent from BOTH trees is still a genuine no-op. Narrowing
+#      must not turn "this repo has no skills" into a failing required gate.
+export FAKE_GIT_STORE="${tmp}/objects28"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+rm -rf "${tmp}/.agents"
+if out="$(run_guard 2>&1)"; then
+  printf '%s' "${out}" | grep -q "nothing to check" || fail "control: should say nothing to check"
+else
+  rc=$?
+  fail "control: a root absent from both trees should no-op: rc=${rc} want=0"
+fi
+pass "control: a root absent from both trees is still a no-op"
+
+# 23. Flow-style metadata is the same key, and missing it FAILED OPEN: the line parser did
+#     not enter the mapping, provenance read empty, and empty means LOCAL — so the guard
+#     permitted a hand-edit to a synced skill, the one thing it exists to refuse.
+export FAKE_GIT_STORE="${tmp}/objects29"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flow"
+store_exists "origin/main:.agents/skills/flow" "dir"
+store_exists "HEAD:.agents/skills/flow" "dir"
+store_exists "origin/main:.agents/skills/flow/SKILL.md" \
+  $'---\nname: flow\nmetadata: {github-repo: "https://github.com/devantler-tech/agent-skills"}\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/flow/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "flow-style metadata: expected a refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "flow-style metadata: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "flow-style: should name upstream"
+fi
+pass "flow-style metadata.github-repo is provenance"
+
+# 23b. A flow mapping with no github-repo key genuinely records no provenance: that is the
+#      LOCAL verdict, and a local skill stays editable.
+export FAKE_GIT_STORE="${tmp}/objects30"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowlocal"
+store_exists "origin/main:.agents/skills/flowlocal" "dir"
+store_exists "HEAD:.agents/skills/flowlocal" "dir"
+store_exists "origin/main:.agents/skills/flowlocal/SKILL.md" \
+  $'---\nmetadata: {version: 2, category: local}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowlocal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "flow mapping without github-repo is LOCAL: rc=${rc} want=0"
+fi
+pass "a flow mapping with no github-repo is local"
+
+# 23c. A NESTED flow mapping is undecidable for a line parser. Undecidable must be UNKNOWN,
+#      never local — collapsing it into the empty/local verdict is the same fail-open.
+export FAKE_GIT_STORE="${tmp}/objects31"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flownested"
+store_exists "origin/main:.agents/skills/flownested" "dir"
+store_exists "HEAD:.agents/skills/flownested" "dir"
+store_exists "origin/main:.agents/skills/flownested/SKILL.md" \
+  $'---\nmetadata: {source: {github-repo: https://github.com/someone/else}}\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/flownested/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "nested flow mapping: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "nested flow mapping: rc=${rc} want=2"
+fi
+pass "a nested flow mapping is UNKNOWN, not local"
+
+# 23d. An UNTERMINATED flow mapping spans lines and is equally undecidable.
+export FAKE_GIT_STORE="${tmp}/objects32"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowopen"
+store_exists "origin/main:.agents/skills/flowopen" "dir"
+store_exists "HEAD:.agents/skills/flowopen" "dir"
+store_exists "origin/main:.agents/skills/flowopen/SKILL.md" \
+  $'---\nmetadata: {github-repo:\n  https://github.com/devantler-tech/agent-skills}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowopen/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "unterminated flow mapping: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "unterminated flow mapping: rc=${rc} want=2"
+fi
+pass "an unterminated flow mapping is UNKNOWN, not local"
+
+# 23e. `metadata: &anchor` / `*alias` is a metadata key this parser cannot follow. Same rule.
+export FAKE_GIT_STORE="${tmp}/objects33"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/anchored"
+store_exists "origin/main:.agents/skills/anchored" "dir"
+store_exists "HEAD:.agents/skills/anchored" "dir"
+store_exists "origin/main:.agents/skills/anchored/SKILL.md" \
+  $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/anchored/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "anchored metadata: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "anchored metadata: rc=${rc} want=2"
+fi
+pass "an anchored metadata mapping is UNKNOWN, not local"
+
 echo "ALL PASS"

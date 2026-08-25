@@ -52,9 +52,14 @@ The checkout is part of the usage, not a precondition you can assume. With no ch
 path is absent, so a root-existence test alone would find nothing and exit 0 — a required
 guard reporting success having evaluated nothing. The action therefore checks that it is
 inside a git work tree first and reports UNKNOWN when it is not, so a missing checkout fails
-loudly instead of passing silently. Exit 0 is reserved for a real checkout in which the
-installed-skill root genuinely does not exist. `fetch-depth: 0` is what then makes the base
-commit available to the diff.
+loudly instead of passing silently. Exit 0 is reserved for the case where the installed-skill
+root genuinely does not exist in either referenced commit. `fetch-depth: 0` is what then makes
+the base commit available to the diff.
+
+Whether the root exists is decided from the two referenced commits, not from the working
+directory: every other decision this action makes reads git objects, so a sparse checkout that
+omits the root — or a step that deleted it — no longer reads as "nothing to check" while both
+commits contain it.
 
 ```yaml
 - name: ⬇️ Checkout
@@ -68,5 +73,17 @@ commit available to the diff.
 
 Pass a different `skill-root` when the consumer installs skills somewhere other than
 `.agents/skills`. A leading `./`, a trailing `/`, or `.` for skills at the repository root are all accepted and normalised.
+
+With `skill-root: .` the skill directories sit at the repository root, so the first path
+component of a changed file is only a *candidate*. A top-level directory that has no
+`SKILL.md` at the base commit is simply not a skill — editing `.github/workflows/ci.yaml`
+does not make `.github` a malformed install. Under a dedicated root the opposite holds: every
+subdirectory is meant to be a skill, so one missing its `SKILL.md` is reported UNKNOWN.
+
+Provenance is read from `metadata.github-repo` in the base `SKILL.md`, in either block or
+flow style (`metadata: {github-repo: ...}`). A metadata mapping this action cannot decide —
+one spanning several lines, nesting another mapping, or hidden behind a YAML anchor or alias
+— is reported UNKNOWN rather than treated as having no provenance, because "no provenance"
+is what marks a skill local and editable.
 
 

@@ -56,9 +56,32 @@ if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]; then
   exit 2
 fi
 
-# Missing-dir no-op must precede the SHA check: this repo has no .agents/skills
-# of its own, so an unset-root job on a random PR would otherwise fail UNKNOWN.
-if [ ! -d "${ROOT_DIR}" ]; then
+# 🔴 "IS THERE A SKILL ROOT?" IS A QUESTION ABOUT THE REFERENCED TREES, NOT THE CHECKOUT.
+#
+# Every decision below reads git objects — `cat-file -e "${BASE_SHA}:..."`, `show`, `diff` —
+# and never touches a working file. Asking `-d` about the worktree therefore tested something
+# the rest of this script does not use, and answered it wrongly whenever the two disagree: a
+# sparse checkout that omits the root, or an earlier step that removed it, exits 0 here
+# without examining the diff at all, while both commits contain the root and the PR edits a
+# synced skill inside it. That is the same "valid input -> zero matches -> exit 0" fail-open
+# the three-dot diff check refuses for an unresolvable commit.
+#
+# When both SHAs are present the trees are authoritative. Without them nothing can be
+# diffed anyway, so the worktree question is kept as the fallback: a repository that simply
+# has no skill root still no-ops instead of failing a required gate, and a root that DOES
+# exist falls through to the UNKNOWN below.
+root_in_tree() { # <sha> -> 0 when ROOT_DIR exists in that tree
+  # Repository-root mode: every commit has a root tree, so there is nothing to look up.
+  [ -z "${ROOT_PREFIX}" ] && return 0
+  git --no-replace-objects cat-file -e "${1}:${ROOT_DIR}" 2>/dev/null
+}
+
+if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+  if ! root_in_tree "${BASE_SHA}" && ! root_in_tree "${HEAD_SHA}"; then
+    echo "guard-installed-skill-edits: no ${ROOT_DIR} in either commit; nothing to check"
+    exit 0
+  fi
+elif [ ! -d "${ROOT_DIR}" ]; then
   echo "guard-installed-skill-edits: no ${ROOT_DIR}; nothing to check"
   exit 0
 fi
@@ -107,8 +130,54 @@ provenance_repo() {
     # A non-indented line starts a new top-level key, which closes any metadata mapping.
     case "$line" in
       [!\ \	]*)
-        if [[ $line =~ ^metadata:[[:space:]]*(#.*)?$ ]]; then in_meta=1; else in_meta=0; fi
         meta_indent=""
+        if [[ $line =~ ^metadata:[[:space:]]*(#.*)?$ ]]; then
+          in_meta=1
+          continue
+        fi
+        in_meta=0
+        # 🔴 `metadata: {github-repo: ...}` IS THE SAME KEY IN FLOW STYLE, AND MISSING IT
+        # FAILS OPEN. A block mapping is what this parser was written for, so a valid flow
+        # mapping fell through to in_meta=0, provenance read EMPTY, and empty means LOCAL —
+        # so the guard PERMITS a hand-edit to a synced skill, the one thing it exists to
+        # refuse. This is the same class as the column-zero comment, reached by a different
+        # spelling of the same document.
+        if [[ $line =~ ^metadata:[[:space:]]*\{(.*)$ ]]; then
+          flow_rest="${BASH_REMATCH[1]}"
+          # A line parser can decide a flow mapping only when it CLOSES on this line and
+          # nests nothing. Anything else is undecidable, and undecidable must never render
+          # as "no provenance" — that is the fail-open above with extra steps.
+          if [[ $flow_rest != *"}"* ]] || [[ $flow_rest == *"{"* ]]; then
+            printf '%s\n' "__UNKNOWN__"
+            return 0
+          fi
+          flow_inner="${flow_rest%\}*}"
+          local old_ifs="$IFS" entry entry_val
+          IFS=','
+          for entry in $flow_inner; do
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            entry="${entry%"${entry##*[![:space:]]}"}"
+            if [[ $entry =~ ^github-repo:[[:space:]]*(.*)$ ]]; then
+              entry_val="${BASH_REMATCH[1]}"
+              entry_val="${entry_val%"${entry_val##*[![:space:]]}"}"
+              entry_val="${entry_val#\"}"; entry_val="${entry_val%\"}"
+              entry_val="${entry_val#\'}"; entry_val="${entry_val%\'}"
+              IFS="$old_ifs"
+              printf '%s\n' "$entry_val"
+              return 0
+            fi
+          done
+          IFS="$old_ifs"
+          # A well-formed flow mapping with no github-repo key genuinely records no
+          # provenance, which is the LOCAL case — fall through.
+          continue
+        fi
+        # `metadata: &anchor` / `metadata: *alias` / any other scalar remainder is a
+        # metadata key this parser cannot follow. Undecidable, not local.
+        if [[ $line =~ ^metadata:[[:space:]]*[^[:space:]#] ]]; then
+          printf '%s\n' "__UNKNOWN__"
+          return 0
+        fi
         continue
         ;;
     esac
@@ -193,6 +262,21 @@ while IFS= read -r path; do
 
   skill_md="${base_skill}/SKILL.md"
   if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${skill_md}" 2>/dev/null; then
+    # 🔴 IN REPOSITORY-ROOT MODE, A TOP-LEVEL DIRECTORY IS NOT A SKILL BY CONSTRUCTION.
+    #
+    # Under a dedicated root every subdirectory is MEANT to be a skill, so one without a
+    # SKILL.md is a genuinely broken install and UNKNOWN is right. With the documented
+    # `skill-root: .` the first path component of every changed file is a candidate, so
+    # editing `.github/workflows/ci.yaml` selects `.github` — a directory that exists in
+    # both trees and has no SKILL.md — and this branch failed an unrelated PR with exit 2.
+    # That fires on essentially every PR in a root-mode consumer, which is a false refusal
+    # severe enough to teach people to remove the gate.
+    #
+    # This cannot hide an edit: provenance is read from the BASE snapshot, so a directory
+    # with no SKILL.md at base is not an installed skill at base and has nothing to protect.
+    if [ -z "${ROOT_PREFIX}" ]; then
+      continue
+    fi
     echo "UNKNOWN: ${base_skill} exists at base but SKILL.md is missing" >&2
     unknown=1
     continue
@@ -209,6 +293,16 @@ while IFS= read -r path; do
   fi
   repo="$(provenance_repo "$tmp")"
   rm -f "$tmp"
+
+  # An undecidable metadata mapping is UNKNOWN, never local. `provenance_repo` returns a
+  # sentinel rather than an empty string precisely because empty is the LOCAL verdict here,
+  # and letting "I could not parse this" collapse into it is the fail-open this guard exists
+  # to refuse.
+  if [ "$repo" = "__UNKNOWN__" ]; then
+    echo "UNKNOWN: ${skill_md} at base carries a metadata mapping this guard cannot parse" >&2
+    unknown=1
+    continue
+  fi
 
   if [ -z "$repo" ]; then
     # SKILL.md was read successfully and records no direct metadata.github-repo, so this
