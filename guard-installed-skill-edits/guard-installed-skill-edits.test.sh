@@ -787,13 +787,15 @@ store_exists "origin/main:.agents/skills/dquoted" "dir"
 store_exists "HEAD:.agents/skills/dquoted" "dir"
 store_exists "origin/main:.agents/skills/dquoted/SKILL.md" \
   $'---\nmetadata:\n  "github-repo": "https://github.com/devantler-tech/agent-skills"\n---\n'
-if CHANGED_PATHS=".agents/skills/dquoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "double-quoted provenance key: expected UNKNOWN, got success (this is the fail-open)"
+if out="$(CHANGED_PATHS=".agents/skills/dquoted/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "double-quoted provenance key: expected refusal, got success (this is the fail-open)"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "double-quoted provenance key: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "double-quoted provenance key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "double-quoted provenance key: should name the upstream"
 fi
-pass "a double-quoted provenance key is UNKNOWN, not local"
+pass "a double-quoted provenance key is READ and refused, naming the upstream"
 
 # 25b. Single quotes are the same valid YAML, and must not need their own special case.
 export FAKE_GIT_STORE="${tmp}/objects37"
@@ -803,13 +805,15 @@ store_exists "origin/main:.agents/skills/squoted" "dir"
 store_exists "HEAD:.agents/skills/squoted" "dir"
 store_exists "origin/main:.agents/skills/squoted/SKILL.md" \
   $'---\nmetadata:\n  \'github-repo\': https://github.com/devantler-tech/agent-skills\n---\n'
-if CHANGED_PATHS=".agents/skills/squoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "single-quoted provenance key: expected UNKNOWN, got success"
+if out="$(CHANGED_PATHS=".agents/skills/squoted/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "single-quoted provenance key: expected refusal, got success"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "single-quoted provenance key: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "single-quoted provenance key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "single-quoted provenance key: should name the upstream"
 fi
-pass "a single-quoted provenance key is UNKNOWN, not local"
+pass "a single-quoted provenance key is READ and refused, naming the upstream"
 
 # 25c. CONTROL for 25/25b: a genuinely local skill — plain metadata children, no
 #      github-repo — is still EDITABLE. Without this, both cases above would also pass if
@@ -882,13 +886,15 @@ store_exists "origin/main:.agents/skills/flowquoted" "dir"
 store_exists "HEAD:.agents/skills/flowquoted" "dir"
 store_exists "origin/main:.agents/skills/flowquoted/SKILL.md" \
   $'---\nmetadata: {"github-repo": "https://github.com/devantler-tech/agent-skills"}\n---\n'
-if CHANGED_PATHS=".agents/skills/flowquoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "quoted flow key: expected UNKNOWN, got success (this is the fail-open)"
+if out="$(CHANGED_PATHS=".agents/skills/flowquoted/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "quoted flow key: expected refusal, got success (this is the fail-open)"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "quoted flow key: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "quoted flow key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "quoted flow key: should name the upstream"
 fi
-pass "a quoted key in a flow mapping is UNKNOWN, not local"
+pass "a quoted key in a flow mapping is READ and refused, naming the upstream"
 
 # 27b. CONTROL: an EMPTY flow mapping genuinely records no provenance and must stay LOCAL. Without
 #      this, case 27 would also pass if every flow mapping had simply become UNKNOWN.
@@ -918,4 +924,94 @@ if CHANGED_PATHS=".agents/skills/flowother/SKILL.md"$'\n' run_guard >/dev/null 2
   fail "control 27c: plain non-provenance flow keys must stay local: rc=${rc} want=0"
 fi
 pass "control: plain non-provenance flow keys stay local"
+
+# 28. THE PARENT KEY HAS THE SAME SPELLINGS AS THE CHILD. `metadata :` (whitespace before the
+#     mapping colon) is valid YAML and did not set in_meta, so the plain `github-repo` child below
+#     it was ignored, provenance read empty, and empty means LOCAL.
+export FAKE_GIT_STORE="${tmp}/objects44"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/spacedparent"
+store_exists "origin/main:.agents/skills/spacedparent" "dir"
+store_exists "HEAD:.agents/skills/spacedparent" "dir"
+store_exists "origin/main:.agents/skills/spacedparent/SKILL.md" \
+  $'---\nmetadata :\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/spacedparent/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "spaced parent key: expected refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "spaced parent key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "spaced parent key: should name the upstream"
+fi
+pass "a whitespace-before-colon parent key is read, not ignored"
+
+# 28b. A QUOTED parent key is the same key again.
+export FAKE_GIT_STORE="${tmp}/objects45"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/quotedparent"
+store_exists "origin/main:.agents/skills/quotedparent" "dir"
+store_exists "HEAD:.agents/skills/quotedparent" "dir"
+store_exists "origin/main:.agents/skills/quotedparent/SKILL.md" \
+  $'---\n"metadata":\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/quotedparent/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "quoted parent key: expected refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "quoted parent key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "quoted parent key: should name the upstream"
+fi
+pass "a quoted parent key is read, not ignored"
+
+# 28c. `github-repo : <url>` — whitespace before the CHILD's colon. This one was the nastiest,
+#      because the previous fix's plain-key pattern MATCHED it as "some other key" and continued,
+#      so the guard classified the skill local while looking like it had read the line.
+export FAKE_GIT_STORE="${tmp}/objects46"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/spacedchild"
+store_exists "origin/main:.agents/skills/spacedchild" "dir"
+store_exists "HEAD:.agents/skills/spacedchild" "dir"
+store_exists "origin/main:.agents/skills/spacedchild/SKILL.md" \
+  $'---\nmetadata:\n  github-repo : https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/spacedchild/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "spaced child key: expected refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "spaced child key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "spaced child key: should name the upstream"
+fi
+pass "a whitespace-before-colon child key is read, not treated as another key"
+
+# 28d. A genuinely UNREADABLE key still fails closed. An unterminated quoted key is not a key
+#      this parser can name, so it must be UNKNOWN — not local, and not silently skipped.
+export FAKE_GIT_STORE="${tmp}/objects47"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/unterminated"
+store_exists "origin/main:.agents/skills/unterminated" "dir"
+store_exists "HEAD:.agents/skills/unterminated" "dir"
+store_exists "origin/main:.agents/skills/unterminated/SKILL.md" \
+  $'---\nmetadata:\n  "github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/unterminated/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "unterminated quoted key: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "unterminated quoted key: rc=${rc} want=2"
+fi
+pass "an unreadable key still fails closed as UNKNOWN"
+
+# 28e. CONTROL for the whole normalisation: a plain local skill with ordinary spellings is still
+#      editable. Normalising keys must not turn every skill into a refusal or an UNKNOWN.
+export FAKE_GIT_STORE="${tmp}/objects48"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/normal"
+store_exists "origin/main:.agents/skills/normal" "dir"
+store_exists "HEAD:.agents/skills/normal" "dir"
+store_exists "origin/main:.agents/skills/normal/SKILL.md" \
+  $'---\nname: normal\ndescription: an ordinary local skill\nmetadata:\n  version: 2\n---\n'
+if CHANGED_PATHS=".agents/skills/normal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "control 28e: an ordinary local skill must stay editable: rc=${rc} want=0"
+fi
+pass "control: an ordinary local skill stays editable under key normalisation"
 echo "ALL PASS"

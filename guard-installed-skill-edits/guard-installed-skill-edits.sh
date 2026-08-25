@@ -118,11 +118,73 @@ if [ "${PR_ACTOR:-}" = "${SYNC_ACTOR}" ] && [ "${PR_HEAD_BRANCH:-}" = "${SYNC_BR
   exit 0
 fi
 
+# Reads one YAML mapping entry's key, with the leading indentation already stripped by the
+# caller. On success sets `_key` to the key name — quotes removed, whitespace before the colon
+# trimmed — and `_rest` to everything after the colon, and returns 0. Returns 1 when the line
+# is not a mapping entry this parser can read.
+#
+# 🔴 A RETURN OF 1 MEANS UNDECIDABLE, NEVER "NO SUCH KEY". Every caller must fail closed on it.
+# Six different legal spellings of one SKILL.md have now reached the same fail-open — a
+# column-zero comment, a comment's indentation, a flow mapping, a quoted child key in block
+# style, a quoted key in flow style, and a quoted-or-spaced `metadata` parent — each time by
+# not matching a pattern, reading as "no provenance recorded", and so being classified LOCAL,
+# which PERMITS a hand-edit to a synced skill. Widening the pattern once more would only invite
+# a seventh. So the question is no longer "which spellings do I recognise?" but "what is this
+# key called?": extract it, normalise it, then compare against the one name that matters.
+yaml_key_of() {
+  local s="$1" k rest q
+  _key=""; _rest=""
+  case "$s" in
+    '"'*|"'"*)
+      q="${s%"${s#?}"}"
+      s="${s#?}"
+      case "$s" in
+        *"$q"*) k="${s%%"$q"*}"; rest="${s#*"$q"}" ;;
+        *) return 1 ;;
+      esac
+      # After the closing quote a colon must follow, optionally after whitespace.
+      rest="${rest#"${rest%%[![:space:]]*}"}"
+      case "$rest" in
+        :*) rest="${rest#:}" ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *)
+      case "$s" in
+        *:*) k="${s%%:*}"; rest="${s#*:}" ;;
+        *) return 1 ;;
+      esac
+      # A plain key carries no quote and no comment marker; either means this is not a plain
+      # `key:` and the line is undecidable rather than a key named something else.
+      case "$k" in
+        *'"'*|*"'"*|*'#'*) return 1 ;;
+      esac
+      # `github-repo : <url>` is the same key as `github-repo:` — trim before comparing.
+      k="${k%"${k##*[![:space:]]}"}"
+      ;;
+  esac
+  [ -n "$k" ] || return 1
+  _key="$k"; _rest="$rest"
+  return 0
+}
+
+# Strips surrounding whitespace, then one layer of matching quotes, from a mapping value.
+yaml_scalar_value() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  case "$v" in
+    '"'*'"') v="${v#\"}"; v="${v%\"}" ;;
+    "'"*"'") v="${v#\'}"; v="${v%\'}" ;;
+  esac
+  printf '%s' "$v"
+}
+
 provenance_repo() {
-  local file="$1" line value first=1 in_fm=0 in_meta=0 meta_indent="" indent
-  local plain_flow_key_re="^[^[:space:]\"'#][^:]*:"
-  # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested
-  # deeper (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
+  local file="$1" line first=1 in_fm=0 in_meta=0 meta_indent="" indent content
+  local flow_rest flow_inner old_ifs entry
+  # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested deeper
+  # (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
   # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu runners
   # and BSD awk on macOS.
   while IFS= read -r line || [ -n "$line" ]; do
@@ -137,83 +199,71 @@ provenance_repo() {
     fi
     [ "$in_fm" = 1 ] || continue
     [ "$line" = "---" ] && return 0
-    # A COMMENT-ONLY LINE IS NOT A KEY, AT ANY INDENTATION — and this must be decided
-    # BEFORE the top-level-key case below, not after it.
-    #
-    # At column zero a comment's first character is not a space or tab, so it matches that
-    # case, fails the `metadata:` test, and sets in_meta=0. The direct `github-repo` child
-    # that follows is then ignored, provenance reads EMPTY, and empty means "local" — so
-    # the guard permits hand-edits to a synced skill, which is the one thing it exists to
-    # refuse. `metadata:` followed by a column-zero comment is ordinary YAML.
-    #
-    # Indented comments must be skipped here too, for a different reason: a four-space
-    # comment above a two-space `github-repo` would fix the child level at four, the real
-    # key would then look like a non-child, and provenance would read empty the same way.
+    # A COMMENT-ONLY LINE IS NOT A KEY, AT ANY INDENTATION — and this must be decided BEFORE
+    # the top-level-key case below, not after it. At column zero a comment's first character
+    # is not a space or tab, so it matches that case; an indented comment above a shallower
+    # real key would otherwise fix the child level at the wrong indent. Both routes end in
+    # provenance reading empty, which means LOCAL.
     [[ $line =~ ^[[:space:]]*# ]] && continue
     # A non-indented line starts a new top-level key, which closes any metadata mapping.
     case "$line" in
       [!\ \	]*)
         meta_indent=""
-        if [[ $line =~ ^metadata:[[:space:]]*(#.*)?$ ]]; then
+        in_meta=0
+        if ! yaml_key_of "$line"; then
+          # Not a readable top-level mapping entry: undecidable, so fail closed.
+          printf '%s\n' "__UNKNOWN__"
+          return 0
+        fi
+        [ "$_key" = "metadata" ] || continue
+        flow_rest="${_rest#"${_rest%%[![:space:]]*}"}"
+        # `metadata:` with nothing but an optional comment after it opens a block mapping.
+        if [ -z "$flow_rest" ] || [ "${flow_rest#\#}" != "$flow_rest" ]; then
           in_meta=1
           continue
         fi
-        in_meta=0
-        # 🔴 `metadata: {github-repo: ...}` IS THE SAME KEY IN FLOW STYLE, AND MISSING IT
-        # FAILS OPEN. A block mapping is what this parser was written for, so a valid flow
-        # mapping fell through to in_meta=0, provenance read EMPTY, and empty means LOCAL —
-        # so the guard PERMITS a hand-edit to a synced skill, the one thing it exists to
-        # refuse. This is the same class as the column-zero comment, reached by a different
-        # spelling of the same document.
-        if [[ $line =~ ^metadata:[[:space:]]*\{(.*)$ ]]; then
-          flow_rest="${BASH_REMATCH[1]}"
+        # `metadata: {github-repo: ...}` is the same key in flow style.
+        if [ "${flow_rest#\{}" != "$flow_rest" ]; then
+          flow_inner="${flow_rest#\{}"
           # A line parser can decide a flow mapping only when it CLOSES on this line and
-          # nests nothing. Anything else is undecidable, and undecidable must never render
-          # as "no provenance" — that is the fail-open above with extra steps.
-          if [[ $flow_rest != *"}"* ]] || [[ $flow_rest == *"{"* ]]; then
-            printf '%s\n' "__UNKNOWN__"
-            return 0
-          fi
-          flow_inner="${flow_rest%\}*}"
-          local old_ifs="$IFS" entry entry_val
+          # nests nothing. Anything else is undecidable.
+          case "$flow_inner" in
+            *'}'*) : ;;
+            *) printf '%s\n' "__UNKNOWN__"; return 0 ;;
+          esac
+          case "$flow_inner" in
+            *'{'*) printf '%s\n' "__UNKNOWN__"; return 0 ;;
+          esac
+          flow_inner="${flow_inner%\}*}"
+          old_ifs="$IFS"
           IFS=','
           for entry in $flow_inner; do
             entry="${entry#"${entry%%[![:space:]]*}"}"
             entry="${entry%"${entry##*[![:space:]]}"}"
-            if [[ $entry =~ ^github-repo:[[:space:]]*(.*)$ ]]; then
-              entry_val="${BASH_REMATCH[1]}"
-              entry_val="${entry_val%"${entry_val##*[![:space:]]}"}"
-              entry_val="${entry_val#\"}"; entry_val="${entry_val%\"}"
-              entry_val="${entry_val#\'}"; entry_val="${entry_val%\'}"
-              IFS="$old_ifs"
-              printf '%s\n' "$entry_val"
-              return 0
-            fi
-            # 🔴 THE SAME RULE MUST HOLD IN FLOW STYLE, OR THE CLASS IS ONLY HALF CLOSED.
-            # `metadata: {"github-repo": ...}` is the same key again, and a plain-entry-only
-            # match falls through to the LOCAL case below — the identical fail-open the block
-            # branch just fixed, reached by the fifth spelling of this document. An entry this
-            # parser cannot read as a plain `key:` is undecidable, exactly as at the
-            # direct-child level. An EMPTY entry is not: `metadata: {}` and `metadata: { }`
-            # genuinely record no provenance, so they stay local.
-            if [ -n "$entry" ] && [[ ! $entry =~ $plain_flow_key_re ]]; then
+            # An EMPTY entry is not undecidable: `metadata: {}` and `metadata: { }` genuinely
+            # record no provenance, which is the LOCAL case.
+            [ -n "$entry" ] || continue
+            if ! yaml_key_of "$entry"; then
               IFS="$old_ifs"
               printf '%s\n' "__UNKNOWN__"
               return 0
             fi
+            if [ "$_key" = "github-repo" ]; then
+              IFS="$old_ifs"
+              yaml_scalar_value "$_rest"
+              printf '\n'
+              return 0
+            fi
           done
           IFS="$old_ifs"
-          # A well-formed flow mapping with no github-repo key genuinely records no
-          # provenance, which is the LOCAL case — fall through.
+          # A well-formed flow mapping whose keys are all readable and none of them
+          # github-repo genuinely records no provenance — the LOCAL case.
           continue
         fi
-        # `metadata: &anchor` / `metadata: *alias` / any other scalar remainder is a
-        # metadata key this parser cannot follow. Undecidable, not local.
-        if [[ $line =~ ^metadata:[[:space:]]*[^[:space:]#] ]]; then
-          printf '%s\n' "__UNKNOWN__"
-          return 0
-        fi
-        continue
+        # `metadata: &anchor` / `*alias` / any other scalar remainder is a metadata key this
+        # parser cannot follow. Undecidable, not local.
+        printf '%s\n' "__UNKNOWN__"
+        return 0
         ;;
     esac
     [ "$in_meta" = 1 ] || continue
@@ -224,32 +274,15 @@ provenance_repo() {
     if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi
     # Anything deeper (or shallower) than that level is not a direct child.
     [ "$indent" = "$meta_indent" ] || continue
-    if [[ $line =~ ^[[:space:]]+github-repo:[[:space:]]*(.*)$ ]]; then
-      value="${BASH_REMATCH[1]}"
-      value="${value%"${value##*[![:space:]]}"}"
-      value="${value#\"}"; value="${value%\"}"
-      value="${value#\'}"; value="${value%\'}"
-      printf '%s\n' "$value"
+    content="${line#"$indent"}"
+    if ! yaml_key_of "$content"; then
+      # A direct child this parser cannot read is undecidable — never "no provenance".
+      printf '%s\n' "__UNKNOWN__"
       return 0
     fi
-    # 🔴 AN UNRECOGNISED DIRECT CHILD IS UNDECIDABLE — IT IS NEVER "NO PROVENANCE".
-    #
-    # `"github-repo": ...` and `'github-repo': ...` are the SAME key in valid YAML, and a
-    # plain-key-only match simply cannot see them: the loop falls off the end, provenance
-    # reads EMPTY, and empty means LOCAL — so the guard permits a hand-edit to a synced
-    # skill, the one thing it exists to refuse.
-    #
-    # That is the FOURTH legal spelling of this document to reach that same fail-open
-    # (column-zero comment, comment indentation, flow mapping, and now a quoted key), so
-    # this closes the CLASS instead of adding a fourth special case: at the direct-child
-    # level, anything that is not a plain `key:` THIS parser can read is UNKNOWN. A quoted
-    # key, a sequence item, a stray scalar — all of them fail closed with a named remedy
-    # rather than silently rendering as "local".
-    # Pattern held in a variable: a bare single quote inside [[ =~ ]] opens a quoted
-    # string and makes the conditional a syntax error.
-    local plain_key_re="^[[:space:]]+[^[:space:]\"'#][^:]*:"
-    if [[ ! $line =~ $plain_key_re ]]; then
-      printf '%s\n' "__UNKNOWN__"
+    if [ "$_key" = "github-repo" ]; then
+      yaml_scalar_value "$_rest"
+      printf '\n'
       return 0
     fi
   done <"$file"
