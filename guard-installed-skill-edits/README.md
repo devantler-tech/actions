@@ -52,14 +52,22 @@ The checkout is part of the usage, not a precondition you can assume. With no ch
 path is absent, so a root-existence test alone would find nothing and exit 0 — a required
 guard reporting success having evaluated nothing. The action therefore checks that it is
 inside a git work tree first and reports UNKNOWN when it is not, so a missing checkout fails
-loudly instead of passing silently. Exit 0 is reserved for the case where the installed-skill
-root genuinely does not exist in either referenced commit. `fetch-depth: 0` is what then makes
-the base commit available to the diff.
+loudly instead of passing silently. The action exits 0 in several ordinary situations — a clean
+checkout with nothing to refuse, a wholly new or wholly retired skill, and the programmed-sync
+exemption — but the *missing-root early exit* is reserved for the case where the installed-skill
+root genuinely does not exist in either referenced commit.
 
 Whether the root exists is decided from the two referenced commits, not from the working
 directory: every other decision this action makes reads git objects, so a sparse checkout that
 omits the root — or a step that deleted it — no longer reads as "nothing to check" while both
 commits contain it.
+
+Both commits must be present in the clone for that question to be answerable at all. A missing
+commit and a commit without the root fail a git lookup identically, so under the depth-1 default
+of `actions/checkout` the base commit is absent and its absence would otherwise be read as an
+absent root — a required guard passing without evaluating anything. Each commit is therefore
+proven readable first, and an absent one is UNKNOWN. `fetch-depth: 0` is what makes both commits
+available, to this check and to the diff.
 
 ```yaml
 - name: ⬇️ Checkout
@@ -81,9 +89,9 @@ does not make `.github` a malformed install. Under a dedicated root the opposite
 subdirectory is meant to be a skill, so one missing its `SKILL.md` is reported UNKNOWN.
 
 Provenance is read from `metadata.github-repo` in the base `SKILL.md`, in either block or
-flow style (`metadata: {github-repo: ...}`). A metadata mapping this action cannot decide —
-one spanning several lines, nesting another mapping, or hidden behind a YAML anchor or alias
-— is reported UNKNOWN rather than treated as having no provenance, because "no provenance"
-is what marks a skill local and editable.
+flow style (`metadata: {github-repo: ...}`). If the action cannot determine the metadata
+mapping — because it spans several lines, nests another mapping, or is hidden behind a YAML
+anchor or alias — it reports UNKNOWN rather than treating the skill as having no provenance,
+because "no provenance" is what marks a skill local and editable.
 
 

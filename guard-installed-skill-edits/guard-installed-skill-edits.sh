@@ -76,7 +76,29 @@ root_in_tree() { # <sha> -> 0 when ROOT_DIR exists in that tree
   git --no-replace-objects cat-file -e "${1}:${ROOT_DIR}" 2>/dev/null
 }
 
+# 🔴 A MISSING COMMIT AND A COMMIT WITHOUT THE ROOT ARE THE SAME EXIT STATUS.
+#
+# `cat-file -e "${sha}:${ROOT_DIR}"` fails identically whether the commit is absent from
+# this clone or present and simply has no such path. Under the depth-1 default of
+# `actions/checkout` the base commit is routinely absent, so BOTH lookups fail, the "no
+# root in either commit" branch fires, and this REQUIRED guard exits 0 before it ever
+# reaches the diff or the UNKNOWN checks — passing without evaluating a single edit.
+#
+# That is the same "valid input -> zero matches -> exit 0" shape the diff check already
+# refuses, and it is exactly what asking the TREES instead of the checkout was meant to
+# close, so the object must be proven readable before its absence means anything.
+commit_readable() { # <sha> -> 0 when the commit object is present in this clone
+  git --no-replace-objects cat-file -e "${1}^{commit}" 2>/dev/null
+}
+
 if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+  for _sha in "${BASE_SHA}" "${HEAD_SHA}"; do
+    if ! commit_readable "${_sha}"; then
+      echo "UNKNOWN: commit ${_sha} is not present in this clone — its absence cannot be read as an absent ${ROOT_DIR}" >&2
+      echo "UNKNOWN: fetch both commits, or deepen the checkout (fetch-depth: 0)" >&2
+      exit 2
+    fi
+  done
   if ! root_in_tree "${BASE_SHA}" && ! root_in_tree "${HEAD_SHA}"; then
     echo "guard-installed-skill-edits: no ${ROOT_DIR} in either commit; nothing to check"
     exit 0

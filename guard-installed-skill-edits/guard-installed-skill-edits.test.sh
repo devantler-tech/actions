@@ -42,6 +42,20 @@ case "${cmd}" in
   cat-file)
     [ "${1:-}" = "-e" ] || exit 1
     spec="${2:-}"
+    # Commit-object readability. Default READABLE, because every other fixture models a
+    # real checkout that has both commits; the `unreadable_commits` sentinel models the
+    # depth-1 shallow checkout where the base commit is simply absent. A stub with no
+    # handler here would answer "unreadable" for every fixture and send them all down the
+    # UNKNOWN branch — untested, not passing.
+    case "${spec}" in
+      *'^{commit}')
+        base="${spec%'^{commit}'}"
+        if [ -f "${store}/unreadable_commits" ] && grep -qxF -- "${base}" "${store}/unreadable_commits"; then
+          exit 1
+        fi
+        exit 0
+        ;;
+    esac
     key="${spec//\//_}"
     key="${key//:/_}"
     # A DIRECTORY resolves when anything is stored UNDER it, which is what real git answers
@@ -725,5 +739,39 @@ else
   [ "${rc}" -eq 2 ] || fail "anchored metadata: rc=${rc} want=2"
 fi
 pass "an anchored metadata mapping is UNKNOWN, not local"
+
+
+# 24. An UNREADABLE commit must not read as an absent skill root. `cat-file -e <sha>:<dir>`
+#     fails identically for a missing commit and for a commit without that path, so under
+#     the depth-1 default of actions/checkout both lookups fail, the "no root in either
+#     commit" branch fires, and this REQUIRED guard exits 0 before reaching the diff or the
+#     UNKNOWN checks — passing without evaluating a single edit.
+export FAKE_GIT_STORE="${tmp}/objects34"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+rm -rf "${tmp}/.agents"
+printf '%s\n' "origin/main" >"${FAKE_GIT_STORE}/unreadable_commits"
+if out="$(CHANGED_PATHS=".agents/skills/anything/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "unreadable base commit: expected UNKNOWN, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "unreadable base commit: rc=${rc} want=2"
+  printf '%s' "${out}" | grep -q "not present in this clone" || fail "unreadable base commit: should say why"
+fi
+rm -f "${FAKE_GIT_STORE}/unreadable_commits"
+pass "an unreadable commit is UNKNOWN, not an absent skill root"
+
+# 24b. Control for 24: with both commits readable and the root genuinely absent from both,
+#      the no-op still stands. Without this, case 24 would also pass if the guard had simply
+#      stopped no-opping at all.
+export FAKE_GIT_STORE="${tmp}/objects35"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+rm -rf "${tmp}/.agents"
+if out="$(run_guard 2>&1)"; then
+  printf '%s' "${out}" | grep -q "nothing to check" || fail "control 24b: should say nothing to check"
+else
+  rc=$?
+  fail "control 24b: readable commits with no root should no-op: rc=${rc} want=0"
+fi
+pass "control: readable commits with no root still no-op"
 
 echo "ALL PASS"
