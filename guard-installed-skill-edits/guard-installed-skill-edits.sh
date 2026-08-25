@@ -297,6 +297,21 @@ provenance_repo() {
           in_meta=1
           continue
         fi
+        # 🔴 AN EXPLICIT NULL PARENT IS AN EMPTY MAPPING, NOT AN UNREADABLE ONE.
+        # `metadata: null`, `Null`, `NULL` and `~` are valid ways to write a metadata key that
+        # holds nothing, so they record no provenance and the skill is LOCAL — exactly as
+        # `metadata: {}` already is, and exactly as `github-repo: null` already is one level
+        # down. Falling through to the scalar branch below made them UNKNOWN, which is a false
+        # refusal: every edit to such a skill exited 2. Treating equivalent YAML three
+        # different ways is the inconsistency here, not the null itself.
+        case "$flow_rest" in
+          null|Null|NULL|"~") continue ;;
+          null[[:space:]]*|Null[[:space:]]*|NULL[[:space:]]*|"~"[[:space:]]*)
+            case "${flow_rest#*[[:space:]]}" in
+              "#"*) continue ;;
+            esac
+            ;;
+        esac
         # `metadata: {github-repo: ...}` is the same key in flow style.
         if [ "${flow_rest#\{}" != "$flow_rest" ]; then
           flow_inner="${flow_rest#\{}"

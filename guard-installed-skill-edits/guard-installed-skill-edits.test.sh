@@ -119,6 +119,24 @@ store_exists() {
   printf '%s' "${body}" >"${FAKE_GIT_STORE}/show/${key}"
 }
 
+# Models an existing installed skill: the directory present at BOTH base and head (so the guard
+# sees an EDIT rather than a creation or a retirement), plus its base-side front matter — which
+# is where provenance is read from. Each case below then shows only the SKILL.md spelling it is
+# actually testing.
+new_case() {
+  # NOTE: two `local` statements, not one. bash 3.2 — the macOS default — does not make an
+  # earlier assignment in the SAME `local` visible to a later one, so a combined declaration dies
+  # with `skill: unbound variable` under `set -u`. CI runs bash 5, where it works, so this is a
+  # portability break CI cannot see.
+  local store="$1" skill="$2" front_matter="$3"
+  local path=".agents/skills/${skill}"
+  export FAKE_GIT_STORE="${tmp}/${store}"
+  mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree" "${tmp}/${path}"
+  store_exists "origin/main:${path}" "dir"
+  store_exists "HEAD:${path}" "dir"
+  store_exists "origin/main:${path}/SKILL.md" "${front_matter}"
+}
+
 # Uses ${VAR-default} (not ${VAR:-default}) so an explicit empty SHA is not replaced.
 run_guard() {
   (
@@ -340,12 +358,7 @@ pass "changed paths come from the three-dot merge-base diff"
 # 12. Provenance must be a DIRECT child of metadata. A deeper key such as
 #     metadata.source.github-repo is not provenance, so a local skill carrying one stays
 #     editable instead of being refused against someone else's repository.
-export FAKE_GIT_STORE="${tmp}/objects11"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/nested"
-store_exists "origin/main:.agents/skills/nested" "dir"
-store_exists "HEAD:.agents/skills/nested" "dir"
-store_exists "origin/main:.agents/skills/nested/SKILL.md" \
+new_case objects11 nested \
   $'---\nmetadata:\n  source:\n    github-repo: https://github.com/someone/else\n---\n'
 if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
@@ -356,12 +369,7 @@ pass "metadata.source.github-repo is not provenance"
 # 12b. Control for 12: a genuine DIRECT metadata.github-repo, in a file whose front matter
 #      is otherwise shaped identically, is still detected and still refused. Without this,
 #      case 12 would also pass if the parser had simply stopped reading provenance at all.
-export FAKE_GIT_STORE="${tmp}/objects11b"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/nested"
-store_exists "origin/main:.agents/skills/nested" "dir"
-store_exists "HEAD:.agents/skills/nested" "dir"
-store_exists "origin/main:.agents/skills/nested/SKILL.md" \
+new_case objects11b nested \
   $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n  source:\n    github-repo: https://github.com/someone/else\n---\n'
 if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then
   fail "control: a direct metadata.github-repo should still refuse"
@@ -374,12 +382,7 @@ pass "control: a direct metadata.github-repo is still detected"
 # 13. `metadata:` may carry a trailing YAML comment. Requiring the line to end right after
 #     the colon made the parser skip the mapping and report UNKNOWN for a skill that has
 #     perfectly valid provenance — fail-closed, but still wrong.
-export FAKE_GIT_STORE="${tmp}/objects12"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/commented"
-store_exists "origin/main:.agents/skills/commented" "dir"
-store_exists "HEAD:.agents/skills/commented" "dir"
-store_exists "origin/main:.agents/skills/commented/SKILL.md" \
+new_case objects12 commented \
   $'---\nmetadata: # upstream ownership\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/commented/SKILL.md"$'\n' run_guard; then
   fail "commented metadata key: expected a refusal, got success"
@@ -391,12 +394,7 @@ pass "a trailing comment after metadata: does not hide provenance"
 
 # 13b. Control for 13: the match is still anchored to the exact key, so a different
 #      top-level key that merely starts with the same letters does not open the mapping.
-export FAKE_GIT_STORE="${tmp}/objects12b"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/decoy"
-store_exists "origin/main:.agents/skills/decoy" "dir"
-store_exists "HEAD:.agents/skills/decoy" "dir"
-store_exists "origin/main:.agents/skills/decoy/SKILL.md" \
+new_case objects12b decoy \
   $'---\nmetadataX: # decoy\n  github-repo: https://github.com/someone/else\n---\n'
 if CHANGED_PATHS=".agents/skills/decoy/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
@@ -424,12 +422,7 @@ pass "an unreadable provenance record is UNKNOWN, not 'local'"
 # 15. A `./`-prefixed skill root still matches. Git emits repository-relative paths with no
 #     `./`, so an un-normalised prefix matched nothing and the guard exited 0 having checked
 #     nothing at all — a silent fail-open reachable from a perfectly valid input value.
-export FAKE_GIT_STORE="${tmp}/objects14"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/ways-of-working"
-store_exists "origin/main:.agents/skills/ways-of-working" "dir"
-store_exists "HEAD:.agents/skills/ways-of-working" "dir"
-store_exists "origin/main:.agents/skills/ways-of-working/SKILL.md" \
+new_case objects14 ways-of-working \
   $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if SKILL_ROOT="./.agents/skills" CHANGED_PATHS=".agents/skills/ways-of-working/SKILL.md"$'\n' run_guard; then
   fail "./-prefixed root: expected a refusal, got success (fail-open)"
@@ -467,12 +460,7 @@ pass "a file directly under the skill root names no skill"
 # 17. CRLF line endings are valid in a committed SKILL.md. Leaving the trailing CR on made the
 #     first line differ from `---`, so front matter was never entered and a synced skill read as
 #     having no provenance — which, under case 6's semantics, now means it would be EDITABLE.
-export FAKE_GIT_STORE="${tmp}/objects16"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/crlf"
-store_exists "origin/main:.agents/skills/crlf" "dir"
-store_exists "HEAD:.agents/skills/crlf" "dir"
-store_exists "origin/main:.agents/skills/crlf/SKILL.md" \
+new_case objects16 crlf \
   $'---\r\nmetadata:\r\n  github-repo: https://github.com/devantler-tech/agent-skills\r\n---\r\n'
 if out="$(CHANGED_PATHS=".agents/skills/crlf/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "CRLF SKILL.md: expected a refusal, got success"
@@ -504,12 +492,7 @@ pass "a repository-root skill root is normalised and still refuses"
 # 19. An indented comment inside the metadata mapping must not fix the direct-child level. A
 #     four-space comment above a two-space `github-repo` made the real key look like a non-child,
 #     so provenance read empty — which now means "local", i.e. a silent pass on a synced skill.
-export FAKE_GIT_STORE="${tmp}/objects18"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/commented2"
-store_exists "origin/main:.agents/skills/commented2" "dir"
-store_exists "HEAD:.agents/skills/commented2" "dir"
-store_exists "origin/main:.agents/skills/commented2/SKILL.md" \
+new_case objects18 commented2 \
   $'---\nmetadata:\n    # upstream ownership, deliberately indented deeper than the key below\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/commented2/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "deep comment in metadata: expected a refusal, got success (fail-open)"
@@ -538,12 +521,7 @@ fi
 #     read empty, empty means "local", and the guard PERMITTED a hand-edit to a synced skill.
 #     Case 19 above pins the INDENTED form; this pins the column-zero one, which took the
 #     opposite path through the parser and was the one that failed open.
-export FAKE_GIT_STORE="${tmp}/objects22"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/commented0"
-store_exists "origin/main:.agents/skills/commented0" "dir"
-store_exists "HEAD:.agents/skills/commented0" "dir"
-store_exists "origin/main:.agents/skills/commented0/SKILL.md" \
+new_case objects22 commented0 \
   $'---\nmetadata:\n# upstream ownership, at column zero\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/commented0/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "column-zero comment in metadata: expected a refusal, got success (fail-open)"
@@ -558,12 +536,7 @@ pass "a column-zero comment does not close the metadata mapping"
 #     mapping, so a `github-repo` under some later key is not read as provenance. Without this,
 #     "skip comment lines" could be over-applied into "never close the mapping", which would
 #     make every skill look synced and block legitimate local edits.
-export FAKE_GIT_STORE="${tmp}/objects23"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/closedmeta"
-store_exists "origin/main:.agents/skills/closedmeta" "dir"
-store_exists "HEAD:.agents/skills/closedmeta" "dir"
-store_exists "origin/main:.agents/skills/closedmeta/SKILL.md" \
+new_case objects23 closedmeta \
   $'---\nmetadata:\nother: 1\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/closedmeta/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -660,12 +633,7 @@ pass "control: a root absent from both trees is still a no-op"
 # 23. Flow-style metadata is the same key, and missing it FAILED OPEN: the line parser did
 #     not enter the mapping, provenance read empty, and empty means LOCAL — so the guard
 #     permitted a hand-edit to a synced skill, the one thing it exists to refuse.
-export FAKE_GIT_STORE="${tmp}/objects29"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flow"
-store_exists "origin/main:.agents/skills/flow" "dir"
-store_exists "HEAD:.agents/skills/flow" "dir"
-store_exists "origin/main:.agents/skills/flow/SKILL.md" \
+new_case objects29 flow \
   $'---\nname: flow\nmetadata: {github-repo: "https://github.com/devantler-tech/agent-skills"}\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/flow/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "flow-style metadata: expected a refusal, got success (this is the fail-open)"
@@ -678,12 +646,7 @@ pass "flow-style metadata.github-repo is provenance"
 
 # 23b. A flow mapping with no github-repo key genuinely records no provenance: that is the
 #      LOCAL verdict, and a local skill stays editable.
-export FAKE_GIT_STORE="${tmp}/objects30"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowlocal"
-store_exists "origin/main:.agents/skills/flowlocal" "dir"
-store_exists "HEAD:.agents/skills/flowlocal" "dir"
-store_exists "origin/main:.agents/skills/flowlocal/SKILL.md" \
+new_case objects30 flowlocal \
   $'---\nmetadata: {version: 2, category: local}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowlocal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -693,12 +656,7 @@ pass "a flow mapping with no github-repo is local"
 
 # 23c. A NESTED flow mapping is undecidable for a line parser. Undecidable must be UNKNOWN,
 #      never local — collapsing it into the empty/local verdict is the same fail-open.
-export FAKE_GIT_STORE="${tmp}/objects31"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flownested"
-store_exists "origin/main:.agents/skills/flownested" "dir"
-store_exists "HEAD:.agents/skills/flownested" "dir"
-store_exists "origin/main:.agents/skills/flownested/SKILL.md" \
+new_case objects31 flownested \
   $'---\nmetadata: {source: {github-repo: https://github.com/someone/else}}\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/flownested/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "nested flow mapping: expected UNKNOWN, got success"
@@ -709,12 +667,7 @@ fi
 pass "a nested flow mapping is UNKNOWN, not local"
 
 # 23d. An UNTERMINATED flow mapping spans lines and is equally undecidable.
-export FAKE_GIT_STORE="${tmp}/objects32"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowopen"
-store_exists "origin/main:.agents/skills/flowopen" "dir"
-store_exists "HEAD:.agents/skills/flowopen" "dir"
-store_exists "origin/main:.agents/skills/flowopen/SKILL.md" \
+new_case objects32 flowopen \
   $'---\nmetadata: {github-repo:\n  https://github.com/devantler-tech/agent-skills}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowopen/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "unterminated flow mapping: expected UNKNOWN, got success"
@@ -725,12 +678,7 @@ fi
 pass "an unterminated flow mapping is UNKNOWN, not local"
 
 # 23e. `metadata: &anchor` / `*alias` is a metadata key this parser cannot follow. Same rule.
-export FAKE_GIT_STORE="${tmp}/objects33"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/anchored"
-store_exists "origin/main:.agents/skills/anchored" "dir"
-store_exists "HEAD:.agents/skills/anchored" "dir"
-store_exists "origin/main:.agents/skills/anchored/SKILL.md" \
+new_case objects33 anchored \
   $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/anchored/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "anchored metadata: expected UNKNOWN, got success"
@@ -780,12 +728,7 @@ pass "control: readable commits with no root still no-op"
 #     LOCAL — so the guard PERMITS a hand-edit to a synced skill, the one thing it exists
 #     to refuse. This is the fourth legal spelling of this document to reach that same
 #     fail-open, so the guard now treats any unreadable direct child as UNKNOWN.
-export FAKE_GIT_STORE="${tmp}/objects36"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/dquoted"
-store_exists "origin/main:.agents/skills/dquoted" "dir"
-store_exists "HEAD:.agents/skills/dquoted" "dir"
-store_exists "origin/main:.agents/skills/dquoted/SKILL.md" \
+new_case objects36 dquoted \
   $'---\nmetadata:\n  "github-repo": "https://github.com/devantler-tech/agent-skills"\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/dquoted/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "double-quoted provenance key: expected refusal, got success (this is the fail-open)"
@@ -798,12 +741,7 @@ fi
 pass "a double-quoted provenance key is READ and refused, naming the upstream"
 
 # 25b. Single quotes are the same valid YAML, and must not need their own special case.
-export FAKE_GIT_STORE="${tmp}/objects37"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/squoted"
-store_exists "origin/main:.agents/skills/squoted" "dir"
-store_exists "HEAD:.agents/skills/squoted" "dir"
-store_exists "origin/main:.agents/skills/squoted/SKILL.md" \
+new_case objects37 squoted \
   $'---\nmetadata:\n  \'github-repo\': https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/squoted/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "single-quoted provenance key: expected refusal, got success"
@@ -819,12 +757,7 @@ pass "a single-quoted provenance key is READ and refused, naming the upstream"
 #      github-repo — is still EDITABLE. Without this, both cases above would also pass if
 #      the guard had simply started refusing every skill it was shown, which is the cheap
 #      way to satisfy a fail-closed test and is not the fix.
-export FAKE_GIT_STORE="${tmp}/objects38"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/plainlocal"
-store_exists "origin/main:.agents/skills/plainlocal" "dir"
-store_exists "HEAD:.agents/skills/plainlocal" "dir"
-store_exists "origin/main:.agents/skills/plainlocal/SKILL.md" \
+new_case objects38 plainlocal \
   $'---\nname: plainlocal\nmetadata:\n  version: 1.2.3\n  tags: [a, b]\n---\n'
 if CHANGED_PATHS=".agents/skills/plainlocal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -879,12 +812,7 @@ pass "control: an ordinary NUL-delimited path is still refused"
 #     block mapping; `metadata: {"github-repo": ...}` is the same key again in flow style, and a
 #     plain-entry-only match fell through to the LOCAL case — the identical silent permit, reached
 #     by the fifth spelling of this one document.
-export FAKE_GIT_STORE="${tmp}/objects41"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowquoted"
-store_exists "origin/main:.agents/skills/flowquoted" "dir"
-store_exists "HEAD:.agents/skills/flowquoted" "dir"
-store_exists "origin/main:.agents/skills/flowquoted/SKILL.md" \
+new_case objects41 flowquoted \
   $'---\nmetadata: {"github-repo": "https://github.com/devantler-tech/agent-skills"}\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/flowquoted/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "quoted flow key: expected refusal, got success (this is the fail-open)"
@@ -912,12 +840,7 @@ pass "control: an empty flow mapping stays local"
 
 # 27c. CONTROL: a plain flow entry that is simply a DIFFERENT key must also stay local — the rule
 #      fires on unreadable entries, not on every entry that is not github-repo.
-export FAKE_GIT_STORE="${tmp}/objects43"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowother"
-store_exists "origin/main:.agents/skills/flowother" "dir"
-store_exists "HEAD:.agents/skills/flowother" "dir"
-store_exists "origin/main:.agents/skills/flowother/SKILL.md" \
+new_case objects43 flowother \
   $'---\nmetadata: {version: 1.2.3, tags: abc}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowother/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -928,12 +851,7 @@ pass "control: plain non-provenance flow keys stay local"
 # 28. THE PARENT KEY HAS THE SAME SPELLINGS AS THE CHILD. `metadata :` (whitespace before the
 #     mapping colon) is valid YAML and did not set in_meta, so the plain `github-repo` child below
 #     it was ignored, provenance read empty, and empty means LOCAL.
-export FAKE_GIT_STORE="${tmp}/objects44"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/spacedparent"
-store_exists "origin/main:.agents/skills/spacedparent" "dir"
-store_exists "HEAD:.agents/skills/spacedparent" "dir"
-store_exists "origin/main:.agents/skills/spacedparent/SKILL.md" \
+new_case objects44 spacedparent \
   $'---\nmetadata :\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/spacedparent/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "spaced parent key: expected refusal, got success (this is the fail-open)"
@@ -946,12 +864,7 @@ fi
 pass "a whitespace-before-colon parent key is read, not ignored"
 
 # 28b. A QUOTED parent key is the same key again.
-export FAKE_GIT_STORE="${tmp}/objects45"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/quotedparent"
-store_exists "origin/main:.agents/skills/quotedparent" "dir"
-store_exists "HEAD:.agents/skills/quotedparent" "dir"
-store_exists "origin/main:.agents/skills/quotedparent/SKILL.md" \
+new_case objects45 quotedparent \
   $'---\n"metadata":\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/quotedparent/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "quoted parent key: expected refusal, got success (this is the fail-open)"
@@ -966,12 +879,7 @@ pass "a quoted parent key is read, not ignored"
 # 28c. `github-repo : <url>` — whitespace before the CHILD's colon. This one was the nastiest,
 #      because the previous fix's plain-key pattern MATCHED it as "some other key" and continued,
 #      so the guard classified the skill local while looking like it had read the line.
-export FAKE_GIT_STORE="${tmp}/objects46"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/spacedchild"
-store_exists "origin/main:.agents/skills/spacedchild" "dir"
-store_exists "HEAD:.agents/skills/spacedchild" "dir"
-store_exists "origin/main:.agents/skills/spacedchild/SKILL.md" \
+new_case objects46 spacedchild \
   $'---\nmetadata:\n  github-repo : https://github.com/devantler-tech/agent-skills\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/spacedchild/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "spaced child key: expected refusal, got success (this is the fail-open)"
@@ -985,12 +893,7 @@ pass "a whitespace-before-colon child key is read, not treated as another key"
 
 # 28d. A genuinely UNREADABLE key still fails closed. An unterminated quoted key is not a key
 #      this parser can name, so it must be UNKNOWN — not local, and not silently skipped.
-export FAKE_GIT_STORE="${tmp}/objects47"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/unterminated"
-store_exists "origin/main:.agents/skills/unterminated" "dir"
-store_exists "HEAD:.agents/skills/unterminated" "dir"
-store_exists "origin/main:.agents/skills/unterminated/SKILL.md" \
+new_case objects47 unterminated \
   $'---\nmetadata:\n  "github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/unterminated/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "unterminated quoted key: expected UNKNOWN, got success"
@@ -1002,12 +905,7 @@ pass "an unreadable key still fails closed as UNKNOWN"
 
 # 28e. CONTROL for the whole normalisation: a plain local skill with ordinary spellings is still
 #      editable. Normalising keys must not turn every skill into a refusal or an UNKNOWN.
-export FAKE_GIT_STORE="${tmp}/objects48"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/normal"
-store_exists "origin/main:.agents/skills/normal" "dir"
-store_exists "HEAD:.agents/skills/normal" "dir"
-store_exists "origin/main:.agents/skills/normal/SKILL.md" \
+new_case objects48 normal \
   $'---\nname: normal\ndescription: an ordinary local skill\nmetadata:\n  version: 2\n---\n'
 if CHANGED_PATHS=".agents/skills/normal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -1019,12 +917,7 @@ pass "control: an ordinary local skill stays editable under key normalisation"
 #     parser; comparing the literal spelling read it as an unrelated key, so provenance came back
 #     empty and empty means LOCAL. Decoding YAML escapes in bash is its own defect source, so this
 #     fails closed instead.
-export FAKE_GIT_STORE="${tmp}/objects49"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/escaped"
-store_exists "origin/main:.agents/skills/escaped" "dir"
-store_exists "HEAD:.agents/skills/escaped" "dir"
-store_exists "origin/main:.agents/skills/escaped/SKILL.md" \
+new_case objects49 escaped \
   $'---\nmetadata:\n  "github\\u002drepo": https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/escaped/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "escaped key: expected UNKNOWN, got success (this is the fail-open)"
@@ -1054,12 +947,7 @@ done
 pass "YAML null provenance (null / ~ / Null) is absent, not an upstream"
 
 # 30b. A comment-only value names no upstream either.
-export FAKE_GIT_STORE="${tmp}/objects51"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/commentprov"
-store_exists "origin/main:.agents/skills/commentprov" "dir"
-store_exists "HEAD:.agents/skills/commentprov" "dir"
-store_exists "origin/main:.agents/skills/commentprov/SKILL.md" \
+new_case objects51 commentprov \
   $'---\nmetadata:\n  github-repo: # intentionally local\n---\n'
 if CHANGED_PATHS=".agents/skills/commentprov/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -1069,12 +957,7 @@ pass "a comment-only provenance value is absent, not an upstream"
 
 # 30c. CONTROL for 30: a URL carrying a FRAGMENT keeps its tail. `#` opens a comment only after
 #      whitespace, so a narrow strip must not truncate `https://example.test/x#y`.
-export FAKE_GIT_STORE="${tmp}/objects52"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/fragment"
-store_exists "origin/main:.agents/skills/fragment" "dir"
-store_exists "HEAD:.agents/skills/fragment" "dir"
-store_exists "origin/main:.agents/skills/fragment/SKILL.md" \
+new_case objects52 fragment \
   $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills#frag\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/fragment/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "fragment URL: expected refusal, got success"
@@ -1089,12 +972,7 @@ pass "control: a '#' fragment inside a URL survives the comment strip"
 # 31. SPLITTING EVERY COMMA IS A FALSE REFUSAL. `{tags: [a, b]}` is ordinary local metadata; an
 #     unconditional split made the second fragment unreadable, so the guard reported UNKNOWN and
 #     EVERY legitimate edit to that skill exited 2.
-export FAKE_GIT_STORE="${tmp}/objects53"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowseq"
-store_exists "origin/main:.agents/skills/flowseq" "dir"
-store_exists "HEAD:.agents/skills/flowseq" "dir"
-store_exists "origin/main:.agents/skills/flowseq/SKILL.md" \
+new_case objects53 flowseq \
   $'---\nmetadata: {tags: [a, b], version: 1}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowseq/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -1103,12 +981,7 @@ fi
 pass "a comma inside a flow sequence does not split the entry"
 
 # 31b. The same for a comma inside a QUOTED scalar.
-export FAKE_GIT_STORE="${tmp}/objects54"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowquote"
-store_exists "origin/main:.agents/skills/flowquote" "dir"
-store_exists "HEAD:.agents/skills/flowquote" "dir"
-store_exists "origin/main:.agents/skills/flowquote/SKILL.md" \
+new_case objects54 flowquote \
   $'---\nmetadata: {note: "a,b"}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowquote/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
@@ -1119,12 +992,7 @@ pass "a comma inside a quoted flow scalar does not split the entry"
 # 31c. CONTROL for 31: provenance is STILL FOUND past a comma-bearing entry, so the splitter did
 #      not simply stop parsing. Without this, 31/31b would also pass if flow parsing had been
 #      disabled altogether.
-export FAKE_GIT_STORE="${tmp}/objects55"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowfind"
-store_exists "origin/main:.agents/skills/flowfind" "dir"
-store_exists "HEAD:.agents/skills/flowfind" "dir"
-store_exists "origin/main:.agents/skills/flowfind/SKILL.md" \
+new_case objects55 flowfind \
   $'---\nmetadata: {tags: [a, b], github-repo: https://github.com/devantler-tech/agent-skills}\n---\n'
 if out="$(CHANGED_PATHS=".agents/skills/flowfind/SKILL.md"$'\n' run_guard 2>&1)"; then
   fail "flow find past comma: expected refusal, got success"
@@ -1137,12 +1005,7 @@ fi
 pass "control: provenance is still found in an entry after a comma-bearing one"
 
 # 31d. An UNTERMINATED quote inside a flow mapping is undecidable, not local.
-export FAKE_GIT_STORE="${tmp}/objects56"
-mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
-mkdir -p "${tmp}/.agents/skills/flowbadquote"
-store_exists "origin/main:.agents/skills/flowbadquote" "dir"
-store_exists "HEAD:.agents/skills/flowbadquote" "dir"
-store_exists "origin/main:.agents/skills/flowbadquote/SKILL.md" \
+new_case objects56 flowbadquote \
   $'---\nmetadata: {note: "a,b}\n---\n'
 if CHANGED_PATHS=".agents/skills/flowbadquote/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "unterminated flow quote: expected UNKNOWN, got success"
@@ -1151,4 +1014,50 @@ else
   [ "${rc}" -eq 2 ] || fail "unterminated flow quote: rc=${rc} want=2"
 fi
 pass "an unterminated quote in a flow mapping is UNKNOWN, not local"
+
+# 32. AN EXPLICIT NULL PARENT IS AN EMPTY MAPPING, NOT AN UNREADABLE ONE. `metadata: null`, `Null`,
+#     `NULL` and `~` are valid ways to write a metadata key holding nothing, so they record no
+#     provenance and the skill is LOCAL — exactly as `metadata: {}` already was, and exactly as
+#     `github-repo: null` already was one level down. They previously fell through to the scalar
+#     branch and became UNKNOWN: a false refusal, and an inconsistency between three spellings of
+#     the same YAML.
+for nul in 'null' 'Null' 'NULL' '~'; do
+  new_case "objects57-${nul}" nullparent "---"$'\n'"metadata: ${nul}"$'\n'"---"$'\n'
+  if CHANGED_PATHS=".agents/skills/nullparent/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+    rc=$?
+    fail "null metadata parent (${nul}): must be local: rc=${rc} want=0"
+  fi
+done
+pass "an explicit null metadata parent is an empty mapping, not UNKNOWN"
+
+# 32b. The same with a trailing comment.
+new_case objects58 nullparentc $'---\nmetadata: null # nothing here\n---\n'
+if CHANGED_PATHS=".agents/skills/nullparentc/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "null metadata parent with comment: must be local: rc=${rc} want=0"
+fi
+pass "a null metadata parent with a trailing comment is local"
+
+# 32c. CONTROL for 32: a metadata parent this parser genuinely cannot follow is STILL UNKNOWN, so
+#      the null carve-out did not turn every scalar remainder into "local". `&anchor` is the case
+#      that must keep failing closed.
+new_case objects59 anchorparent $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/anchorparent/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "control 32c: an anchored metadata parent must stay UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "control 32c: rc=${rc} want=2"
+fi
+pass "control: an unfollowable metadata parent is still UNKNOWN"
+
+# 32d. CONTROL for 32: a value merely STARTING with 'null' is not null. `nullify-me` is an ordinary
+#      scalar this parser cannot follow, so it must stay UNKNOWN rather than match the prefix.
+new_case objects60 nullish $'---\nmetadata: nullify-me\n---\n'
+if CHANGED_PATHS=".agents/skills/nullish/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "control 32d: 'nullify-me' must not be read as null, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "control 32d: rc=${rc} want=2"
+fi
+pass "control: a value merely starting with 'null' is not YAML null"
 echo "ALL PASS"
