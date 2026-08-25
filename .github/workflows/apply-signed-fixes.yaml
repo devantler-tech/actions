@@ -69,10 +69,11 @@ jobs:
     # (actions/untrusted-checkout) was dismissed on exactly that property.
     #
     # Dismissal is per-alert, not per-condition, so the alert does not re-fire if the property
-    # stops holding. Assertions 11 and 12 in .github/tests/test-lint-signed-commit.sh enforce it
-    # instead: 11 pins every `uses:` to an audited SHA-pinned identity, and 12 pins the step
-    # inventory, so a build step or a local action cannot be added here without coming to that
-    # test first. Adding a step means updating assertion 12 deliberately (devantler-tech/actions#1019).
+    # stops holding. Assertions 11-13 in .github/tests/test-lint-signed-commit.sh enforce it
+    # instead: 11 pins every `uses:` to an audited SHA-pinned identity, 12 pins the step
+    # inventory, and 13 pins the CONTENT of the two run blocks that execute after the checkout --
+    # so neither a new step nor a command added inside an existing block can land silently.
+    # Editing those blocks means re-auditing and updating the pin (devantler-tech/actions#1019).
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0

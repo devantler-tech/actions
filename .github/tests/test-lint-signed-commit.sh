@@ -258,4 +258,48 @@ step_shape="$(
 [[ "$step_shape" == "uses,run,uses,uses,uses,run,run" ]] ||
   fail "apply-fixes' step inventory changed (found '${step_shape}', audited 'uses,run,uses,uses,uses,run,run'); a step added or retyped here can execute checked-out code, which is the premise CodeQL alert 312 was dismissed on -- re-audit the job and update this pin deliberately"
 
+
+# 13. The post-checkout run blocks are pinned by content. Assertion 12 sees a step ADDED; it
+#     cannot see a command added INSIDE an existing block, and the two blocks that run after the
+#     checkout do so with the untrusted head on disk and the write-scoped App token available.
+#     An `npm ci` or `./script` appended to either would execute pull-request code while 12 still
+#     reported the same shape, and the dismissed alert would not return.
+#
+#     Pinned on NORMALISED content -- full-line comments dropped, indentation and trailing
+#     whitespace stripped, blank lines removed -- so prose edits and reindentation do not fire.
+#     Verified stable across a full `yq -i '.'` round-trip of the workflow, which is the specific
+#     brittleness #1048 reports in this same guard: that is an exact-spacing match on one line,
+#     this is not.
+#
+#     Scoped to the post-checkout blocks on purpose. The first run block executes before anything
+#     is checked out, so it cannot run repository code and pinning it would only fire on edits
+#     that are provably safe.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi
+}
+checkout_index=""
+step_index=0
+while IFS= read -r step_uses; do
+  case "$step_uses" in
+    actions/checkout@*) checkout_index="$step_index" ;;
+  esac
+  step_index=$((step_index + 1))
+done <<<"$step_uses_list"
+[[ -n "$checkout_index" ]] ||
+  fail "apply-fixes has no actions/checkout step, so the post-checkout boundary cannot be located"
+post_checkout_runs="$(
+  yq -r "[${job}.steps[] | .run // \"\"] | .[$((checkout_index + 1)):] | join(\"\n\")" "$signer_workflow"
+)"
+# sed throughout rather than `grep -v '^$'`: grep exits 1 when it emits nothing, which under
+# `set -e` would abort here with a shell error instead of this assertion's message.
+normalized_runs="$(
+  printf '%s\n' "$post_checkout_runs" |
+    sed -e '/^[[:space:]]*#/d' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
+)"
+[[ -n "$normalized_runs" ]] ||
+  fail "apply-fixes has no post-checkout run content to pin; this assertion is not reading the job it thinks it is"
+runs_digest="$(printf '%s' "$normalized_runs" | sha256_of)"
+audited_runs_digest="9b779a1505a9fd1b8039f028468115da1bd3e5aabe2bc713cb4360b861c90fd4"
+[[ "$runs_digest" == "$audited_runs_digest" ]] ||
+  fail "apply-fixes' post-checkout run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). These run with the pull request's code on disk and a write-scoped token, so re-read them and confirm they still invoke nothing from the repository -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"
