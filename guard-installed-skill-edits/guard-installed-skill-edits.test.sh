@@ -1146,14 +1146,31 @@ pass "an indented root mapping is still the root"
 # 38. CONTROL for the yq migration: with no YAML parser available the guard is UNDECIDABLE, never
 #     local. A missing dependency must not silently degrade into permitting every edit — that is
 #     the fail-open the whole rewrite exists to remove, and it would be the easiest one to ship.
+#
+#     The PATH is built by SYMLINKING exactly the externals the guard uses, deliberately omitting
+#     yq — not by trimming directories off the real PATH. Trimming is environment-dependent and was
+#     measured failing: yq is under /opt/homebrew/bin on macOS but /usr/bin on a GitHub runner, so a
+#     "reduced" PATH that dropped one still contained the other. The fixture assertion below is what
+#     caught that, and it stays: a control whose setup silently stops holding is worse than none.
 new_case objects66 noyq \
   $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
-# A PATH that keeps bash, mktemp and the git stub but drops the directory holding yq: the
-# control must remove the PARSER, not the shell. Emptying PATH outright makes run_guard exit 127
-# — a failure that looks like the assertion passing for the wrong reason.
-noyq_path="${tmp}/bin:/usr/bin:/bin"
-command -v yq >/dev/null 2>&1 && PATH="${noyq_path}" command -v yq >/dev/null 2>&1 \
-  && fail "control 38 fixture: yq is still reachable on the reduced PATH"
+mkdir -p "${tmp}/noyqbin"
+# `bash` is in the list because run_guard re-execs it through `env -i` with this PATH: without it
+# the control exits 127 — the shell missing, not the parser — which is the wrong failure entirely.
+for _t in env bash git mktemp rm cat tr grep; do
+  _src="$(command -v "${_t}" || true)"
+  [ -n "${_src}" ] || fail "control 38 fixture: cannot locate ${_t} to build the parser-free PATH"
+  ln -sf "${_src}" "${tmp}/noyqbin/${_t}"
+done
+noyq_path="${tmp}/noyqbin"
+PATH="${noyq_path}" command -v yq >/dev/null 2>&1 \
+  && fail "control 38 fixture: yq is still reachable on the parser-free PATH"
+# Prove the reduced PATH can still RUN the harness, not merely that some tool is present. Each
+# missing external here surfaced as rc=127 — the shell, then env — which is indistinguishable from
+# a wrong verdict unless the fixture asserts its own viability first.
+_probe_rc=0
+PATH="${noyq_path}" env -i PATH="${noyq_path}" bash -c 'exit 7' >/dev/null 2>&1 || _probe_rc=$?
+[ "${_probe_rc}" -eq 7 ] || fail "control 38 fixture: the parser-free PATH cannot run the harness (rc=${_probe_rc}), so a 127 would masquerade as a verdict"
 if PATH="${noyq_path}" CHANGED_PATHS=".agents/skills/noyq/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
   fail "control 38: with no yq the guard must be UNKNOWN, got success"
 else
