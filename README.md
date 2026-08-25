@@ -55,6 +55,7 @@ flowchart TD
 | [diagnose-flux](diagnose-flux/README.md) | Dump Flux reconcile state, controller logs, and failing pod logs on a stuck deploy |
 | [enable-auto-merge-on-pr](enable-auto-merge-on-pr/README.md) | Enable auto-merge on a pull request |
 | [free-disk-space](free-disk-space/README.md) | Reclaim runner disk by removing large preinstalled toolchains |
+| [guard-installed-skill-edits](guard-installed-skill-edits/README.md) | Refuse a hand-edit to a synced installed-skill tree, naming its upstream |
 | [login-to-ghcr](login-to-ghcr/README.md) | Login to GitHub Container Registry |
 | [run-dotnet-tests](run-dotnet-tests/README.md) | Test .NET solution or project with coverage |
 | [setup-agent-skills](setup-agent-skills/README.md) | Install agent skills via `gh skill` from a newline list of `<owner/repo> <skill>[@pin]` entries, for one or more agents (e.g. Copilot, Claude Code) |

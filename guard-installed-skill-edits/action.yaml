@@ -1,0 +1,30 @@
+name: Guard Installed Skill Edits
+author: devantler-tech
+description: Refuse a hand-edit to a synced installed-skill tree, naming its upstream
+inputs:
+  skill-root:
+    description: Repository-relative installed-skill root
+    required: false
+    default: ".agents/skills"
+  sync-actor:
+    description: Exact GitHub login of the programmed updater App
+    required: false
+    default: "botantler-1[bot]"
+  sync-branch:
+    description: Exact head-branch name of the programmed updater PR
+    required: false
+    default: "deps/agent-skills-update"
+runs:
+  using: composite
+  steps:
+    - name: Guard installed skill edits
+      shell: bash
+      env:
+        SKILL_ROOT: ${{ inputs.skill-root }}
+        SYNC_ACTOR: ${{ inputs.sync-actor }}
+        SYNC_BRANCH: ${{ inputs.sync-branch }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_ACTOR: ${{ github.event.pull_request.user.login }}
+        PR_HEAD_BRANCH: ${{ github.head_ref }}
+      run: bash "${{ github.action_path }}/guard-installed-skill-edits.sh"
