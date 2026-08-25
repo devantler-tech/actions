@@ -21,6 +21,13 @@ PR, and the guard would refuse a pull request that never touched that skill.
 
 ## Requirements
 
+The guard needs **`yq` on `PATH`**. It resolves `metadata.github-repo` with a real YAML
+parser rather than string matching, so quoting, escapes, anchors, merge keys, flow style,
+null forms and comment rules are all handled correctly. `yq` is preinstalled on
+GitHub-hosted Ubuntu runners; on a self-hosted runner without it the guard reports UNKNOWN
+and fails rather than silently falling back to guessing — an unreadable `SKILL.md` must
+never be classified local, because local is the verdict that permits the edit.
+
 The guard needs **both the base and head commits present locally**. The default
 `actions/checkout` fetches depth 1, so the base commit is absent and the diff
 cannot be computed; give the checkout enough history (`fetch-depth: 0`, or fetch

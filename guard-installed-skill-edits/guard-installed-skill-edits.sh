@@ -131,247 +131,50 @@ fi
 # which PERMITS a hand-edit to a synced skill. Widening the pattern once more would only invite
 # a seventh. So the question is no longer "which spellings do I recognise?" but "what is this
 # key called?": extract it, normalise it, then compare against the one name that matters.
-yaml_key_of() {
-  local s="$1" k rest q
-  _key=""; _rest=""
-  case "$s" in
-    '"'*|"'"*)
-      q="${s%"${s#?}"}"
-      s="${s#?}"
-      case "$s" in
-        *"$q"*) k="${s%%"$q"*}"; rest="${s#*"$q"}" ;;
-        *) return 1 ;;
-      esac
-      # 🔴 A BACKSLASH MEANS THE KEY IS ENCODED, AND AN ENCODED KEY IS NOT THE KEY.
-      # `"github\u002drepo"` resolves to `github-repo` in any YAML parser, but comparing the
-      # literal spelling reads it as an unrelated key, so provenance comes back empty and empty
-      # means LOCAL — the edit to a synced skill is permitted. Decoding YAML escapes correctly
-      # in bash is its own source of defects, so this fails closed instead: a quoted key
-      # carrying an escape is undecidable, which the callers already handle.
-      case "$k" in
-        *\\*) return 1 ;;
-      esac
-      # After the closing quote a colon must follow, optionally after whitespace.
-      rest="${rest#"${rest%%[![:space:]]*}"}"
-      case "$rest" in
-        :*) rest="${rest#:}" ;;
-        *) return 1 ;;
-      esac
-      ;;
-    *)
-      case "$s" in
-        *:*) k="${s%%:*}"; rest="${s#*:}" ;;
-        *) return 1 ;;
-      esac
-      # A plain key carries no quote and no comment marker; either means this is not a plain
-      # `key:` and the line is undecidable rather than a key named something else.
-      case "$k" in
-        *'"'*|*"'"*|*'#'*) return 1 ;;
-      esac
-      # `github-repo : <url>` is the same key as `github-repo:` — trim before comparing.
-      k="${k%"${k##*[![:space:]]}"}"
-      ;;
-  esac
-  [ -n "$k" ] || return 1
-  _key="$k"; _rest="$rest"
-  return 0
-}
-
-# Strips surrounding whitespace, then one layer of matching quotes, from a mapping value.
-# Reads a mapping value: strips an unquoted trailing comment, trims, removes one layer of
-# matching quotes, and reports YAML null as ABSENT.
+# Resolves `metadata.github-repo` from a SKILL.md's YAML front matter.
 #
-# 🔴 YAML NULL NAMES NO UPSTREAM. `github-repo: null`, `github-repo: ~`, and a key whose value
-# is only a comment are all valid ways for a LOCAL skill to carry the key while recording no
-# provenance. Returning the literal token made the guard refuse every edit to such a skill and
-# print `upstream: null` while doing it — a false refusal shipped to every consumer.
+# Prints the upstream repository, an empty string when the skill records no provenance (the
+# LOCAL verdict), or the `__UNKNOWN__` sentinel when the answer cannot be established. Empty
+# and UNKNOWN are deliberately different values: empty PERMITS the edit, so letting "I could
+# not read this" collapse into it is the exact fail-open this guard exists to refuse.
 #
-# The comment strip is deliberately narrow: `#` opens a comment only after whitespace, so a
-# fragment URL such as `https://example.test/x#y` keeps its tail. A quoted scalar is literal,
-# so `"null"` stays the string it is.
-yaml_scalar_value() {
-  local v="$1"
-  v="${v#"${v%%[![:space:]]*}"}"
-  case "$v" in
-    '"'*|"'"*) : ;;
-    *)
-      # Strip ` #…` / <tab>#… , and a value that is only a comment.
-      case "$v" in
-        '#'*) v="" ;;
-        *[[:space:]]'#'*) v="${v%%[[:space:]]#*}" ;;
-      esac
-      ;;
-  esac
-  v="${v#"${v%%[![:space:]]*}"}"
-  v="${v%"${v##*[![:space:]]}"}"
-  case "$v" in
-    '"'*'"') v="${v#\"}"; v="${v%\"}"; printf '%s' "$v"; return 0 ;;
-    "'"*"'") v="${v#\'}"; v="${v%\'}"; printf '%s' "$v"; return 0 ;;
-  esac
-  case "$v" in
-    null|Null|NULL|'~') v="" ;;
-  esac
-  printf '%s' "$v"
-}
-# Splits a flow mapping's body into its top-level entries, respecting quotes and brackets.
-# `s` is everything after the opening `{`. Sets `_entries` and returns 0 when a matching `}`
-# closes the mapping with balanced quoting; returns 1 (undecidable) otherwise.
+# 🔴 THIS USES A REAL YAML PARSER, AND THAT IS THE WHOLE POINT.
+# The previous implementation decided the question with shell string operations, and over nine
+# review rounds that produced nineteen defects in this one function — in BOTH directions. Keys
+# went unread and the skill was silently classified local (a column-zero comment, a comment's
+# indentation, flow style, quoted keys in block and flow form, a quoted or space-padded
+# `metadata`, `github-repo :`, `-` escapes, merge aliases, multi-line scalars, an indented
+# root); and ordinary local metadata was refused outright (`github-repo: null`, a comment-only
+# value, a comma inside `[a, b]` or `"a,b"`, a brace inside a quoted scalar, a comment after a
+# quoted empty value). Every one was a correct fix and every round produced more, because
+# quoting, escapes, anchors, merge keys, flow style, null forms and comment rules are things a
+# YAML parser already knows and a line-oriented matcher has to re-learn one incident at a time.
 #
-# 🔴 SPLITTING ON EVERY COMMA IS A FALSE REFUSAL, NOT A FAIL-OPEN — and it breaks working
-# consumers rather than letting a bad edit through. `{tags: [a, b]}` and `{note: "a,b"}` are
-# ordinary local metadata; an unconditional split turns each into fragments, the second of
-# which is not a readable key, so the guard reports UNKNOWN and EVERY legitimate edit to that
-# skill exits 2. A guard that blocks correct work teaches people to remove the guard.
-parse_flow_mapping() {
-  local s="$1" i=0 n c q="" depth=0 cur="" closed=0
-  _entries=()
-  n=${#s}
-  while [ "$i" -lt "$n" ]; do
-    c="${s:i:1}"
-    if [ -n "$q" ]; then
-      cur="$cur$c"
-      [ "$c" = "$q" ] && q=""
-    else
-      case "$c" in
-        '"'|"'") q="$c"; cur="$cur$c" ;;
-        '['|'{') depth=$((depth + 1)); cur="$cur$c" ;;
-        ']') depth=$((depth - 1)); cur="$cur$c" ;;
-        '}')
-          if [ "$depth" -eq 0 ]; then closed=1; break; fi
-          depth=$((depth - 1)); cur="$cur$c"
-          ;;
-        ',')
-          if [ "$depth" -eq 0 ]; then _entries+=("$cur"); cur=""; else cur="$cur$c"; fi
-          ;;
-        *) cur="$cur$c" ;;
-      esac
-    fi
-    i=$((i + 1))
-  done
-  # An unterminated quote or an unclosed mapping is undecidable, never "no provenance".
-  [ -z "$q" ] || return 1
-  [ "$closed" = 1 ] || return 1
-  _entries+=("$cur")
-  return 0
-}
-
+# yq resolves anchors, aliases and merge keys natively, so several inputs that could only fail
+# closed before now produce a real verdict. `--front-matter=extract` reads the leading `---`
+# block of a Markdown file, which is exactly the shape of a SKILL.md.
 provenance_repo() {
-  local file="$1" line first=1 in_fm=0 in_meta=0 meta_indent="" indent content
-  local flow_rest flow_inner entry
-  # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested deeper
-  # (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
-  # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu runners
-  # and BSD awk on macOS.
-  while IFS= read -r line || [ -n "$line" ]; do
-    # A CRLF-committed SKILL.md is valid; without stripping the CR the very first line does
-    # not equal `---`, front matter is never entered, and a synced skill reads as having no
-    # provenance at all.
-    line="${line%$'\r'}"
-    if [ "$first" = 1 ]; then
-      first=0
-      if [ "$line" = "---" ]; then in_fm=1; continue; fi
-      return 0
-    fi
-    [ "$in_fm" = 1 ] || continue
-    [ "$line" = "---" ] && return 0
-    # A COMMENT-ONLY LINE IS NOT A KEY, AT ANY INDENTATION — and this must be decided BEFORE
-    # the top-level-key case below, not after it. At column zero a comment's first character
-    # is not a space or tab, so it matches that case; an indented comment above a shallower
-    # real key would otherwise fix the child level at the wrong indent. Both routes end in
-    # provenance reading empty, which means LOCAL.
-    [[ $line =~ ^[[:space:]]*# ]] && continue
-    # A non-indented line starts a new top-level key, which closes any metadata mapping.
-    case "$line" in
-      [!\ \	]*)
-        meta_indent=""
-        in_meta=0
-        if ! yaml_key_of "$line"; then
-          # Not a readable top-level mapping entry: undecidable, so fail closed.
-          printf '%s\n' "__UNKNOWN__"
-          return 0
-        fi
-        [ "$_key" = "metadata" ] || continue
-        flow_rest="${_rest#"${_rest%%[![:space:]]*}"}"
-        # `metadata:` with nothing but an optional comment after it opens a block mapping.
-        if [ -z "$flow_rest" ] || [ "${flow_rest#\#}" != "$flow_rest" ]; then
-          in_meta=1
-          continue
-        fi
-        # 🔴 AN EXPLICIT NULL PARENT IS AN EMPTY MAPPING, NOT AN UNREADABLE ONE.
-        # `metadata: null`, `Null`, `NULL` and `~` are valid ways to write a metadata key that
-        # holds nothing, so they record no provenance and the skill is LOCAL — exactly as
-        # `metadata: {}` already is, and exactly as `github-repo: null` already is one level
-        # down. Falling through to the scalar branch below made them UNKNOWN, which is a false
-        # refusal: every edit to such a skill exited 2. Treating equivalent YAML three
-        # different ways is the inconsistency here, not the null itself.
-        case "$flow_rest" in
-          null|Null|NULL|"~") continue ;;
-          null[[:space:]]*|Null[[:space:]]*|NULL[[:space:]]*|"~"[[:space:]]*)
-            case "${flow_rest#*[[:space:]]}" in
-              "#"*) continue ;;
-            esac
-            ;;
-        esac
-        # `metadata: {github-repo: ...}` is the same key in flow style.
-        if [ "${flow_rest#\{}" != "$flow_rest" ]; then
-          flow_inner="${flow_rest#\{}"
-          # A nested mapping is undecidable for a line parser. Checked before splitting so the
-          # existing nested-flow verdict is preserved.
-          case "$flow_inner" in
-            *'{'*) printf '%s\n' "__UNKNOWN__"; return 0 ;;
-          esac
-          # Split at TOP-LEVEL commas only, respecting quotes and brackets. An unterminated
-          # quote or an unclosed mapping is undecidable.
-          if ! parse_flow_mapping "$flow_inner"; then
-            printf '%s\n' "__UNKNOWN__"
-            return 0
-          fi
-          for entry in "${_entries[@]}"; do
-            entry="${entry#"${entry%%[![:space:]]*}"}"
-            entry="${entry%"${entry##*[![:space:]]}"}"
-            # An EMPTY entry is not undecidable: `metadata: {}` and `metadata: { }` genuinely
-            # record no provenance, which is the LOCAL case.
-            [ -n "$entry" ] || continue
-            if ! yaml_key_of "$entry"; then
-              printf '%s\n' "__UNKNOWN__"
-              return 0
-            fi
-            if [ "$_key" = "github-repo" ]; then
-              yaml_scalar_value "$_rest"
-              printf '\n'
-              return 0
-            fi
-          done
-          # A well-formed flow mapping whose keys are all readable and none of them
-          # github-repo genuinely records no provenance — the LOCAL case.
-          continue
-        fi
-        # `metadata: &anchor` / `*alias` / any other scalar remainder is a metadata key this
-        # parser cannot follow. Undecidable, not local.
-        printf '%s\n' "__UNKNOWN__"
-        return 0
-        ;;
-    esac
-    [ "$in_meta" = 1 ] || continue
-    # Blank lines carry no indentation and never establish the child level.
-    [[ $line =~ ^[[:space:]]*$ ]] && continue
-    indent="${line%%[![:space:]]*}"
-    # The first non-blank indented line after `metadata:` fixes the direct-child level.
-    if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi
-    # Anything deeper (or shallower) than that level is not a direct child.
-    [ "$indent" = "$meta_indent" ] || continue
-    content="${line#"$indent"}"
-    if ! yaml_key_of "$content"; then
-      # A direct child this parser cannot read is undecidable — never "no provenance".
-      printf '%s\n' "__UNKNOWN__"
-      return 0
-    fi
-    if [ "$_key" = "github-repo" ]; then
-      yaml_scalar_value "$_rest"
-      printf '\n'
-      return 0
-    fi
-  done <"$file"
+  local file="$1" out rc
+  # A parser this depends on must be present, and its absence is UNDECIDABLE — never local.
+  if ! command -v yq >/dev/null 2>&1; then
+    printf '%s\n' "__UNKNOWN__"
+    return 0
+  fi
+  # `// ""` maps both an absent key and an explicit YAML null to the LOCAL verdict, which is
+  # what those spellings mean. A parse failure exits non-zero and is undecidable.
+  out="$(yq --front-matter=extract -r '.metadata.github-repo // ""' "$file" 2>/dev/null)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "__UNKNOWN__"
+    return 0
+  fi
+  # A non-scalar value (`github-repo: {a: b}` / `[a]`) names no upstream and is not something a
+  # later string comparison should be handed; yq renders it, so reject it explicitly.
+  case "$out" in
+    '{'*|'['*|*$'\n'*) printf '%s\n' "__UNKNOWN__"; return 0 ;;
+    'null') out="" ;;
+  esac
+  printf '%s\n' "$out"
 }
 
 skill_dir_of() {

@@ -537,13 +537,27 @@ pass "a column-zero comment does not close the metadata mapping"
 #     "skip comment lines" could be over-applied into "never close the mapping", which would
 #     make every skill look synced and block legitimate local edits.
 new_case objects23 closedmeta \
-  $'---\nmetadata:\nother: 1\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+  $'---\nmetadata:\nother:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 if CHANGED_PATHS=".agents/skills/closedmeta/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
   fail "a real top-level key must still close metadata (local skill), rc=${rc} want=0"
 fi
 pass "a real top-level key still closes the metadata mapping"
 
+# 23-bis. MALFORMED YAML IS UNKNOWN, NOT LOCAL. This fixture is what case 23 used to carry: a
+#     child indented under the SCALAR `other: 1`, which no YAML parser accepts ("mapping values
+#     are not allowed in this context"). The line-oriented parser tolerated it and returned the
+#     LOCAL verdict, which permits the edit — a guess about a document nobody can read. Failing
+#     closed is the only defensible answer.
+new_case objects23bis malformedmeta \
+  $'---\nmetadata:\nother: 1\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/malformedmeta/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "malformed YAML: expected UNKNOWN, got success (a guess about an unparseable document)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "malformed YAML: rc=${rc} want=2"
+fi
+pass "malformed front matter is UNKNOWN, never local"
 # 24. NO CHECKOUT is UNKNOWN, never a clean pass. Without an `actions/checkout` step every path
 #     is absent, so the missing-root no-op fired and this REQUIRED guard exited 0 having
 #     evaluated nothing — the same "valid input -> zero matches -> exit 0" fail-open the diff
@@ -654,41 +668,45 @@ if CHANGED_PATHS=".agents/skills/flowlocal/SKILL.md"$'\n' run_guard >/dev/null 2
 fi
 pass "a flow mapping with no github-repo is local"
 
-# 23c. A NESTED flow mapping is undecidable for a line parser. Undecidable must be UNKNOWN,
-#      never local — collapsing it into the empty/local verdict is the same fail-open.
+# 23c. A NESTED flow mapping is not provenance. `metadata.source.github-repo` is a deeper key,
+#      and case 12 already establishes that a deeper key is not provenance — so the skill is
+#      LOCAL and stays editable. The line parser could not follow the nesting and had to fail
+#      closed; a real parser answers the question.
 new_case objects31 flownested \
   $'---\nmetadata: {source: {github-repo: https://github.com/someone/else}}\n---\n'
-if out="$(CHANGED_PATHS=".agents/skills/flownested/SKILL.md"$'\n' run_guard 2>&1)"; then
-  fail "nested flow mapping: expected UNKNOWN, got success"
-else
+if CHANGED_PATHS=".agents/skills/flownested/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "nested flow mapping: rc=${rc} want=2"
+  fail "nested flow mapping: a deeper key is not provenance, so local: rc=${rc} want=0"
 fi
-pass "a nested flow mapping is UNKNOWN, not local"
-
-# 23d. An UNTERMINATED flow mapping spans lines and is equally undecidable.
+pass "a nested flow mapping is not provenance, and stays local"
+# 23d. A flow mapping SPANNING LINES is still that mapping. The line parser saw an unterminated
+#      `{` and had to fail closed; a real parser reads the continuation, finds the provenance,
+#      and the edit is refused naming the upstream — the verdict that was always correct here.
 new_case objects32 flowopen \
   $'---\nmetadata: {github-repo:\n  https://github.com/devantler-tech/agent-skills}\n---\n'
-if CHANGED_PATHS=".agents/skills/flowopen/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "unterminated flow mapping: expected UNKNOWN, got success"
+if out="$(CHANGED_PATHS=".agents/skills/flowopen/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "multi-line flow mapping: expected refusal, got success"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "unterminated flow mapping: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "multi-line flow mapping: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "multi-line flow mapping: should name the upstream"
 fi
-pass "an unterminated flow mapping is UNKNOWN, not local"
-
-# 23e. `metadata: &anchor` / `*alias` is a metadata key this parser cannot follow. Same rule.
+pass "a flow mapping spanning lines is read, and its provenance refused"
+# 23e. AN ANCHOR IS NOT A HIDING PLACE. `metadata: &meta` carries real provenance underneath;
+#      the line parser could not follow the anchor and fell back to UNKNOWN, so a synced skill
+#      merely looked undecidable. A real parser resolves it and the edit is refused.
 new_case objects33 anchored \
   $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
-if CHANGED_PATHS=".agents/skills/anchored/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "anchored metadata: expected UNKNOWN, got success"
+if out="$(CHANGED_PATHS=".agents/skills/anchored/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "anchored metadata: expected refusal, got success"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "anchored metadata: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "anchored metadata: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "anchored metadata: should name the upstream"
 fi
-pass "an anchored metadata mapping is UNKNOWN, not local"
-
-
+pass "an anchored metadata mapping is resolved, and its provenance refused"
 # 24. An UNREADABLE commit must not read as an absent skill root. `cat-file -e <sha>:<dir>`
 #     fails identically for a missing commit and for a commit without that path, so under
 #     the depth-1 default of actions/checkout both lookups fail, the "no root in either
@@ -913,20 +931,21 @@ if CHANGED_PATHS=".agents/skills/normal/SKILL.md"$'\n' run_guard >/dev/null 2>&1
 fi
 pass "control: an ordinary local skill stays editable under key normalisation"
 
-# 29. AN ENCODED KEY IS NOT THE KEY. `"github-repo"` resolves to `github-repo` in any YAML
-#     parser; comparing the literal spelling read it as an unrelated key, so provenance came back
-#     empty and empty means LOCAL. Decoding YAML escapes in bash is its own defect source, so this
-#     fails closed instead.
+# 29. AN ENCODED KEY IS THE KEY. `"github-repo"` resolves to `github-repo`, so this is
+#     ordinary provenance and the edit is refused naming the upstream. The line parser compared
+#     the literal spelling, read it as an unrelated key, and returned empty — and empty means
+#     LOCAL, so it silently permitted the edit. A real parser decodes the escape.
 new_case objects49 escaped \
   $'---\nmetadata:\n  "github\\u002drepo": https://github.com/devantler-tech/agent-skills\n---\n'
-if CHANGED_PATHS=".agents/skills/escaped/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "escaped key: expected UNKNOWN, got success (this is the fail-open)"
+if out="$(CHANGED_PATHS=".agents/skills/escaped/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "escaped key: expected refusal, got success (this was the fail-open)"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "escaped key: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "escaped key: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "escaped key: should name the upstream"
 fi
-pass "an escaped quoted key fails closed as UNKNOWN"
-
+pass "an escaped quoted key is decoded, and its provenance refused"
 # 30. YAML NULL NAMES NO UPSTREAM — and refusing it is a FALSE REFUSAL shipped to every consumer.
 #     `github-repo: null` is a valid way for a local skill to carry the key while recording no
 #     provenance; returning the literal token made the guard refuse every edit and print
@@ -1038,26 +1057,108 @@ if CHANGED_PATHS=".agents/skills/nullparentc/SKILL.md"$'\n' run_guard >/dev/null
 fi
 pass "a null metadata parent with a trailing comment is local"
 
-# 32c. CONTROL for 32: a metadata parent this parser genuinely cannot follow is STILL UNKNOWN, so
-#      the null carve-out did not turn every scalar remainder into "local". `&anchor` is the case
-#      that must keep failing closed.
-new_case objects59 anchorparent $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
-if CHANGED_PATHS=".agents/skills/anchorparent/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "control 32c: an anchored metadata parent must stay UNKNOWN, got success"
+# 32c. CONTROL for 32: an ANCHORED metadata parent still carries real provenance, so the null
+#      carve-out must not swallow it. This is the case that proves "treat null as absent" was
+#      not over-applied into "treat any non-mapping remainder as absent".
+new_case objects59 anchorparent \
+  $'---\nmetadata: &meta\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/anchorparent/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "control 32c: an anchored metadata parent carries provenance and must be refused"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "control 32c: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "control 32c: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "control 32c: should name the upstream"
 fi
-pass "control: an unfollowable metadata parent is still UNKNOWN"
-
-# 32d. CONTROL for 32: a value merely STARTING with 'null' is not null. `nullify-me` is an ordinary
-#      scalar this parser cannot follow, so it must stay UNKNOWN rather than match the prefix.
+pass "control: an anchored metadata parent is resolved, not swallowed by the null carve-out"
+# 32d. CONTROL for 32: a value merely STARTING with 'null' is not YAML null — but it is still a
+#      SCALAR, and a scalar `metadata` has no `github-repo` child at all. So the skill records no
+#      provenance and stays editable. What this control actually pins is that the null handling
+#      keys on the parsed VALUE and never on a string prefix: were `nullify-me` matched as null
+#      by prefix, the same bug would misread a real provenance value elsewhere.
 new_case objects60 nullish $'---\nmetadata: nullify-me\n---\n'
-if CHANGED_PATHS=".agents/skills/nullish/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
-  fail "control 32d: 'nullify-me' must not be read as null, got success"
+if CHANGED_PATHS=".agents/skills/nullish/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "control 32d: a scalar metadata has no github-repo child, so local: rc=${rc} want=0"
+fi
+
+# 33. A MERGE ALIAS IS PROVENANCE. `metadata:\n  <<: *upstream` pulls the key in by reference, so
+#     the skill IS synced. The line parser read `<<` as an unrelated key and returned empty, and
+#     empty means LOCAL — it silently permitted the edit.
+new_case objects61 merged \
+  $'---\nup: &u\n  github-repo: https://github.com/devantler-tech/agent-skills\nmetadata:\n  <<: *u\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/merged/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "merge alias: expected refusal, got success (this was the fail-open)"
 else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "control 32d: rc=${rc} want=2"
+  [ "${rc}" -eq 1 ] || fail "merge alias: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "merge alias: should name the upstream"
 fi
-pass "control: a value merely starting with 'null' is not YAML null"
+pass "a merge alias is resolved, and its provenance refused"
+
+# 34. A QUOTED EMPTY VALUE WITH A TRAILING COMMENT records no provenance. The comment sat AFTER the
+#     closing quote, so a strip that skipped quoted values left the comment attached and the whole
+#     text read as a nonempty upstream — every edit falsely refused.
+new_case objects62 quotedempty $'---\nmetadata:\n  github-repo: "" # intentionally local\n---\n'
+if CHANGED_PATHS=".agents/skills/quotedempty/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "quoted empty + comment: must be local: rc=${rc} want=0"
+fi
+pass "a quoted empty value with a trailing comment is absent provenance"
+
+# 35. A BRACE INSIDE A QUOTED SCALAR IS NOT NESTING. A raw substring test for `{` mistook it for a
+#     nested mapping and returned UNKNOWN, blocking every edit to an ordinary local skill.
+new_case objects63 bracequote $'---\nmetadata: {note: "literal { brace"}\n---\n'
+if CHANGED_PATHS=".agents/skills/bracequote/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "quoted brace: must stay local: rc=${rc} want=0"
+fi
+pass "a brace inside a quoted flow scalar is not nesting"
+
+# 36. A MULTILINE PROVENANCE VALUE is still that value. Block YAML may put the scalar on the next
+#     line; the line parser saw an empty value on the key line and treated it as absent — LOCAL,
+#     silently permitting the edit to a synced skill.
+new_case objects64 multiline \
+  $'---\nmetadata:\n  github-repo:\n    https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/multiline/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "multiline value: expected refusal, got success (this was the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "multiline value: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "multiline value: should name the upstream"
+fi
+pass "a provenance value on the following line is read, and refused"
+
+# 37. AN INDENTED ROOT MAPPING is still the root. Valid YAML may indent every top-level key; a
+#     parser that only treats column zero as top level never found `metadata`, returned empty, and
+#     empty means LOCAL.
+new_case objects65 indentedroot \
+  $'---\n  metadata:\n    github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/indentedroot/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "indented root: expected refusal, got success (this was the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "indented root: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "indented root: should name the upstream"
+fi
+pass "an indented root mapping is still the root"
+
+# 38. CONTROL for the yq migration: with no YAML parser available the guard is UNDECIDABLE, never
+#     local. A missing dependency must not silently degrade into permitting every edit — that is
+#     the fail-open the whole rewrite exists to remove, and it would be the easiest one to ship.
+new_case objects66 noyq \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+# A PATH that keeps bash, mktemp and the git stub but drops the directory holding yq: the
+# control must remove the PARSER, not the shell. Emptying PATH outright makes run_guard exit 127
+# — a failure that looks like the assertion passing for the wrong reason.
+noyq_path="${tmp}/bin:/usr/bin:/bin"
+command -v yq >/dev/null 2>&1 && PATH="${noyq_path}" command -v yq >/dev/null 2>&1 \
+  && fail "control 38 fixture: yq is still reachable on the reduced PATH"
+if PATH="${noyq_path}" CHANGED_PATHS=".agents/skills/noyq/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "control 38: with no yq the guard must be UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "control 38: rc=${rc} want=2"
+fi
+pass "control: an unavailable YAML parser is UNKNOWN, never local"
 echo "ALL PASS"
