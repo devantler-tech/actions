@@ -14,6 +14,10 @@
 #     option makes it commit through the GitHub API instead, and GitHub signs a commit an
 #     App or Actions token creates when the request carries no custom author/committer or
 #     signature fields.
+#     `sign-commits: true` alone is not sufficient: GitHub signs the commit only when the
+#     request carries a token it will sign for — the default GITHUB_TOKEN, or a GitHub App
+#     token. With a PAT the action still opens the PR and still reports success while the
+#     commit lands unsigned, so the option is checked together with its token source.
 #   * `stefanzweifel/git-auto-commit-action` has no such option — it can only run a local
 #     `git commit`, so its output is unsigned unless a signing key is configured on the
 #     runner. The fixer lanes migrated off it (#1005, #1011, #1036) onto the shared
@@ -35,9 +39,12 @@ fail() {
 
 [[ -d "$workflow_dir" ]] || fail "workflow directory '$workflow_dir' does not exist"
 command -v yq >/dev/null || fail "yq is unavailable"
+command -v jq >/dev/null || fail "jq is unavailable"
 
 cpr_total=0
 cpr_unsigned=()
+cpr_signed=0
+cpr_bad_token=()
 auto_commit=()
 
 # NOTE: a `while read` loop in a pipeline runs in a subshell under some shells, losing every
@@ -68,6 +75,50 @@ for wf in "${workflows[@]}"; do
       [[ -n "$step" ]] || continue
       cpr_unsigned+=("$wf :: $step")
     done <<<"$unsigned"
+
+    # `sign-commits: true` only signs when the token GitHub commits with is one GitHub will
+    # sign for: the default GITHUB_TOKEN, or an App token. With a PAT the action still opens
+    # the PR and still reports success, but the commit lands UNSIGNED — so the assertion above
+    # passes on exactly the configuration it exists to catch. Resolve each signed step's token
+    # back to its source and reject anything that is not signing-capable.
+    signed_count="$(
+      yq -r '[.jobs[]?.steps[]?
+             | select((.uses // "") | test("^peter-evans/create-pull-request@"))
+             | select((.with."sign-commits" // false) == true)] | length' "$wf"
+    )" || fail "could not parse '$wf'"
+    cpr_signed=$((cpr_signed + signed_count))
+
+    badtoken="$(
+      yq -o=json '.' "$wf" | jq -r '
+        def toks($e): [$e | scan("github\\.token|secrets\\.[A-Za-z0-9_]+|steps\\.[A-Za-z0-9_-]+\\.outputs\\.[A-Za-z0-9_-]+|inputs\\.[A-Za-z0-9_-]+|vars\\.[A-Za-z0-9_-]+|env\\.[A-Za-z0-9_-]+")];
+        # An App-token step is identified by its own `uses`, never by its id, so renaming the
+        # step id cannot smuggle a PAT past this.
+        def signer($r; $appIds):
+          $r == "github.token"
+          or $r == "secrets.GITHUB_TOKEN"
+          or (($r | startswith("steps.")) and (($appIds | index($r | split(".")[1])) != null));
+        (.jobs // {}) | to_entries[]
+        | (.value.steps // []) as $steps
+        | ([$steps[] | select((.uses // "") | startswith("actions/create-github-app-token@")) | .id | select(. != null)]) as $appIds
+        | $steps[]
+        | select((.uses // "") | startswith("peter-evans/create-pull-request@"))
+        | select(((.with // {})."sign-commits" // false) == true)
+        | . as $s
+        | (($s.name // $s.id // $s.uses)) as $label
+        | ("token", "branch-token") as $key
+        | (($s.with // {})[$key] // null) as $val
+        | select($val != null)
+        | ($val | tostring) as $expr
+        | (toks($expr)) as $rs
+        # No recognised reference at all is rejected too: a literal or an unknown context is
+        # unproven, and this guard fails closed.
+        | select(($rs | length) == 0 or ([$rs[] | select(signer(.; $appIds) | not)] | length) > 0)
+        | "\($label) :: \($key): \($expr)"'
+    )" || fail "could not resolve token sources in '$wf'"
+    while IFS= read -r step; do
+      [[ -n "$step" ]] || continue
+      cpr_bad_token+=("$wf :: $step")
+    done <<<"$badtoken"
   fi
 
   gac="$(
@@ -90,6 +141,21 @@ if ((${#cpr_unsigned[@]} > 0)); then
   exit 1
 fi
 
+# Second positive control, for the token-source assertion specifically. cpr_total > 0 does not
+# cover it: every step could carry sign-commits: false, in which case the token check silently
+# examines nothing. It sits AFTER the unsigned check so a workflow that simply forgot the option
+# gets that check's actionable message rather than this one.
+((cpr_signed > 0)) ||
+  fail "no create-pull-request step under '$workflow_dir' sets sign-commits: true — the token-source assertion would pass vacuously"
+
+if ((${#cpr_bad_token[@]} > 0)); then
+  printf 'FAIL: these create-pull-request steps set sign-commits: true but commit with a token\n' >&2
+  printf '      GitHub will not sign for, so their commits land UNSIGNED anyway. Use the default\n' >&2
+  printf '      GITHUB_TOKEN or an actions/create-github-app-token output:\n' >&2
+  printf '        - %s\n' "${cpr_bad_token[@]}" >&2
+  exit 1
+fi
+
 if ((${#auto_commit[@]} > 0)); then
   printf 'FAIL: git-auto-commit-action cannot produce a signed commit; use the shared\n' >&2
   printf '      apply-signed-fixes.yaml workflow instead:\n' >&2
@@ -97,4 +163,4 @@ if ((${#auto_commit[@]} > 0)); then
   exit 1
 fi
 
-echo "PASS: all $cpr_total create-pull-request step(s) sign their commits, and no workflow commits with git-auto-commit-action"
+echo "PASS: all $cpr_total create-pull-request step(s) sign their commits ($cpr_signed via a signing-capable token), and no workflow commits with git-auto-commit-action"
