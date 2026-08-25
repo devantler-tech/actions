@@ -11,6 +11,18 @@ fail() {
 
 [ -f "$workflow" ] || fail "workflow not found: $workflow"
 
+exempt_job_type="$(JOB_ID="$exempt_job" yq -r '.jobs[strenv(JOB_ID)] | type' "$workflow")"
+[ "$exempt_job_type" = "!!map" ] ||
+  fail "$exempt_job must exist as an inline job"
+
+exempt_job_uses="$(JOB_ID="$exempt_job" yq -r '.jobs[strenv(JOB_ID)].uses // ""' "$workflow")"
+[ -z "$exempt_job_uses" ] ||
+  fail "$exempt_job must not call a reusable workflow"
+
+exempt_steps_type="$(JOB_ID="$exempt_job" yq -r '.jobs[strenv(JOB_ID)].steps | type' "$workflow")"
+[ "$exempt_steps_type" = "!!seq" ] ||
+  fail "$exempt_job must define inline steps as a sequence"
+
 exempt_job_uses="$(JOB_ID="$exempt_job" yq -r '[.jobs[strenv(JOB_ID)].steps[]? | select(.uses != null)] | length' "$workflow")"
 [ "$exempt_job_uses" = 0 ] ||
   fail "$exempt_job must remain action-free, got $exempt_job_uses uses steps"
