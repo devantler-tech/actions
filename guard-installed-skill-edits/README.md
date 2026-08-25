@@ -4,13 +4,34 @@ Refuse a hand-edit to a synced installed-skill tree and name the skill's
 upstream so the change is made there instead of being silently reverted.
 
 The check keys on `metadata.github-repo` in each skill's `SKILL.md` at the pull
-request **base**, not on the current path — a `github-repo` key anywhere else in
-the front matter is not provenance and does not mark a skill as synced. Adding a
-wholly new skill directory is allowed, and so is retiring one wholesale: removing
-an installed skill is a local decision, and only editing a synced one is not. The
-programmed `update-agent-skills` PR is exempt only when both the actor and the
-head branch match. Missing CI context, an unreadable `SKILL.md`, or provenance
-that cannot be determined is UNKNOWN rather than a silent pass.
+request **base**, not on the current path. Provenance must be a **direct child**
+of the `metadata` mapping: a top-level `github-repo`, or one nested deeper such
+as `metadata.source.github-repo`, is not provenance and does not mark a skill as
+synced — otherwise a stray key could make a local skill permanently uneditable.
+Adding a wholly new skill directory is allowed, and so is retiring one wholesale:
+removing an installed skill is a local decision, and only editing a synced one is
+not. The programmed `update-agent-skills` PR is exempt only when both the actor
+and the head branch match. Missing CI context, an unreadable `SKILL.md`, or
+provenance that cannot be determined is UNKNOWN rather than a silent pass.
+
+Changed paths come from the **merge base** (a three-dot diff), not from the two
+commits directly. A base branch that advances after a PR branches — most often
+the daily updater editing a synced skill — would otherwise be attributed to the
+PR, and the guard would refuse a pull request that never touched that skill.
+
+## Requirements
+
+The guard needs **both the base and head commits present locally**. The default
+`actions/checkout` fetches depth 1, so the base commit is absent and the diff
+cannot be computed; give the checkout enough history (`fetch-depth: 0`, or fetch
+the base ref explicitly). When the diff cannot be computed the guard reports
+UNKNOWN and fails — it never treats an unreadable diff as "nothing changed".
+
+`merge_group` is supported: that event carries no `pull_request` object, so the
+SHAs fall back to `github.event.merge_group.base_sha` / `head_sha`. Note that a
+merge-queue run carries no PR identity, so the programmed-sync exemption cannot
+be evaluated there — a consumer whose updater PR passes through a merge queue
+should exempt that lane at the workflow level.
 
 ## Inputs
 

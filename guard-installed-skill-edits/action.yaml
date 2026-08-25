@@ -23,8 +23,13 @@ runs:
         SKILL_ROOT: ${{ inputs.skill-root }}
         SYNC_ACTOR: ${{ inputs.sync-actor }}
         SYNC_BRANCH: ${{ inputs.sync-branch }}
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # `merge_group` carries no `pull_request` object, so without these fallbacks both
+        # SHAs are empty on a merge-queue run and the guard exits UNKNOWN before checking
+        # anything — which blocks the queue for every consumer that requires this gate.
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        # Deliberately PR-only: a merge_group event carries no PR identity, so the
+        # programmed-sync exemption cannot be evaluated there. See the README.
         PR_ACTOR: ${{ github.event.pull_request.user.login }}
         PR_HEAD_BRANCH: ${{ github.head_ref }}
       run: bash "${{ github.action_path }}/guard-installed-skill-edits.sh"

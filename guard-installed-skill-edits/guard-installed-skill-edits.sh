@@ -35,11 +35,12 @@ if [ "${PR_ACTOR:-}" = "${SYNC_ACTOR}" ] && [ "${PR_HEAD_BRANCH:-}" = "${SYNC_BR
 fi
 
 provenance_repo() {
-  local file="$1" line value first=1 in_fm=0 in_meta=0
-  # Only `metadata.github-repo` counts. A top-level or unrelated nested `github-repo`
-  # must NOT mark a skill as synced, or a local skill could be made un-editable by a
-  # stray key. Pure-bash because awk's three-argument match() is a GNU extension and
-  # the default awk is mawk on Ubuntu runners and BSD awk on macOS.
+  local file="$1" line value first=1 in_fm=0 in_meta=0 meta_indent="" indent
+  # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested
+  # deeper (e.g. `metadata.source.github-repo`), must NOT mark a skill as synced, or a
+  # stray key could make a local skill un-editable. Pure-bash because awk's
+  # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu
+  # runners and BSD awk on macOS.
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$first" = 1 ]; then
       first=0
@@ -52,10 +53,21 @@ provenance_repo() {
     case "$line" in
       [!\ \	]*)
         if [[ $line =~ ^metadata:[[:space:]]*$ ]]; then in_meta=1; else in_meta=0; fi
+        meta_indent=""
         continue
         ;;
     esac
     [ "$in_meta" = 1 ] || continue
+    # Blank lines carry no indentation and never establish the child level.
+    [[ $line =~ ^[[:space:]]*$ ]] && continue
+    # Indentation of this line, as a literal prefix string (tabs and spaces both count
+    # as one level-character each; YAML forbids tabs for indentation, so a mixed file is
+    # malformed anyway and falls through to UNKNOWN rather than being trusted).
+    indent="${line%%[![:space:]]*}"
+    # The first non-blank indented line after `metadata:` fixes the direct-child level.
+    if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi
+    # Anything deeper (or shallower) than that level is not a direct child.
+    [ "$indent" = "$meta_indent" ] || continue
     if [[ $line =~ ^[[:space:]]+github-repo:[[:space:]]*(.*)$ ]]; then
       value="${BASH_REMATCH[1]}"
       value="${value%"${value##*[![:space:]]}"}"
@@ -83,12 +95,30 @@ list_changed_paths() {
     printf '%s\n' "${CHANGED_PATHS}"
     return 0
   fi
-  git --no-replace-objects diff --name-only -z "${BASE_SHA}" "${HEAD_SHA}" -- "${SKILL_ROOT}" |
+  # THREE-dot: the paths this PR changed relative to the merge base, never the
+  # two-commit difference. With a two-dot diff, a base branch that advanced after the
+  # PR branched drags the base-only changes in — so the programmed updater editing a
+  # synced skill on the base would make the guard refuse an unrelated PR that never
+  # touched it. Provenance is still read from the BASE_SHA snapshot below.
+  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${SKILL_ROOT}" |
     tr '\0' '\n'
 }
 
 unknown=0
 refused=0
+
+# Capture the path list in a command whose exit status is CHECKED. Reading it straight
+# from a process substitution discards the status, so an unresolvable SHA or a shallow
+# `actions/checkout` (depth 1, where the base commit is absent) makes `git diff` fail,
+# feeds the loop nothing, and the guard exits 0 having permitted every edit — a silent
+# fail-open in exactly the configuration most consumers run.
+changed_paths="$(mktemp)"
+trap 'rm -f "${changed_paths}"' EXIT
+if ! list_changed_paths >"${changed_paths}"; then
+  echo "UNKNOWN: could not determine changed paths between ${BASE_SHA} and ${HEAD_SHA}" >&2
+  echo "UNKNOWN: both commits must be present locally — fetch them, or deepen the checkout" >&2
+  exit 2
+fi
 
 while IFS= read -r path; do
   [ -n "$path" ] || continue
@@ -96,7 +126,7 @@ while IFS= read -r path; do
   [ -n "$skill_dir" ] || continue
 
   base_skill="${SKILL_ROOT%/}/${skill_dir}"
-      if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${base_skill}" 2>/dev/null; then
+  if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${base_skill}" 2>/dev/null; then
     continue
   fi
 
@@ -107,14 +137,14 @@ while IFS= read -r path; do
   fi
 
   skill_md="${base_skill}/SKILL.md"
-    if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${skill_md}" 2>/dev/null; then
+  if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${skill_md}" 2>/dev/null; then
     echo "UNKNOWN: ${base_skill} exists at base but SKILL.md is missing" >&2
     unknown=1
     continue
   fi
 
   tmp="$(mktemp)"
-    git --no-replace-objects show "${BASE_SHA}:${skill_md}" >"$tmp"
+  git --no-replace-objects show "${BASE_SHA}:${skill_md}" >"$tmp"
   repo="$(provenance_repo "$tmp")"
   rm -f "$tmp"
 
@@ -126,7 +156,7 @@ while IFS= read -r path; do
 
   echo "refused: ${path} edits synced skill ${skill_dir} (upstream: ${repo}); fix it there, not here" >&2
   refused=1
-done < <(list_changed_paths)
+done <"${changed_paths}"
 
 if [ "$unknown" -eq 1 ]; then
   exit 2

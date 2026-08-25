@@ -56,6 +56,13 @@ case "${cmd}" in
       cat "${f}"
     fi
     ;;
+  diff)
+    # Records the revision spec so a test can assert the THREE-dot form, and fails
+    # when the fixture asks it to — the production fail-open lived exactly here.
+    printf '%s\n' "$*" >"${store}/diff_args"
+    [ -f "${store}/diff_fail" ] && exit 128
+    [ -f "${store}/diff_out" ] && cat "${store}/diff_out"
+    ;;
   *)
     echo "unexpected git $*" >&2
     exit 99
@@ -251,5 +258,72 @@ else
   [ "${rc}" -eq 2 ] || fail "orphan dir: rc=${rc} want=2"
 fi
 pass "SKILL.md gone at BASE while directory remains is UNKNOWN"
+
+# 10. A FAILING changed-path diff is UNKNOWN, never a silent pass. Reading the path list
+#     from a process substitution discarded git's exit status, so a shallow checkout (the
+#     depth-1 default of actions/checkout, where the base commit is absent) fed the loop
+#     nothing and the guard exited 0 having permitted every edit.
+export FAKE_GIT_STORE="${tmp}/objects9"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills"
+: >"${FAKE_GIT_STORE}/diff_fail"
+if run_guard; then
+  fail "failing diff: expected UNKNOWN, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "failing diff: rc=${rc} want=2"
+fi
+pass "a failing changed-path diff is UNKNOWN, not a silent pass"
+
+# 11. The changed-path diff uses the THREE-dot (merge-base) form. With a two-dot diff a
+#     base branch that advanced after the PR branched drags its base-only changes in, so
+#     the updater editing a synced skill on the base would refuse an unrelated PR.
+export FAKE_GIT_STORE="${tmp}/objects10"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills"
+printf '%s\0' ".agents/skills/absent/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
+run_guard >/dev/null 2>&1 || true
+[ -f "${FAKE_GIT_STORE}/diff_args" ] || fail "three-dot: the guard never invoked git diff"
+grep -qF -- 'origin/main...HEAD' "${FAKE_GIT_STORE}/diff_args" \
+  || fail "three-dot: expected 'origin/main...HEAD', got: $(cat "${FAKE_GIT_STORE}/diff_args")"
+grep -qE -- '(^| )origin/main\.\.HEAD( |$)' "${FAKE_GIT_STORE}/diff_args" \
+  && fail "three-dot: a two-dot spec was used"
+pass "changed paths come from the three-dot merge-base diff"
+
+# 12. Provenance must be a DIRECT child of metadata. A deeper key such as
+#     metadata.source.github-repo is not provenance, so a local skill carrying one stays
+#     editable instead of being refused against someone else's repository.
+export FAKE_GIT_STORE="${tmp}/objects11"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/nested"
+store_exists "origin/main:.agents/skills/nested" "dir"
+store_exists "HEAD:.agents/skills/nested" "dir"
+store_exists "origin/main:.agents/skills/nested/SKILL.md" \
+  $'---\nmetadata:\n  source:\n    github-repo: https://github.com/someone/else\n---\n'
+if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then
+  fail "nested provenance: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "nested provenance: rc=${rc} want=2 (must not be a refusal)"
+fi
+pass "metadata.source.github-repo is not provenance"
+
+# 12b. Control for 12: a genuine DIRECT metadata.github-repo, in a file whose front matter
+#      is otherwise shaped identically, is still detected and still refused. Without this,
+#      case 12 would also pass if the parser had simply stopped reading provenance at all.
+export FAKE_GIT_STORE="${tmp}/objects11b"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/nested"
+store_exists "origin/main:.agents/skills/nested" "dir"
+store_exists "HEAD:.agents/skills/nested" "dir"
+store_exists "origin/main:.agents/skills/nested/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n  source:\n    github-repo: https://github.com/someone/else\n---\n'
+if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then
+  fail "control: a direct metadata.github-repo should still refuse"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "control: rc=${rc} want=1"
+fi
+pass "control: a direct metadata.github-repo is still detected"
 
 echo "ALL PASS"
