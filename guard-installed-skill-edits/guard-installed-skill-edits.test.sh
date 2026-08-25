@@ -127,6 +127,7 @@ export FAKE_GIT_STORE="${tmp}/objects3"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills/ways-of-working"
 store_exists "origin/main:.agents/skills/ways-of-working" "dir"
+store_exists "HEAD:.agents/skills/ways-of-working" "dir"   # still present at head: an edit, not a retirement
 store_exists "origin/main:.agents/skills/ways-of-working/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 printf '%s\n' ".agents/skills/ways-of-working/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
 if out="$(CHANGED_PATHS=".agents/skills/ways-of-working/SKILL.md"$'\n' run_guard 2>&1)"; then
@@ -144,6 +145,7 @@ export FAKE_GIT_STORE="${tmp}/objects4"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills/spoof"
 store_exists "origin/main:.agents/skills/spoof" "dir"
+store_exists "HEAD:.agents/skills/spoof" "dir"   # still present at head: an edit, not a retirement
 store_exists "origin/main:.agents/skills/spoof/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/evil/spoof\n---\n'
 store_exists "HEAD:.agents/skills/spoof/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 printf '%s\n' ".agents/skills/spoof/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
@@ -161,6 +163,7 @@ export FAKE_GIT_STORE="${tmp}/objects5"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills/empty"
 store_exists "origin/main:.agents/skills/empty" "dir"
+store_exists "HEAD:.agents/skills/empty" "dir"   # still present at head: an edit, not a retirement
 store_exists "origin/main:.agents/skills/empty/SKILL.md" $'---\nname: empty\n---\n'
 printf '%s\n' ".agents/skills/empty/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
 if CHANGED_PATHS=".agents/skills/empty/SKILL.md"$'\n' run_guard; then
@@ -176,6 +179,7 @@ export FAKE_GIT_STORE="${tmp}/objects6"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills/ways-of-working"
 store_exists "origin/main:.agents/skills/ways-of-working" "dir"
+store_exists "HEAD:.agents/skills/ways-of-working" "dir"   # still present at head: an edit, not a retirement
 store_exists "origin/main:.agents/skills/ways-of-working/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 printf '%s\n' ".agents/skills/ways-of-working/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
 if ! PR_ACTOR="botantler-1[bot]" PR_HEAD_BRANCH="deps/agent-skills-update" \
@@ -191,21 +195,54 @@ else
 fi
 pass "programmed-sync exemption needs actor AND branch"
 
-# 8. Retiring a skill is allowed
+# 8. Retiring a skill WHOLESALE is allowed — it must exist at BASE (with provenance) and
+#    be ABSENT at HEAD. Storing nothing at BASE would exercise the new-skill path instead
+#    and pass without ever reaching the retirement branch.
 export FAKE_GIT_STORE="${tmp}/objects7"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills"
+store_exists "origin/main:.agents/skills/retired" "dir"
+store_exists "origin/main:.agents/skills/retired/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+# deliberately NOT stored at HEAD -> the skill is gone at head
 : >"${FAKE_GIT_STORE}/lstree/HEAD"
 if ! CHANGED_PATHS=".agents/skills/retired/SKILL.md"$'\n' run_guard; then
   fail "retiring a skill should be allowed"
 fi
-pass "retiring a skill is allowed"
+pass "retiring a synced skill wholesale is allowed"
+
+# 8b. Control for 8: the SAME synced skill still PRESENT at HEAD is refused, so case 8
+#     passes because of the retirement branch and not because provenance went unread.
+store_exists "HEAD:.agents/skills/retired" "dir"
+if CHANGED_PATHS=".agents/skills/retired/SKILL.md"$'\n' run_guard; then
+  fail "control: still-present synced skill should be refused"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "control: still-present synced skill rc=${rc} want=1"
+fi
+pass "control: the same skill still present at HEAD is refused"
+
+# 8c. Provenance is only `metadata.github-repo`. A TOP-LEVEL github-repo key must not
+#     mark a local skill as synced, or a stray key could make it un-editable.
+export FAKE_GIT_STORE="${tmp}/objects7c"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills"
+store_exists "origin/main:.agents/skills/toplevel" "dir"
+store_exists "origin/main:.agents/skills/toplevel/SKILL.md" $'---\nname: toplevel\ngithub-repo: https://github.com/someone/else\n---\n'
+store_exists "HEAD:.agents/skills/toplevel" "dir"
+if CHANGED_PATHS=".agents/skills/toplevel/SKILL.md"$'\n' run_guard; then
+  fail "top-level github-repo: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "top-level github-repo: rc=${rc} want=2 (must not be a refusal)"
+fi
+pass "a top-level github-repo is not metadata provenance"
 
 # 9. SKILL.md gone at BASE while the directory remains is UNKNOWN
 export FAKE_GIT_STORE="${tmp}/objects8"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 mkdir -p "${tmp}/.agents/skills/orphan"
 store_exists "origin/main:.agents/skills/orphan" "dir"
+store_exists "HEAD:.agents/skills/orphan" "dir"   # still present at head: an edit, not a retirement
 printf '%s\n' ".agents/skills/orphan/README.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
 if CHANGED_PATHS=".agents/skills/orphan/README.md"$'\n' run_guard; then
   fail "orphan dir: expected unknown"

@@ -35,11 +35,11 @@ if [ "${PR_ACTOR:-}" = "${SYNC_ACTOR}" ] && [ "${PR_HEAD_BRANCH:-}" = "${SYNC_BR
 fi
 
 provenance_repo() {
-  local file="$1" line value first=1 in_fm=0
-  # Pure-bash: awk's three-argument match() is a GNU extension, and the default
-  # awk is mawk on Ubuntu runners and BSD awk on macOS, where it is a syntax
-  # error — the provenance would silently read empty and every synced skill
-  # would report UNKNOWN instead of being refused.
+  local file="$1" line value first=1 in_fm=0 in_meta=0
+  # Only `metadata.github-repo` counts. A top-level or unrelated nested `github-repo`
+  # must NOT mark a skill as synced, or a local skill could be made un-editable by a
+  # stray key. Pure-bash because awk's three-argument match() is a GNU extension and
+  # the default awk is mawk on Ubuntu runners and BSD awk on macOS.
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$first" = 1 ]; then
       first=0
@@ -48,7 +48,15 @@ provenance_repo() {
     fi
     [ "$in_fm" = 1 ] || continue
     [ "$line" = "---" ] && return 0
-    if [[ $line =~ ^[[:space:]]*github-repo:[[:space:]]*(.*)$ ]]; then
+    # A non-indented line starts a new top-level key, which closes any metadata mapping.
+    case "$line" in
+      [!\ \	]*)
+        if [[ $line =~ ^metadata:[[:space:]]*$ ]]; then in_meta=1; else in_meta=0; fi
+        continue
+        ;;
+    esac
+    [ "$in_meta" = 1 ] || continue
+    if [[ $line =~ ^[[:space:]]+github-repo:[[:space:]]*(.*)$ ]]; then
       value="${BASH_REMATCH[1]}"
       value="${value%"${value##*[![:space:]]}"}"
       value="${value#\"}"; value="${value%\"}"
@@ -89,6 +97,12 @@ while IFS= read -r path; do
 
   base_skill="${SKILL_ROOT%/}/${skill_dir}"
       if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${base_skill}" 2>/dev/null; then
+    continue
+  fi
+
+  # Wholesale retirement: the skill existed at base and is gone at head. Removing an
+  # installed skill is a legitimate local decision — only EDITING a synced one is not.
+  if ! git --no-replace-objects cat-file -e "${HEAD_SHA}:${base_skill}" 2>/dev/null; then
     continue
   fi
 
