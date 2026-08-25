@@ -68,6 +68,47 @@ delegated="$(yq -r '.jobs["apply-fixes"].uses // ""' "$caller_workflow")"
 is_signer_ref "$delegated" ||
   fail "${caller_workflow}'s apply-fixes job must use an exact local signer or the immutable source-repository signer (found '${delegated:-nothing}')"
 
+# 0a. Every invocation exports an artifact name derived from its own check run, and both the
+#     upload and signer consume that exact output. A caller can invoke this reusable workflow
+#     more than once in one run; a constant name lets a cancelled/replaced invocation race with
+#     another invocation's patch and can make the signer apply the wrong fixes.
+fixes_artifact_env="$(
+  yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .env.FIXES_ARTIFACT // ""' \
+    "$caller_workflow"
+)"
+[[ "$fixes_artifact_env" == "megalinter-fixes-\${{ job.check_run_id }}" ]] ||
+  fail "${caller_workflow}'s fixes artifact must be qualified by job.check_run_id (found '${fixes_artifact_env:-nothing}')"
+
+fixes_run="$(
+  yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .run // ""' "$caller_workflow"
+)"
+grep -qF "echo \"artifact-name=\${FIXES_ARTIFACT}\" >> \"\$GITHUB_OUTPUT\"" <<<"$fixes_run" ||
+  fail "${caller_workflow}'s fixes step must export its invocation-unique artifact name"
+grep -qF "\"\${RUNNER_TEMP}/\${FIXES_ARTIFACT}.patch\"" <<<"$fixes_run" ||
+  fail "${caller_workflow}'s fixes step must write the patch under its invocation-unique artifact name"
+
+lint_artifact_output="$(yq -r '.jobs.lint.outputs."fixes-artifact" // ""' "$caller_workflow")"
+[[ "$lint_artifact_output" == "\${{ steps.fixes.outputs.artifact-name }}" ]] ||
+  fail "${caller_workflow}'s lint job must publish the fixes step's artifact name"
+
+upload_artifact_name="$(
+  yq -r '.jobs.lint.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.name // ""' \
+    "$caller_workflow"
+)"
+[[ "$upload_artifact_name" == "\${{ steps.fixes.outputs.artifact-name }}" ]] ||
+  fail "${caller_workflow}'s upload must use the fixes step's artifact-name output"
+
+upload_artifact_path="$(
+  yq -r '.jobs.lint.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.path // ""' \
+    "$caller_workflow"
+)"
+[[ "$upload_artifact_path" == "\${{ runner.temp }}/\${{ steps.fixes.outputs.artifact-name }}.patch" ]] ||
+  fail "${caller_workflow}'s upload path must match the invocation-unique artifact name"
+
+signer_artifact_name="$(yq -r '.jobs["apply-fixes"].with."artifact-name" // ""' "$caller_workflow")"
+[[ "$signer_artifact_name" == "\${{ needs.lint.outputs.fixes-artifact }}" ]] ||
+  fail "${caller_workflow}'s signer must consume the lint job's invocation-unique artifact name"
+
 # 1. No job anywhere in the caller delegates a commit to a CLI-committing action. Scoped to the
 #    whole file, not just apply-fixes: re-adding such a step to the lint job would put unsigned
 #    commits back on the branch by another route.
