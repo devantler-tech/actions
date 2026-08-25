@@ -19,6 +19,11 @@
 #     runner. The fixer lanes migrated off it (#1005, #1011, #1036) onto the shared
 #     `apply-signed-fixes.yaml`; this test keeps them off it.
 
+# SCOPE: reusable workflows only. Verified when this test was written that no composite
+# action or script in this repository produces a commit, so `.github/workflows` is the
+# complete set of producers. If a composite action ever commits, widen this scan — the
+# assertions below cannot see outside `workflow_dir`.
+
 set -euo pipefail
 
 workflow_dir="${1:-.github/workflows}"
