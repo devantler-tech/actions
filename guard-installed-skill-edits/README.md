@@ -3,11 +3,14 @@
 Refuse a hand-edit to a synced installed-skill tree and name the skill's
 upstream so the change is made there instead of being silently reverted.
 
-The check keys on provenance recorded in each skill's `SKILL.md` at the
-pull request **base**, not on the current path. A wholly new skill directory
-is allowed. The programmed `update-agent-skills` PR is exempt only when both
-the actor and the head branch match. Missing CI context is UNKNOWN rather
-than a silent pass.
+The check keys on `metadata.github-repo` in each skill's `SKILL.md` at the pull
+request **base**, not on the current path — a `github-repo` key anywhere else in
+the front matter is not provenance and does not mark a skill as synced. Adding a
+wholly new skill directory is allowed, and so is retiring one wholesale: removing
+an installed skill is a local decision, and only editing a synced one is not. The
+programmed `update-agent-skills` PR is exempt only when both the actor and the
+head branch match. Missing CI context, an unreadable `SKILL.md`, or provenance
+that cannot be determined is UNKNOWN rather than a silent pass.
 
 ## Inputs
 
