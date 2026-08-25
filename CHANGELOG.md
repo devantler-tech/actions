@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.2.1](https://github.com/devantler-tech/actions/compare/v13.2.0...v13.2.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **lint:** make applied-fixes artifacts invocation-unique ([#1085](https://github.com/devantler-tech/actions/issues/1085)) ([9d258c7](https://github.com/devantler-tech/actions/commit/9d258c76fae1d0007d5f26eecc08b0c190e36cfa))
+
 ## [13.2.0](https://github.com/devantler-tech/actions/compare/v13.1.8...v13.2.0) (2026-08-25)
 
 
