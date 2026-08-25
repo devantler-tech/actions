@@ -194,9 +194,15 @@ provenance_repo() {
   printf '%s\n' "$out"
 }
 
+# Sets `_skill_dir` to the skill directory a changed path belongs to, or empty when the path names
+# no skill. Sets a variable rather than printing, because the caller would otherwise have to use
+# command substitution — which strips trailing newlines, and a Git-valid directory name may end in
+# one. The name would lose it silently, the base-tree lookup would miss, and the synced edit would
+# be skipped with exit 0.
 skill_dir_of() {
   local path="$1"
   local prefix="${ROOT_PREFIX}"
+  _skill_dir=""
   case "$path" in
     "${prefix}"*)
       local rest="${path#"$prefix"}"
@@ -205,7 +211,7 @@ skill_dir_of() {
       # returning its filename as a skill name made the guard look for `<file>/SKILL.md`,
       # find nothing, and block an unrelated edit as UNKNOWN.
       case "$rest" in
-        */*) printf '%s\n' "${rest%%/*}" ;;
+        */*) _skill_dir="${rest%%/*}" ;;
       esac
       ;;
   esac
@@ -226,7 +232,11 @@ list_changed_paths() {
   # CONTAINS a newline into two records: the first has no directory component below the root
   # and the second has lost the root prefix, so BOTH are ignored and an edit to a provenanced
   # skill exits 0. NUL is the one delimiter that cannot occur inside a path.
-  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${ROOT_DIR}"
+  # `--literal-pathspecs`: a root beginning with `:` — a directory literally named `:magic` —
+  # is otherwise read as PATHSPEC MAGIC rather than a path, so the diff comes back EMPTY and
+  # SUCCESSFUL and the guard exits 0 without examining a single edit. An empty diff and "nothing
+  # changed here" are indistinguishable downstream, which is what makes this a silent permit.
+  git --no-replace-objects --literal-pathspecs diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${ROOT_DIR}"
 }
 
 unknown=0
@@ -246,7 +256,11 @@ fi
 
 while IFS= read -r -d '' path || [ -n "$path" ]; do
   [ -n "$path" ] || continue
-  skill_dir="$(skill_dir_of "$path")"
+  # NOT `$(skill_dir_of ...)`: command substitution strips TRAILING NEWLINES, and a Git-valid
+  # directory name may end in one. The name would silently lose it, the base-tree lookup would
+  # then miss, and the synced edit would be skipped with exit 0. `skill_dir_of` sets a variable.
+  skill_dir_of "$path"
+  skill_dir="$_skill_dir"
   [ -n "$skill_dir" ] || continue
 
   base_skill="${ROOT_PREFIX}${skill_dir}"

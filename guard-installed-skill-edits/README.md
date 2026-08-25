@@ -100,9 +100,15 @@ component of a changed file is only a *candidate*. A top-level directory that ha
 does not make `.github` a malformed install. Under a dedicated root the opposite holds: every
 subdirectory is meant to be a skill, so one missing its `SKILL.md` is reported UNKNOWN.
 
-Provenance is read from `metadata.github-repo` in the base `SKILL.md`, in either block or
-flow style (`metadata: {github-repo: ...}`). If the action cannot determine the metadata
-mapping — because it spans several lines, nests another mapping, or is hidden behind a YAML
-anchor or alias — it reports UNKNOWN rather than treating the skill as having no provenance,
-because "no provenance" is what marks a skill local and editable.
+Provenance is read from `metadata.github-repo` in the base `SKILL.md`, using a real YAML parser.
+Block and flow style, quoted and escaped keys, anchors, aliases and merge keys, multi-line
+scalars and an indented root are all resolved rather than guessed at, and a value is classified
+by its YAML tag. A nested `metadata.source.github-repo` is a deeper key, not provenance, so a
+skill carrying one is local and editable.
+
+UNKNOWN is reserved for what genuinely cannot be determined: front matter no YAML parser accepts,
+a `github-repo` whose value is a mapping or a sequence rather than a scalar, an unreadable commit,
+a diff that cannot be computed, or `yq` missing from `PATH`. The action never treats any of those
+as "no provenance", because "no provenance" is what marks a skill local and editable — it is the
+verdict that permits the edit.
 

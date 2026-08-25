@@ -20,7 +20,11 @@ set -euo pipefail
 store="${FAKE_GIT_STORE:?}"
     while [ $# -gt 0 ]; do
       case "${1}" in
-        --no-replace-objects) shift ;;
+        # Global flags the guard passes before the subcommand. A stub that does not skip one
+        # never sees `diff` at all and answers "unexpected git" — the fixture failing, not the
+        # subject. `--literal-pathspecs` is required because a root beginning with `:` would
+        # otherwise be read as pathspec magic and yield an empty, successful diff.
+        --no-replace-objects|--literal-pathspecs) shift ;;
         -C) shift 2 ;;
         *) break ;;
       esac
@@ -1219,4 +1223,55 @@ else
   [ "${rc}" -eq 1 ] || fail "quoted \"null\": rc=${rc} want=1"
 fi
 pass "control: a quoted \"null\" is a string value, not an absent one"
+
+# 40. THE ROOT IS PASSED AS A LITERAL PATHSPEC. Git reads a leading colon as pathspec magic, so a
+#     root such as `:magic` would be interpreted rather than matched, and the diff would come back
+#     EMPTY and SUCCESSFUL — indistinguishable downstream from "nothing changed", so the guard
+#     would exit 0 without examining a single edit.
+#
+#     🔑 THIS ASSERTS THE FLAG, NOT THE BEHAVIOUR, AND THAT IS DELIBERATE. The hermetic git stub
+#     records its arguments and replays a fixture; it does not implement pathspec magic, so it
+#     CANNOT reproduce the empty-diff outcome — a behavioural version of this case passes with and
+#     without the fix, which is a vacuous test. The claim that a leading colon is magic rests on
+#     git's documented pathspec semantics; what is testable here is that the guard asks git not to
+#     apply them, so this pins exactly that and says so rather than implying a reproduction.
+export FAKE_GIT_STORE="${tmp}/objects69"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree" "${tmp}/.agents/skills/present"
+store_exists "origin/main:.agents/skills/present/SKILL.md" $'---\nname: present\n---\n'
+printf '%s\0' ".agents/skills/absent/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
+run_guard >/dev/null 2>&1 || true
+[ -f "${FAKE_GIT_STORE}/diff_args" ] || fail "literal pathspec: the guard never invoked git diff"
+grep -qF -- '--' "${FAKE_GIT_STORE}/diff_args" || fail "literal pathspec: no pathspec separator recorded"
+rm -f "${FAKE_GIT_STORE}/diff_out"
+pass "the changed-path diff separates its pathspec from the revision range"
+
+# 40b. The stub records only what follows the global flags, so assert the flag on the SCRIPT — the
+#      one place it is observable. A grep over source is a weak test in general; it is the right
+#      one here precisely because the stub strips global flags before recording, so the argument
+#      recorder cannot see it.
+grep -qF -- 'git --no-replace-objects --literal-pathspecs diff' \
+  "${root}/guard-installed-skill-edits/guard-installed-skill-edits.sh" \
+  || fail "literal pathspec: the changed-path diff must pass --literal-pathspecs"
+pass "the changed-path diff passes --literal-pathspecs"
+# 41. A SKILL DIRECTORY NAME MAY END IN A NEWLINE. Transporting it through command substitution
+#     strips that trailing newline, so the base-tree lookup asks about a DIFFERENT directory,
+#     misses, and the synced edit is skipped with exit 0.
+export FAKE_GIT_STORE="${tmp}/objects70"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree" "${tmp}/.agents/skills"
+nl_skill=$'synced\n'
+store_exists "origin/main:.agents/skills/${nl_skill}" "dir"
+store_exists "HEAD:.agents/skills/${nl_skill}" "dir"
+store_exists "origin/main:.agents/skills/${nl_skill}/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+printf '%s\0' ".agents/skills/${nl_skill}/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
+if out="$(run_guard 2>&1)"; then
+  fail "trailing-newline skill name: expected refusal, got success (this is the silent skip)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "trailing-newline skill name: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "trailing-newline skill name: should name the upstream"
+fi
+rm -f "${FAKE_GIT_STORE}/diff_out"
+pass "a skill directory name ending in a newline is not truncated"
 echo "ALL PASS"
