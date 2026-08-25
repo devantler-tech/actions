@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.7](https://github.com/devantler-tech/actions/compare/v13.1.6...v13.1.7) (2026-08-25)
+
+
+### Bug Fixes
+
+* **update-agent-skills:** sign the updater's commits ([#1038](https://github.com/devantler-tech/actions/issues/1038)) ([3a80a05](https://github.com/devantler-tech/actions/commit/3a80a058bf340d6f578e3f7d54968f4398b90905))
+
 ## [13.1.6](https://github.com/devantler-tech/actions/compare/v13.1.5...v13.1.6) (2026-08-25)
 
 
