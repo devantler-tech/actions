@@ -71,8 +71,9 @@ jobs:
     # Dismissal is per-alert, not per-condition, so the alert does not re-fire if the property
     # stops holding. Assertions 11-13 in .github/tests/test-lint-signed-commit.sh enforce it
     # instead: 11 pins every `uses:` to an audited SHA-pinned identity, 12 pins the step
-    # inventory, and 13 pins the CONTENT of the two run blocks that execute after the checkout --
-    # so neither a new step nor a command added inside an existing block can land silently.
+    # inventory, and 13 pins the CONTENT (`run`, `shell`, `working-directory`) of the steps that
+    # execute after the checkout -- so neither a new step, nor a command added inside an existing
+    # block, nor a custom `shell:` template pointing at a repository file, can land silently.
     # Editing those blocks means re-auditing and updating the pin (devantler-tech/actions#1019).
     steps:
       - name: 🛡️ Harden runner
