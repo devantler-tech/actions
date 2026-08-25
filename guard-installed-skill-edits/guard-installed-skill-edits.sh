@@ -52,7 +52,7 @@ provenance_repo() {
     # A non-indented line starts a new top-level key, which closes any metadata mapping.
     case "$line" in
       [!\ \	]*)
-        if [[ $line =~ ^metadata:[[:space:]]*$ ]]; then in_meta=1; else in_meta=0; fi
+        if [[ $line =~ ^metadata:[[:space:]]*(#.*)?$ ]]; then in_meta=1; else in_meta=0; fi
         meta_indent=""
         continue
         ;;

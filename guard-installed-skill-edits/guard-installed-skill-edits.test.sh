@@ -326,4 +326,39 @@ else
 fi
 pass "control: a direct metadata.github-repo is still detected"
 
+# 13. `metadata:` may carry a trailing YAML comment. Requiring the line to end right after
+#     the colon made the parser skip the mapping and report UNKNOWN for a skill that has
+#     perfectly valid provenance — fail-closed, but still wrong.
+export FAKE_GIT_STORE="${tmp}/objects12"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/commented"
+store_exists "origin/main:.agents/skills/commented" "dir"
+store_exists "HEAD:.agents/skills/commented" "dir"
+store_exists "origin/main:.agents/skills/commented/SKILL.md" \
+  $'---\nmetadata: # upstream ownership\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/commented/SKILL.md"$'\n' run_guard; then
+  fail "commented metadata key: expected a refusal, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "commented metadata key: rc=${rc} want=1 (provenance must still be read)"
+fi
+pass "a trailing comment after metadata: does not hide provenance"
+
+# 13b. Control for 13: the match is still anchored to the exact key, so a different
+#      top-level key that merely starts with the same letters does not open the mapping.
+export FAKE_GIT_STORE="${tmp}/objects12b"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/decoy"
+store_exists "origin/main:.agents/skills/decoy" "dir"
+store_exists "HEAD:.agents/skills/decoy" "dir"
+store_exists "origin/main:.agents/skills/decoy/SKILL.md" \
+  $'---\nmetadataX: # decoy\n  github-repo: https://github.com/someone/else\n---\n'
+if CHANGED_PATHS=".agents/skills/decoy/SKILL.md"$'\n' run_guard; then
+  fail "decoy key: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "decoy key: rc=${rc} want=2 (metadataX must not open the mapping)"
+fi
+pass "control: metadataX: does not open the metadata mapping"
+
 echo "ALL PASS"
