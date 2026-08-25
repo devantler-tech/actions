@@ -23,15 +23,21 @@ while [ "${SKILL_ROOT%/}" != "${SKILL_ROOT}" ]; do SKILL_ROOT="${SKILL_ROOT%/}";
 SYNC_ACTOR="${SYNC_ACTOR:-botantler-1[bot]}"
 SYNC_BRANCH="${SYNC_BRANCH:-deps/agent-skills-update}"
 
-if [ -z "${SKILL_ROOT}" ]; then
-  echo "UNKNOWN: SKILL_ROOT normalised to an empty path" >&2
-  exit 2
+# `.` (or an empty value after normalisation) means the skill directories live at the
+# repository root. Git emits `synced/SKILL.md` with no prefix at all, so the prefix must be
+# EMPTY — `./` matches nothing and the guard would pass having checked nothing.
+if [ "${SKILL_ROOT}" = "." ] || [ -z "${SKILL_ROOT}" ]; then
+  ROOT_DIR="."
+  ROOT_PREFIX=""
+else
+  ROOT_DIR="${SKILL_ROOT}"
+  ROOT_PREFIX="${SKILL_ROOT}/"
 fi
 
 # Missing-dir no-op must precede the SHA check: this repo has no .agents/skills
 # of its own, so an unset-root job on a random PR would otherwise fail UNKNOWN.
-if [ ! -d "${SKILL_ROOT}" ]; then
-  echo "guard-installed-skill-edits: no ${SKILL_ROOT}; nothing to check"
+if [ ! -d "${ROOT_DIR}" ]; then
+  echo "guard-installed-skill-edits: no ${ROOT_DIR}; nothing to check"
   exit 0
 fi
 
@@ -74,6 +80,10 @@ provenance_repo() {
     [ "$in_meta" = 1 ] || continue
     # Blank lines carry no indentation and never establish the child level.
     [[ $line =~ ^[[:space:]]*$ ]] && continue
+    # A comment line must not establish the child level either: a four-space comment above a
+    # two-space `github-repo` would fix the level at four, the real key would then look like a
+    # non-child, and provenance would read empty — which now means "local", i.e. a silent pass.
+    [[ $line =~ ^[[:space:]]*# ]] && continue
     indent="${line%%[![:space:]]*}"
     # The first non-blank indented line after `metadata:` fixes the direct-child level.
     if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi
@@ -92,7 +102,7 @@ provenance_repo() {
 
 skill_dir_of() {
   local path="$1"
-  local prefix="${SKILL_ROOT}/"
+  local prefix="${ROOT_PREFIX}"
   case "$path" in
     "${prefix}"*)
       local rest="${path#"$prefix"}"
@@ -115,7 +125,7 @@ list_changed_paths() {
   # THREE-dot: the paths this PR changed relative to the merge base, never the two-commit
   # difference. With a two-dot diff a base branch that advanced after the PR branched drags
   # the base-only changes in. Provenance is still read from the BASE_SHA snapshot below.
-  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${SKILL_ROOT}" |
+  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${ROOT_DIR}" |
     tr '\0' '\n'
 }
 
@@ -139,7 +149,7 @@ while IFS= read -r path; do
   skill_dir="$(skill_dir_of "$path")"
   [ -n "$skill_dir" ] || continue
 
-  base_skill="${SKILL_ROOT}/${skill_dir}"
+  base_skill="${ROOT_PREFIX}${skill_dir}"
   if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${base_skill}" 2>/dev/null; then
     continue
   fi

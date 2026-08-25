@@ -62,6 +62,6 @@ silent no-op. `fetch-depth: 0` is what makes the base commit available to the di
 ```
 
 Pass a different `skill-root` when the consumer installs skills somewhere other than
-`.agents/skills`. A leading `./` or a trailing `/` is accepted and normalised.
+`.agents/skills`. A leading `./`, a trailing `/`, or `.` for skills at the repository root are all accepted and normalised.
 
 

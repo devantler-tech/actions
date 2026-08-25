@@ -435,4 +435,52 @@ else
 fi
 pass "a CRLF SKILL.md still yields provenance"
 
+# 18. A repository-root skill root (`.`) still matches. Normalising only `./` left the prefix as
+#     `./`, while git emits `synced/SKILL.md` with no prefix at all — so this valid configuration
+#     matched nothing and the guard exited 0 having checked nothing.
+export FAKE_GIT_STORE="${tmp}/objects17"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/rootskill"
+store_exists "origin/main:rootskill" "dir"
+store_exists "HEAD:rootskill" "dir"
+store_exists "origin/main:rootskill/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if SKILL_ROOT="." CHANGED_PATHS="rootskill/SKILL.md"$'\n' run_guard; then
+  fail "repo-root skill root: expected a refusal, got success (fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "repo-root skill root: rc=${rc} want=1"
+fi
+pass "a repository-root skill root is normalised and still refuses"
+
+# 19. An indented comment inside the metadata mapping must not fix the direct-child level. A
+#     four-space comment above a two-space `github-repo` made the real key look like a non-child,
+#     so provenance read empty — which now means "local", i.e. a silent pass on a synced skill.
+export FAKE_GIT_STORE="${tmp}/objects18"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/commented2"
+store_exists "origin/main:.agents/skills/commented2" "dir"
+store_exists "HEAD:.agents/skills/commented2" "dir"
+store_exists "origin/main:.agents/skills/commented2/SKILL.md" \
+  $'---\nmetadata:\n    # upstream ownership, deliberately indented deeper than the key below\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/commented2/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "deep comment in metadata: expected a refusal, got success (fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "deep comment in metadata: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "deep comment: upstream should be named"
+fi
+pass "an indented comment does not fix the metadata child level"
+
+# 20. The action must PIN the CHANGED_PATHS test seam empty. A composite step inherits workflow-
+#     and job-level env, so a consumer defining that name would have its value trusted instead of
+#     the real diff, and any value outside the skill root makes the guard skip every edit.
+if command -v yq >/dev/null 2>&1; then
+  seam="$(yq '.runs.steps[0].env.CHANGED_PATHS // "MISSING"' "${root}/guard-installed-skill-edits/action.yaml")"
+  [ "${seam}" = "" ] || [ "${seam}" = '""' ] || fail "action.yaml must pin CHANGED_PATHS empty, got: ${seam}"
+  pass "action.yaml fences the CHANGED_PATHS test seam"
+else
+  echo "SKIP: yq unavailable, cannot assert the CHANGED_PATHS fence"
+fi
+
 echo "ALL PASS"

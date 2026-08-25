@@ -32,4 +32,9 @@ runs:
         # programmed-sync exemption cannot be evaluated there. See the README.
         PR_ACTOR: ${{ github.event.pull_request.user.login }}
         PR_HEAD_BRANCH: ${{ github.head_ref }}
+        # `CHANGED_PATHS` is a TEST SEAM. A composite step inherits workflow- and job-level
+        # env, so a consumer that happens to define that name would have its value trusted in
+        # place of the real diff — and any value outside the skill root makes the guard skip
+        # every edit and exit 0. Pinning it empty here fences production from the seam.
+        CHANGED_PATHS: ""
       run: bash "${{ github.action_path }}/guard-installed-skill-edits.sh"
