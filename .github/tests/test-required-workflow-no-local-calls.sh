@@ -15,12 +15,19 @@ fail() {
 
 [[ -f "$workflow" ]] || fail "workflow not found: $workflow"
 
-local_calls="$(
+consumer_relative_calls="$(
   yq -r '[.jobs[] | (.uses // "") | select(test("^\\./\\.github/workflows/"))] | .[]' \
     "$workflow"
 )"
 
-[[ -z "$local_calls" ]] ||
-  fail "required workflow contains consumer-relative reusable-workflow calls: ${local_calls//$'\n'/, }"
+[[ -z "$consumer_relative_calls" ]] ||
+  fail "required workflow contains consumer-relative reusable-workflow calls: ${consumer_relative_calls//$'\n'/, }"
 
-echo "PASS: required workflow contains no consumer-relative reusable-workflow calls"
+expected_ref='devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@89aefc0240d649baf069afa5bc3962f078a8a74d'
+for job in apply-tidy-fixes apply-golangci-lint-fixes apply-fixes; do
+  actual_ref="$(yq -r ".jobs.\"${job}\".uses // \"\"" "$workflow")"
+  [[ "$actual_ref" == "$expected_ref" ]] ||
+    fail "${job} must call the signed-fixes workflow through the audited immutable source-repository reference"
+done
+
+echo "PASS: required workflow calls signed fixes through one immutable source-repository reference"

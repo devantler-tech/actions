@@ -18,10 +18,20 @@ set -euo pipefail
 
 caller_workflow="${1:-.github/workflows/lint.yaml}"
 signer_workflow="${2:-.github/workflows/apply-signed-fixes.yaml}"
+consumer_relative_signer="./${signer_workflow#./}"
+workflow_source_signer="\$/${signer_workflow#./}"
+immutable_source_signer_re="^devantler-tech/actions/${signer_workflow#./}@[0-9a-f]{40}$"
 
 fail() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+is_signer_ref() {
+  local candidate="$1"
+  [[ "$candidate" == "$consumer_relative_signer" ||
+    "$candidate" == "$workflow_source_signer" ||
+    "$candidate" =~ $immutable_source_signer_re ]]
 }
 
 # Prove assertion 1b fails closed when its yq projection fails. The wrapper
@@ -55,8 +65,8 @@ bot_suppression='dependabot\[bot\]'
 # 0. The apply-fixes job hands the commit to the shared signing workflow. Without this, the
 #    assertions below would keep passing against an apply-signed-fixes.yaml that nothing calls.
 delegated="$(yq -r '.jobs["apply-fixes"].uses // ""' "$caller_workflow")"
-[[ "$delegated" == "./${signer_workflow#./}" ]] ||
-  fail "${caller_workflow}'s apply-fixes job must delegate to ./${signer_workflow#./} (found '${delegated:-nothing}')"
+is_signer_ref "$delegated" ||
+  fail "${caller_workflow}'s apply-fixes job must use an exact local signer or the immutable source-repository signer (found '${delegated:-nothing}')"
 
 # 1. No job anywhere in the caller delegates a commit to a CLI-committing action. Scoped to the
 #    whole file, not just apply-fixes: re-adding such a step to the lint job would put unsigned
@@ -98,11 +108,15 @@ caller_inline_commits="$(
 
 # 1c. …and the delegation the whole file depends on is not vacuous: at least one job must
 #     actually call the signer, or every assertion below is about a workflow nothing reaches.
-caller_delegations="$(
-  yq -r "[.jobs[] | select((.uses // \"\") == \"./${signer_workflow#./}\")] | length" "$caller_workflow"
-)"
+caller_uses="$(yq -r '[.jobs[] | (.uses // "")] | .[]' "$caller_workflow")"
+caller_delegations=0
+while IFS= read -r caller_use; do
+  if is_signer_ref "$caller_use"; then
+    caller_delegations=$((caller_delegations + 1))
+  fi
+done <<<"$caller_uses"
 [[ "$caller_delegations" -gt 0 ]] ||
-  fail "${caller_workflow} has no job delegating to ./${signer_workflow#./}; this guard would assert nothing"
+  fail "${caller_workflow} has no job delegating to an exact local or immutable source-repository signer; this guard would assert nothing"
 
 # ── The shared signing workflow commits the signing way ──────────────────────────────────
 

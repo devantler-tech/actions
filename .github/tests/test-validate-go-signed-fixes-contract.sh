@@ -22,6 +22,8 @@ fail() {
 [[ -f "$readme" ]] || fail "README not found: $readme"
 [[ -f "$apply_workflow" ]] || fail "apply-signed-fixes workflow not found: $apply_workflow"
 
+bash .github/tests/test-required-workflow-no-local-calls.sh "$workflow"
+
 input='.["on"].workflow_call.inputs."apply-signed-fixes"'
 [[ "$(yq -r "${input}.type // \"\"" "$workflow")" == "boolean" ]] ||
   fail "apply-signed-fixes must be a boolean workflow_call input"
