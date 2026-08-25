@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.2.0](https://github.com/devantler-tech/actions/compare/v13.1.8...v13.2.0) (2026-08-25)
+
+
+### Features
+
+* add guard-installed-skill-edits composite action ([#1054](https://github.com/devantler-tech/actions/issues/1054)) ([866f242](https://github.com/devantler-tech/actions/commit/866f242228ac49c22157ee461260a8a0e31dc54d))
+
 ## [13.1.8](https://github.com/devantler-tech/actions/compare/v13.1.7...v13.1.8) (2026-08-25)
 
 
