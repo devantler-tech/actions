@@ -34,6 +34,28 @@ else
   ROOT_PREFIX="${SKILL_ROOT}/"
 fi
 
+# 🔴 A MISSING ROOT ONLY MEANS "NOTHING TO CHECK" IF THERE IS A CHECKOUT TO CHECK.
+#
+# Without one -- no `actions/checkout` step, a wrong `working-directory`, a job that cleaned
+# the workspace -- EVERY path is absent, so the missing-root no-op below fires and this
+# REQUIRED guard exits 0 having evaluated nothing at all. That is the same
+# "valid input -> zero matches -> exit 0" fail-open the three-dot diff check further down
+# already refuses for an unresolvable commit; a vanished worktree must not be the one route
+# still permitted, because it is indistinguishable in the log from a genuinely clean tree.
+#
+# `--is-inside-work-tree` is the narrow question: a bare repository or no repository at all
+# is UNKNOWN. The SHA checks stay where they are -- this only establishes that the answer
+# below is about a real checkout.
+#
+# ⚠️ TEST THE VALUE, NEVER THE EXIT STATUS. Inside a BARE repository this command prints
+# `false` and still exits 0, so `if ! git rev-parse ...` does not fire and the missing-root
+# no-op below returns a clean exit 0 for a tree that has no working files at all.
+if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]; then
+  echo "UNKNOWN: not inside a git work tree — the guard cannot see what changed" >&2
+  echo "UNKNOWN: check out the repository before running this action" >&2
+  exit 2
+fi
+
 # Missing-dir no-op must precede the SHA check: this repo has no .agents/skills
 # of its own, so an unset-root job on a random PR would otherwise fail UNKNOWN.
 if [ ! -d "${ROOT_DIR}" ]; then
@@ -69,6 +91,19 @@ provenance_repo() {
     fi
     [ "$in_fm" = 1 ] || continue
     [ "$line" = "---" ] && return 0
+    # A COMMENT-ONLY LINE IS NOT A KEY, AT ANY INDENTATION — and this must be decided
+    # BEFORE the top-level-key case below, not after it.
+    #
+    # At column zero a comment's first character is not a space or tab, so it matches that
+    # case, fails the `metadata:` test, and sets in_meta=0. The direct `github-repo` child
+    # that follows is then ignored, provenance reads EMPTY, and empty means "local" — so
+    # the guard permits hand-edits to a synced skill, which is the one thing it exists to
+    # refuse. `metadata:` followed by a column-zero comment is ordinary YAML.
+    #
+    # Indented comments must be skipped here too, for a different reason: a four-space
+    # comment above a two-space `github-repo` would fix the child level at four, the real
+    # key would then look like a non-child, and provenance would read empty the same way.
+    [[ $line =~ ^[[:space:]]*# ]] && continue
     # A non-indented line starts a new top-level key, which closes any metadata mapping.
     case "$line" in
       [!\ \	]*)
@@ -80,10 +115,6 @@ provenance_repo() {
     [ "$in_meta" = 1 ] || continue
     # Blank lines carry no indentation and never establish the child level.
     [[ $line =~ ^[[:space:]]*$ ]] && continue
-    # A comment line must not establish the child level either: a four-space comment above a
-    # two-space `github-repo` would fix the level at four, the real key would then look like a
-    # non-child, and provenance would read empty — which now means "local", i.e. a silent pass.
-    [[ $line =~ ^[[:space:]]*# ]] && continue
     indent="${line%%[![:space:]]*}"
     # The first non-blank indented line after `metadata:` fixes the direct-child level.
     if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi

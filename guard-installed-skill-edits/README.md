@@ -25,7 +25,8 @@ The guard needs **both the base and head commits present locally**. The default
 `actions/checkout` fetches depth 1, so the base commit is absent and the diff
 cannot be computed; give the checkout enough history (`fetch-depth: 0`, or fetch
 the base ref explicitly). When the diff cannot be computed the guard reports
-UNKNOWN and fails — it never treats an unreadable diff as "nothing changed".
+UNKNOWN and fails — it never treats an unreadable diff as "nothing changed", and it does not
+treat a missing work tree as "nothing to check" either.
 
 `merge_group` is supported: that event carries no `pull_request` object, so the
 SHAs fall back to `github.event.merge_group.base_sha` / `head_sha`. Note that a
@@ -47,9 +48,13 @@ This action has no outputs.
 
 ## Usage
 
-The checkout is part of the usage, not a precondition you can assume: with no checkout the
-action sees no skill root and exits 0 without checking anything, which turns the guard into a
-silent no-op. `fetch-depth: 0` is what makes the base commit available to the diff.
+The checkout is part of the usage, not a precondition you can assume. With no checkout every
+path is absent, so a root-existence test alone would find nothing and exit 0 — a required
+guard reporting success having evaluated nothing. The action therefore checks that it is
+inside a git work tree first and reports UNKNOWN when it is not, so a missing checkout fails
+loudly instead of passing silently. Exit 0 is reserved for a real checkout in which the
+installed-skill root genuinely does not exist. `fetch-depth: 0` is what then makes the base
+commit available to the diff.
 
 ```yaml
 - name: ⬇️ Checkout

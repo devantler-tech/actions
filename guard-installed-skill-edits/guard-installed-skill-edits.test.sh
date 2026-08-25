@@ -59,6 +59,20 @@ case "${cmd}" in
       cat "${f}"
     fi
     ;;
+  rev-parse)
+    # The guard asks exactly one rev-parse question: `--is-inside-work-tree`.
+    #
+    # A stub with NO handler for a production command does not make that path pass -- it
+    # makes it UNTESTED, and here it silently sent every fixture down the UNKNOWN branch.
+    # Default TRUE, because every other fixture models a real checkout.
+    #
+    # The `not_worktree` sentinel flips it to the no-checkout / bare-repository case. Note
+    # it prints `false` and still exits 0: that is what real git does in a bare repository,
+    # and reproducing the VALUE rather than an error status is the whole point -- a stub
+    # that exited non-zero here would let a guard testing only the exit status pass.
+    [ "${1:-}" = "--is-inside-work-tree" ] || exit 99
+    if [ -f "${store}/not_worktree" ]; then echo false; else echo true; fi
+    ;;
   diff)
     # Records the revision spec so a test can assert the THREE-dot form, and fails
     # when the fixture asks it to — the production fail-open lived exactly here.
@@ -483,4 +497,64 @@ else
   echo "SKIP: yq unavailable, cannot assert the CHANGED_PATHS fence"
 fi
 
+
+# 22. A COLUMN-ZERO comment between `metadata:` and its `github-repo` child must not close the
+#     mapping. A comment's first character is not a space or tab, so it matched the
+#     top-level-key branch, set in_meta=0, and the direct child was then ignored — provenance
+#     read empty, empty means "local", and the guard PERMITTED a hand-edit to a synced skill.
+#     Case 19 above pins the INDENTED form; this pins the column-zero one, which took the
+#     opposite path through the parser and was the one that failed open.
+export FAKE_GIT_STORE="${tmp}/objects22"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/commented0"
+store_exists "origin/main:.agents/skills/commented0" "dir"
+store_exists "HEAD:.agents/skills/commented0" "dir"
+store_exists "origin/main:.agents/skills/commented0/SKILL.md" \
+  $'---\nmetadata:\n# upstream ownership, at column zero\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/commented0/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "column-zero comment in metadata: expected a refusal, got success (fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "column-zero comment in metadata: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "column-zero comment: upstream should be named"
+fi
+pass "a column-zero comment does not close the metadata mapping"
+
+# 23. NEGATIVE CONTROL for 22: a real top-level key after `metadata:` must STILL close the
+#     mapping, so a `github-repo` under some later key is not read as provenance. Without this,
+#     "skip comment lines" could be over-applied into "never close the mapping", which would
+#     make every skill look synced and block legitimate local edits.
+export FAKE_GIT_STORE="${tmp}/objects23"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/closedmeta"
+store_exists "origin/main:.agents/skills/closedmeta" "dir"
+store_exists "HEAD:.agents/skills/closedmeta" "dir"
+store_exists "origin/main:.agents/skills/closedmeta/SKILL.md" \
+  $'---\nmetadata:\nother: 1\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/closedmeta/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "a real top-level key must still close metadata (local skill), rc=${rc} want=0"
+fi
+pass "a real top-level key still closes the metadata mapping"
+
+# 24. NO CHECKOUT is UNKNOWN, never a clean pass. Without an `actions/checkout` step every path
+#     is absent, so the missing-root no-op fired and this REQUIRED guard exited 0 having
+#     evaluated nothing — the same "valid input -> zero matches -> exit 0" fail-open the diff
+#     check already refuses for an unresolvable commit.
+#
+#     The stub returns `false` and exits 0 here, exactly as real git does in a bare repository:
+#     a guard testing the exit status rather than the printed VALUE would still pass this.
+export FAKE_GIT_STORE="${tmp}/objects24"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+touch "${FAKE_GIT_STORE}/not_worktree"
+rm -rf "${tmp}/.agents"
+if out="$(SKILL_ROOT=".agents/skills" BASE_SHA="b" HEAD_SHA="h" run_guard 2>&1)"; then
+  fail "no work tree: expected UNKNOWN, got success (fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "no work tree: rc=${rc} want=2"
+  printf '%s' "${out}" | grep -q "not inside a git work tree" || fail "no work tree: should say why"
+fi
+rm -f "${FAKE_GIT_STORE}/not_worktree"
+pass "a missing work tree is UNKNOWN, not a clean pass"
 echo "ALL PASS"
