@@ -63,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       fixes-created: ${{ steps.fixes.outputs.changed }}
+      fixes-artifact: ${{ steps.fixes.outputs.artifact-name }}
     permissions:
       contents: read
     steps:
@@ -116,12 +117,15 @@ jobs:
         if: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
         id: fixes
         shell: bash
+        env:
+          FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
         run: |
+          echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
           git add --intent-to-add .
           if git diff --quiet HEAD; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/megalinter-fixes.patch"
+            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -129,8 +133,8 @@ jobs:
         if: ${{ steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: megalinter-fixes
-          path: ${{ runner.temp }}/megalinter-fixes.patch
+          name: ${{ steps.fixes.outputs.artifact-name }}
+          path: ${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch
           if-no-files-found: error
 
   # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo
@@ -148,7 +152,7 @@ jobs:
     permissions:
       contents: read
     with:
-      artifact-name: megalinter-fixes
+      artifact-name: ${{ needs.lint.outputs.fixes-artifact }}
       commit-message: "chore: Apply megalinter fixes"
       pr-owner: ${{ inputs.pr-owner }}
       fixes-created: ${{ needs.lint.outputs.fixes-created == 'true' }}
