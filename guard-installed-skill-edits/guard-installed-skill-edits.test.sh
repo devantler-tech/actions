@@ -870,4 +870,52 @@ else
 fi
 rm -f "${FAKE_GIT_STORE}/diff_out"
 pass "control: an ordinary NUL-delimited path is still refused"
+
+# 27. THE FLOW BRANCH NEEDS THE SAME RULE, or the class is only half closed. Case 25 fixed the
+#     block mapping; `metadata: {"github-repo": ...}` is the same key again in flow style, and a
+#     plain-entry-only match fell through to the LOCAL case — the identical silent permit, reached
+#     by the fifth spelling of this one document.
+export FAKE_GIT_STORE="${tmp}/objects41"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowquoted"
+store_exists "origin/main:.agents/skills/flowquoted" "dir"
+store_exists "HEAD:.agents/skills/flowquoted" "dir"
+store_exists "origin/main:.agents/skills/flowquoted/SKILL.md" \
+  $'---\nmetadata: {"github-repo": "https://github.com/devantler-tech/agent-skills"}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowquoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "quoted flow key: expected UNKNOWN, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "quoted flow key: rc=${rc} want=2"
+fi
+pass "a quoted key in a flow mapping is UNKNOWN, not local"
+
+# 27b. CONTROL: an EMPTY flow mapping genuinely records no provenance and must stay LOCAL. Without
+#      this, case 27 would also pass if every flow mapping had simply become UNKNOWN.
+export FAKE_GIT_STORE="${tmp}/objects42"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowempty"
+store_exists "origin/main:.agents/skills/flowempty" "dir"
+store_exists "HEAD:.agents/skills/flowempty" "dir"
+store_exists "origin/main:.agents/skills/flowempty/SKILL.md" $'---\nmetadata: { }\n---\n'
+if CHANGED_PATHS=".agents/skills/flowempty/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "control 27b: an empty flow mapping must stay local: rc=${rc} want=0"
+fi
+pass "control: an empty flow mapping stays local"
+
+# 27c. CONTROL: a plain flow entry that is simply a DIFFERENT key must also stay local — the rule
+#      fires on unreadable entries, not on every entry that is not github-repo.
+export FAKE_GIT_STORE="${tmp}/objects43"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/flowother"
+store_exists "origin/main:.agents/skills/flowother" "dir"
+store_exists "HEAD:.agents/skills/flowother" "dir"
+store_exists "origin/main:.agents/skills/flowother/SKILL.md" \
+  $'---\nmetadata: {version: 1.2.3, tags: abc}\n---\n'
+if CHANGED_PATHS=".agents/skills/flowother/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "control 27c: plain non-provenance flow keys must stay local: rc=${rc} want=0"
+fi
+pass "control: plain non-provenance flow keys stay local"
 echo "ALL PASS"

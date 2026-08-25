@@ -120,6 +120,7 @@ fi
 
 provenance_repo() {
   local file="$1" line value first=1 in_fm=0 in_meta=0 meta_indent="" indent
+  local plain_flow_key_re="^[^[:space:]\"'#][^:]*:"
   # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested
   # deeper (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
   # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu runners
@@ -186,6 +187,18 @@ provenance_repo() {
               entry_val="${entry_val#\'}"; entry_val="${entry_val%\'}"
               IFS="$old_ifs"
               printf '%s\n' "$entry_val"
+              return 0
+            fi
+            # 🔴 THE SAME RULE MUST HOLD IN FLOW STYLE, OR THE CLASS IS ONLY HALF CLOSED.
+            # `metadata: {"github-repo": ...}` is the same key again, and a plain-entry-only
+            # match falls through to the LOCAL case below — the identical fail-open the block
+            # branch just fixed, reached by the fifth spelling of this document. An entry this
+            # parser cannot read as a plain `key:` is undecidable, exactly as at the
+            # direct-child level. An EMPTY entry is not: `metadata: {}` and `metadata: { }`
+            # genuinely record no provenance, so they stay local.
+            if [ -n "$entry" ] && [[ ! $entry =~ $plain_flow_key_re ]]; then
+              IFS="$old_ifs"
+              printf '%s\n' "__UNKNOWN__"
               return 0
             fi
           done
