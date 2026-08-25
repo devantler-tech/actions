@@ -154,7 +154,7 @@ fi
 # closed before now produce a real verdict. `--front-matter=extract` reads the leading `---`
 # block of a Markdown file, which is exactly the shape of a SKILL.md.
 provenance_repo() {
-  local file="$1" out rc
+  local file="$1" out rc tag
   # A parser this depends on must be present, and its absence is UNDECIDABLE — never local.
   if ! command -v yq >/dev/null 2>&1; then
     printf '%s\n' "__UNKNOWN__"
@@ -168,12 +168,29 @@ provenance_repo() {
     printf '%s\n' "__UNKNOWN__"
     return 0
   fi
-  # A non-scalar value (`github-repo: {a: b}` / `[a]`) names no upstream and is not something a
-  # later string comparison should be handed; yq renders it, so reject it explicitly.
-  case "$out" in
-    '{'*|'['*|*$'\n'*) printf '%s\n' "__UNKNOWN__"; return 0 ;;
-    'null') out="" ;;
+  # 🔴 CLASSIFY BY YAML TAG, NOT BY WHAT THE VALUE LOOKS LIKE ONCE RENDERED.
+  # A mapping or sequence names no upstream, and handing one to a later string comparison is a
+  # verdict about a value that is not a repository name. The obvious test — does the rendered
+  # text start with `{` or `[`, or contain a newline — is a heuristic over yq's OUTPUT STYLE,
+  # which is configurable and version-dependent. That is the same shape-matching this rewrite
+  # exists to remove, one level up. The tag is the structural fact: `!!str` and `!!null` are
+  # answerable, everything else is undecidable.
+  # The SAME expression as the value read above, so the tag and the value cannot disagree. A bare
+  # `.metadata.github-repo | tag` returns an EMPTY tag with rc=0 where `.metadata` is a scalar —
+  # a silent third state that the rc check does not catch and that would read as non-scalar.
+  tag="$(yq --front-matter=extract -r '.metadata.github-repo // "" | tag' "$file" 2>/dev/null)"
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "__UNKNOWN__"
+    return 0
+  fi
+  case "$tag" in
+    '!!str'|'!!null') : ;;
+    *) printf '%s\n' "__UNKNOWN__"; return 0 ;;
   esac
+  # No `null` case here: `// ""` above already maps YAML null to the empty string. Adding one
+  # would only reclassify the QUOTED scalar `"null"`, which is a deliberate string value and
+  # not an absent one.
   printf '%s\n' "$out"
 }
 

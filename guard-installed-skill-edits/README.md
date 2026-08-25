@@ -21,12 +21,17 @@ PR, and the guard would refuse a pull request that never touched that skill.
 
 ## Requirements
 
-The guard needs **`yq` on `PATH`**. It resolves `metadata.github-repo` with a real YAML
-parser rather than string matching, so quoting, escapes, anchors, merge keys, flow style,
-null forms and comment rules are all handled correctly. `yq` is preinstalled on
-GitHub-hosted Ubuntu runners; on a self-hosted runner without it the guard reports UNKNOWN
-and fails rather than silently falling back to guessing — an unreadable `SKILL.md` must
-never be classified local, because local is the verdict that permits the edit.
+The guard needs **mikefarah [`yq`](https://github.com/mikefarah/yq) v4 on `PATH`** — the Go
+implementation, which supports `--front-matter=extract`. The Python `yq` wrapper shares the
+command name and does **not** support that flag, so with it installed instead every provenance
+lookup returns UNKNOWN. Check with `yq --version`.
+
+Provenance is resolved with a real YAML parser rather than string matching, so quoting, escapes,
+anchors, merge keys, flow style, null forms and comment rules are all handled correctly, and the
+value is classified by its YAML tag rather than by how it renders. `yq` is preinstalled on
+GitHub-hosted Ubuntu runners; where it is absent the guard reports UNKNOWN and fails rather than
+silently falling back to guessing — an unreadable `SKILL.md` must never be classified local,
+because local is the verdict that permits the edit.
 
 The guard needs **both the base and head commits present locally**. The default
 `actions/checkout` fetches depth 1, so the base commit is absent and the diff
@@ -100,5 +105,4 @@ flow style (`metadata: {github-repo: ...}`). If the action cannot determine the 
 mapping — because it spans several lines, nests another mapping, or is hidden behind a YAML
 anchor or alias — it reports UNKNOWN rather than treating the skill as having no provenance,
 because "no provenance" is what marks a skill local and editable.
-
 

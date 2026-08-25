@@ -1177,5 +1177,46 @@ else
   rc=$?
   [ "${rc}" -eq 2 ] || fail "control 38: rc=${rc} want=2"
 fi
+# 🔴 THE SAME FIXTURE ON THE FULL PATH MUST BE REFUSED, or `rc=2` above proves nothing about the
+# parser. The guard returns 2 for EVERY undecidable cause — an absent work tree, an unreadable
+# commit, a missing external the git stub needs — so if this fixture ever stopped isolating yq
+# specifically, the control would keep passing for the wrong reason. Running it both ways is what
+# makes the parser the ONLY difference between the two verdicts.
+if out="$(CHANGED_PATHS=".agents/skills/noyq/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "control 38 discrimination: with yq present this fixture must be refused, so rc=2 above is the parser"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "control 38 discrimination: with yq present rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "control 38 discrimination: should name the upstream when the parser is present"
+fi
 pass "control: an unavailable YAML parser is UNKNOWN, never local"
+
+# 39. A NON-SCALAR PROVENANCE VALUE NAMES NO UPSTREAM, and is classified by its YAML TAG rather
+#     than by what it looks like once rendered. `github-repo: {a: b}` and `github-repo: [a]` are
+#     `!!map` and `!!seq`; handing either to a later string comparison would be a verdict about a
+#     value that is not a repository name.
+for shape in '{a: b}' '[a]'; do
+  new_case "objects67-$(printf '%s' "${shape}" | tr -dc '[:lower:]')" nonscalar \
+    "---"$'\n'"metadata:"$'\n'"  github-repo: ${shape}"$'\n'"---"$'\n'
+  if CHANGED_PATHS=".agents/skills/nonscalar/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+    fail "non-scalar provenance ${shape}: expected UNKNOWN, got success"
+  else
+    rc=$?
+    [ "${rc}" -eq 2 ] || fail "non-scalar provenance ${shape}: rc=${rc} want=2"
+  fi
+done
+pass "a non-scalar provenance value is UNKNOWN, classified by tag"
+
+# 39b. CONTROL for 39: a QUOTED "null" is a deliberate string, not an absent value. There is no
+#      `null` special case in the reader — `// ""` already maps real YAML null to empty — so this
+#      pins that the removal did not quietly reclassify a genuine string.
+new_case objects68 quotednull $'---\nmetadata:\n  github-repo: "null"\n---\n'
+if out="$(CHANGED_PATHS=".agents/skills/quotednull/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "quoted \"null\": a string value must be refused, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "quoted \"null\": rc=${rc} want=1"
+fi
+pass "control: a quoted \"null\" is a string value, not an absent one"
 echo "ALL PASS"
