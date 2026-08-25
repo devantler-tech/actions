@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.8](https://github.com/devantler-tech/actions/compare/v13.1.7...v13.1.8) (2026-08-25)
+
+
+### Bug Fixes
+
+* **ci:** harden every eligible CI job first ([#1056](https://github.com/devantler-tech/actions/issues/1056)) ([64fd15d](https://github.com/devantler-tech/actions/commit/64fd15d3a4ad4d5eed072acd89d997b8f9a0aca1))
+
 ## [13.1.7](https://github.com/devantler-tech/actions/compare/v13.1.6...v13.1.7) (2026-08-25)
 
 
