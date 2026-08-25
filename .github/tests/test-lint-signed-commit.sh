@@ -259,25 +259,31 @@ step_shape="$(
   fail "apply-fixes' step inventory changed (found '${step_shape}', audited 'uses,run,uses,uses,uses,run,run'); a step added or retyped here can execute checked-out code, which is the premise CodeQL alert 312 was dismissed on -- re-audit the job and update this pin deliberately"
 
 
-# 13. The post-checkout steps are pinned by content. Assertion 12 sees a step ADDED; it cannot see
-#     a change INSIDE an existing step, and the two steps that run after the checkout do so with
-#     the untrusted head on disk and the write-scoped App token available.
+# 13. The job is pinned by CONTENT, in two halves. Assertion 12 sees a step ADDED; it cannot see a
+#     change INSIDE an existing step, and the two steps that run after the checkout do so with the
+#     untrusted head on disk and the write-scoped App token available.
 #
-#     What is hashed is a STRUCTURED projection of each post-checkout step -- `shell`,
-#     `working-directory` and `run` -- not just the run text. Hashing `run` alone is not enough,
-#     and the gap is not theoretical: `shell` accepts a custom command template, so
-#     `shell: ./untrusted-script {0}` executes a file from the checked-out branch BEFORE the run
-#     block is handed to it, leaving both the step inventory and the run text untouched. Measured
-#     on this workflow: with only `run` hashed, injecting that shell produced a byte-identical
-#     digest. `working-directory` is pinned with it because it decides where any of this runs.
+#     Enumerating the dangerous fields does NOT work, and this guard has the scars: hashing `run`
+#     alone missed `shell:`, which takes a custom command template, so `shell: ./untrusted {0}`
+#     runs a repository file before the run block is handed to it. Adding `shell` then missed
+#     `env:`, because `BASH_ENV` names a file that non-interactive bash executes BEFORE the script
+#     -- verified directly, it still fires under `--noprofile --norc`, which is exactly how Actions
+#     invokes `shell: bash`. Both landed with the step inventory and the run text unchanged. A
+#     third field would have been found next. So the STRUCTURE half hashes the whole job rather
+#     than a list of fields, and anything added to it -- `env`, `defaults.run`, `container`, a key
+#     that does not exist yet -- moves the digest without this test having to know its name.
 #
-#     Normalised first -- full-line comments dropped, indentation and trailing whitespace
-#     stripped, blank lines removed -- so prose edits and reindentation do not fire. Verified
-#     stable across a full `yq -i '.'` round-trip, which is the specific brittleness #1048 reports
-#     for the exact-spacing match elsewhere in this guard.
+#     Two digests, because the two halves need opposite normalisation:
 #
-#     Scoped to post-checkout on purpose: the first run block executes before anything is on disk,
-#     so pinning it would only fire on edits that are provably safe.
+#       structure -- the whole job with run BODIES removed, plus workflow-level `env` and
+#                    `defaults`. Action refs are reduced to `owner/repo`, dropping the pinned SHA,
+#                    so routine dependency bumps do not fire; assertion 11 is what holds those to
+#                    a SHA-pinned audited identity.
+#       run text  -- the post-checkout run blocks, comments and indentation stripped, so prose
+#                    edits and reindentation do not fire.
+#
+#     Both verified stable across a full `yq -i '.'` round-trip, which is the specific brittleness
+#     #1048 reports for the exact-spacing match elsewhere in this guard.
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi
 }
@@ -291,20 +297,34 @@ while IFS= read -r step_uses; do
 done <<<"$step_uses_list"
 [[ -n "$checkout_index" ]] ||
   fail "apply-fixes has no actions/checkout step, so the post-checkout boundary cannot be located"
-post_checkout_projection="$(
-  yq -r "[${job}.steps[] | \"--- step\" + \"\nshell=\" + (.shell // \"\") + \"\nworking-directory=\" + (.\"working-directory\" // \"\") + \"\nrun=\n\" + (.run // \"\")] | .[$((checkout_index + 1)):] | join(\"\n\")" \
+
+# 13a. Structure.
+job_structure="$(
+  yq -o=json -I=0 \
+    "{\"wf_env\": (.env // {}), \"wf_defaults\": (.defaults // {}), \"job\": (${job} | del(.steps[].run) | (.steps[] | select(has(\"uses\")) | .uses) |= sub(\"@.*\"; \"\"))}" \
     "$signer_workflow"
+)"
+[[ -n "$job_structure" ]] ||
+  fail "apply-fixes yielded no job structure to pin; this assertion is not reading the job it thinks it is"
+structure_digest="$(printf '%s' "$job_structure" | sha256_of)"
+audited_structure_digest="c30fd2206162b276086b2c73eb18ff02b8dd1a7b8b507ed607ef3d33dfd9d405"
+[[ "$structure_digest" == "$audited_structure_digest" ]] ||
+  fail "apply-fixes' job structure changed (found ${structure_digest}, audited ${audited_structure_digest}). Something other than the run text moved -- a step's or the job's \`env\` (BASH_ENV executes a file before the script), \`shell\`, \`working-directory\`, \`defaults.run\`, or a key this guard has never seen. Confirm it cannot execute code from the checked-out tree, then set audited_structure_digest to the value above. Dependency bumps of the pinned actions do NOT reach here."
+
+# 13b. Run text.
+post_checkout_runs="$(
+  yq -r "[${job}.steps[] | .run // \"\"] | .[$((checkout_index + 1)):] | join(\"\n\")" "$signer_workflow"
 )"
 # sed throughout rather than `grep -v '^$'`: grep exits 1 when it emits nothing, which under
 # `set -e` would abort here with a shell error instead of this assertion's message.
 normalized_runs="$(
-  printf '%s\n' "$post_checkout_projection" |
+  printf '%s\n' "$post_checkout_runs" |
     sed -e '/^[[:space:]]*#/d' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
 )"
 [[ -n "$normalized_runs" ]] ||
-  fail "apply-fixes has no post-checkout step content to pin; this assertion is not reading the job it thinks it is"
+  fail "apply-fixes has no post-checkout run content to pin; this assertion is not reading the job it thinks it is"
 runs_digest="$(printf '%s' "$normalized_runs" | sha256_of)"
-audited_runs_digest="6f935a7fcc287a649b4fa1d5c1e18f800070c6f9ae9ca09229052395301a30ac"
+audited_runs_digest="9b779a1505a9fd1b8039f028468115da1bd3e5aabe2bc713cb4360b861c90fd4"
 [[ "$runs_digest" == "$audited_runs_digest" ]] ||
-  fail "apply-fixes' post-checkout steps changed (found ${runs_digest}, audited ${audited_runs_digest}). These run with the pull request's code on disk and a write-scoped token, so re-read their run/shell/working-directory and confirm they still invoke nothing from the repository -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
+  fail "apply-fixes' post-checkout run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). These run with the pull request's code on disk and a write-scoped token, so re-read them and confirm they still invoke nothing from the repository -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"
