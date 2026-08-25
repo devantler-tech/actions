@@ -12,7 +12,7 @@ Adding a wholly new skill directory is allowed, and so is retiring one wholesale
 removing an installed skill is a local decision, and only editing a synced one is
 not. The programmed `update-agent-skills` PR is exempt only when both the actor
 and the head branch match. Missing CI context, an unreadable `SKILL.md`, or
-provenance that cannot be determined is UNKNOWN rather than a silent pass.
+provenance that cannot be READ is UNKNOWN rather than a silent pass. A record that reads cleanly and simply names no upstream means the skill is local, and a local skill stays editable.
 
 Changed paths come from the **merge base** (a three-dot diff), not from the two
 commits directly. A base branch that advances after a PR branches — most often
@@ -47,10 +47,21 @@ This action has no outputs.
 
 ## Usage
 
+The checkout is part of the usage, not a precondition you can assume: with no checkout the
+action sees no skill root and exits 0 without checking anything, which turns the guard into a
+silent no-op. `fetch-depth: 0` is what makes the base commit available to the diff.
+
 ```yaml
+- name: ⬇️ Checkout
+  uses: actions/checkout@<sha> # <version>
+  with:
+    fetch-depth: 0
+
 - name: Guard installed skill edits
   uses: devantler-tech/actions/guard-installed-skill-edits@<sha> # <version>
 ```
 
-Pass a different `skill-root` when the consumer installs skills somewhere
-other than `.agents/skills`.
+Pass a different `skill-root` when the consumer installs skills somewhere other than
+`.agents/skills`. A leading `./` or a trailing `/` is accepted and normalised.
+
+

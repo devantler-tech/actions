@@ -14,8 +14,19 @@
 set -euo pipefail
 
 SKILL_ROOT="${SKILL_ROOT:-.agents/skills}"
+# Normalise before ANY use. Git emits repository-relative paths with no `./` prefix and no
+# trailing slash, so a consumer passing `./.agents/skills` (valid, and what a copied YAML
+# snippet often carries) would make every prefix comparison below fail and the guard would
+# exit 0 having matched nothing — silently permitting the edits it exists to refuse.
+while [ "${SKILL_ROOT#./}" != "${SKILL_ROOT}" ]; do SKILL_ROOT="${SKILL_ROOT#./}"; done
+while [ "${SKILL_ROOT%/}" != "${SKILL_ROOT}" ]; do SKILL_ROOT="${SKILL_ROOT%/}"; done
 SYNC_ACTOR="${SYNC_ACTOR:-botantler-1[bot]}"
 SYNC_BRANCH="${SYNC_BRANCH:-deps/agent-skills-update}"
+
+if [ -z "${SKILL_ROOT}" ]; then
+  echo "UNKNOWN: SKILL_ROOT normalised to an empty path" >&2
+  exit 2
+fi
 
 # Missing-dir no-op must precede the SHA check: this repo has no .agents/skills
 # of its own, so an unset-root job on a random PR would otherwise fail UNKNOWN.
@@ -37,11 +48,14 @@ fi
 provenance_repo() {
   local file="$1" line value first=1 in_fm=0 in_meta=0 meta_indent="" indent
   # Only a DIRECT child `metadata.github-repo` counts. A top-level key, or one nested
-  # deeper (e.g. `metadata.source.github-repo`), must NOT mark a skill as synced, or a
-  # stray key could make a local skill un-editable. Pure-bash because awk's
-  # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu
-  # runners and BSD awk on macOS.
+  # deeper (e.g. `metadata.source.github-repo`), is not provenance. Pure-bash because awk's
+  # three-argument match() is a GNU extension and the default awk is mawk on Ubuntu runners
+  # and BSD awk on macOS.
   while IFS= read -r line || [ -n "$line" ]; do
+    # A CRLF-committed SKILL.md is valid; without stripping the CR the very first line does
+    # not equal `---`, front matter is never entered, and a synced skill reads as having no
+    # provenance at all.
+    line="${line%$'\r'}"
     if [ "$first" = 1 ]; then
       first=0
       if [ "$line" = "---" ]; then in_fm=1; continue; fi
@@ -60,9 +74,6 @@ provenance_repo() {
     [ "$in_meta" = 1 ] || continue
     # Blank lines carry no indentation and never establish the child level.
     [[ $line =~ ^[[:space:]]*$ ]] && continue
-    # Indentation of this line, as a literal prefix string (tabs and spaces both count
-    # as one level-character each; YAML forbids tabs for indentation, so a mixed file is
-    # malformed anyway and falls through to UNKNOWN rather than being trusted).
     indent="${line%%[![:space:]]*}"
     # The first non-blank indented line after `metadata:` fixes the direct-child level.
     if [ -z "$meta_indent" ]; then meta_indent="$indent"; fi
@@ -81,11 +92,17 @@ provenance_repo() {
 
 skill_dir_of() {
   local path="$1"
-  local prefix="${SKILL_ROOT%/}/"
+  local prefix="${SKILL_ROOT}/"
   case "$path" in
     "${prefix}"*)
       local rest="${path#"$prefix"}"
-      printf '%s\n' "${rest%%/*}"
+      # Only a path with a directory component below the root names a skill. A housekeeping
+      # file sitting directly under the root (`README.md`, `.gitkeep`) has no slash, and
+      # returning its filename as a skill name made the guard look for `<file>/SKILL.md`,
+      # find nothing, and block an unrelated edit as UNKNOWN.
+      case "$rest" in
+        */*) printf '%s\n' "${rest%%/*}" ;;
+      esac
       ;;
   esac
 }
@@ -95,11 +112,9 @@ list_changed_paths() {
     printf '%s\n' "${CHANGED_PATHS}"
     return 0
   fi
-  # THREE-dot: the paths this PR changed relative to the merge base, never the
-  # two-commit difference. With a two-dot diff, a base branch that advanced after the
-  # PR branched drags the base-only changes in — so the programmed updater editing a
-  # synced skill on the base would make the guard refuse an unrelated PR that never
-  # touched it. Provenance is still read from the BASE_SHA snapshot below.
+  # THREE-dot: the paths this PR changed relative to the merge base, never the two-commit
+  # difference. With a two-dot diff a base branch that advanced after the PR branched drags
+  # the base-only changes in. Provenance is still read from the BASE_SHA snapshot below.
   git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${SKILL_ROOT}" |
     tr '\0' '\n'
 }
@@ -107,11 +122,10 @@ list_changed_paths() {
 unknown=0
 refused=0
 
-# Capture the path list in a command whose exit status is CHECKED. Reading it straight
-# from a process substitution discards the status, so an unresolvable SHA or a shallow
-# `actions/checkout` (depth 1, where the base commit is absent) makes `git diff` fail,
-# feeds the loop nothing, and the guard exits 0 having permitted every edit — a silent
-# fail-open in exactly the configuration most consumers run.
+# Capture the path list in a command whose exit status is CHECKED. Reading it straight from
+# a process substitution discards the status, so an unresolvable SHA or a shallow checkout
+# makes `git diff` fail, feeds the loop nothing, and the guard exits 0 having permitted
+# every edit.
 changed_paths="$(mktemp)"
 trap 'rm -f "${changed_paths}"' EXIT
 if ! list_changed_paths >"${changed_paths}"; then
@@ -125,7 +139,7 @@ while IFS= read -r path; do
   skill_dir="$(skill_dir_of "$path")"
   [ -n "$skill_dir" ] || continue
 
-  base_skill="${SKILL_ROOT%/}/${skill_dir}"
+  base_skill="${SKILL_ROOT}/${skill_dir}"
   if ! git --no-replace-objects cat-file -e "${BASE_SHA}:${base_skill}" 2>/dev/null; then
     continue
   fi
@@ -144,13 +158,22 @@ while IFS= read -r path; do
   fi
 
   tmp="$(mktemp)"
-  git --no-replace-objects show "${BASE_SHA}:${skill_md}" >"$tmp"
+  # A failed read is UNKNOWN. This check is what lets "no provenance" mean "local" below:
+  # without it an unreadable SKILL.md would produce an empty result and be waved through.
+  if ! git --no-replace-objects show "${BASE_SHA}:${skill_md}" >"$tmp" 2>/dev/null; then
+    echo "UNKNOWN: cannot read ${skill_md} at base" >&2
+    unknown=1
+    rm -f "$tmp"
+    continue
+  fi
   repo="$(provenance_repo "$tmp")"
   rm -f "$tmp"
 
   if [ -z "$repo" ]; then
-    echo "UNKNOWN: ${skill_md} at base has empty metadata.github-repo" >&2
-    unknown=1
+    # SKILL.md was read successfully and records no direct metadata.github-repo, so this
+    # skill is LOCAL and editing it is a local decision. UNKNOWN is reserved for records
+    # that could not be read at all — blocking here made every local skill uneditable,
+    # which is the false positive that teaches people to route around the guard.
     continue
   fi
 

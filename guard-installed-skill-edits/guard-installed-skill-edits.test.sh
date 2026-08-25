@@ -34,6 +34,9 @@ case "${cmd}" in
     key="${key//:/_}"
     f="${store}/show/${key}"
     [ -f "${f}" ] || exit 128
+    # Sentinel: the blob EXISTS (so `cat-file -e` succeeds) but cannot be read. This is
+    # what separates "unreadable record" (UNKNOWN) from "no provenance recorded" (local).
+    [ "$(cat "${f}")" = "__UNREADABLE__" ] && exit 128
     cat "${f}"
     ;;
   cat-file)
@@ -113,7 +116,7 @@ pass "missing SHA is UNKNOWN"
 
 # 2. Missing skill root is a no-op
 rm -rf "${tmp}/.agents"
-if ! SKILL_ROOT=".agents/skills" BASE_SHA="" HEAD_SHA="" run_guard; then
+if SKILL_ROOT=".agents/skills" BASE_SHA="" HEAD_SHA="" run_guard; then :; else
   fail "missing skill root should no-op"
 fi
 pass "missing skill root is a no-op"
@@ -124,7 +127,7 @@ printf '%s\n' ".agents/skills/brand-new/SKILL.md" >"${tmp}/lstree-head"
 export FAKE_GIT_STORE="${tmp}/objects2"
 mkdir -p "${FAKE_GIT_STORE}/lstree" "${FAKE_GIT_STORE}/show"
 printf '%s\n' ".agents/skills/brand-new/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
-if ! CHANGED_PATHS=".agents/skills/brand-new/SKILL.md"$'\n' run_guard; then
+if CHANGED_PATHS=".agents/skills/brand-new/SKILL.md"$'\n' run_guard; then :; else
   fail "new skill directory should be allowed"
 fi
 pass "new skill directory is allowed"
@@ -173,13 +176,11 @@ store_exists "origin/main:.agents/skills/empty" "dir"
 store_exists "HEAD:.agents/skills/empty" "dir"   # still present at head: an edit, not a retirement
 store_exists "origin/main:.agents/skills/empty/SKILL.md" $'---\nname: empty\n---\n'
 printf '%s\n' ".agents/skills/empty/SKILL.md" >"${FAKE_GIT_STORE}/lstree/HEAD"
-if CHANGED_PATHS=".agents/skills/empty/SKILL.md"$'\n' run_guard; then
-  fail "empty provenance: expected unknown"
-else
+if CHANGED_PATHS=".agents/skills/empty/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "empty provenance: rc=${rc} want=2"
+  fail "a skill with no provenance is local and editable: rc=${rc} want=0 — no provenance means LOCAL, and a local skill is editable"
 fi
-pass "empty provenance at BASE is UNKNOWN"
+pass "a skill with no provenance is local and editable"
 
 # 7. Programmed-sync exemption needs actor AND branch
 export FAKE_GIT_STORE="${tmp}/objects6"
@@ -212,7 +213,7 @@ store_exists "origin/main:.agents/skills/retired" "dir"
 store_exists "origin/main:.agents/skills/retired/SKILL.md" $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
 # deliberately NOT stored at HEAD -> the skill is gone at head
 : >"${FAKE_GIT_STORE}/lstree/HEAD"
-if ! CHANGED_PATHS=".agents/skills/retired/SKILL.md"$'\n' run_guard; then
+if CHANGED_PATHS=".agents/skills/retired/SKILL.md"$'\n' run_guard; then :; else
   fail "retiring a skill should be allowed"
 fi
 pass "retiring a synced skill wholesale is allowed"
@@ -236,11 +237,9 @@ mkdir -p "${tmp}/.agents/skills"
 store_exists "origin/main:.agents/skills/toplevel" "dir"
 store_exists "origin/main:.agents/skills/toplevel/SKILL.md" $'---\nname: toplevel\ngithub-repo: https://github.com/someone/else\n---\n'
 store_exists "HEAD:.agents/skills/toplevel" "dir"
-if CHANGED_PATHS=".agents/skills/toplevel/SKILL.md"$'\n' run_guard; then
-  fail "top-level github-repo: expected UNKNOWN, got success"
-else
+if CHANGED_PATHS=".agents/skills/toplevel/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "top-level github-repo: rc=${rc} want=2 (must not be a refusal)"
+  fail "a top-level github-repo is not metadata provenance: rc=${rc} want=0 — no provenance means LOCAL, and a local skill is editable"
 fi
 pass "a top-level github-repo is not metadata provenance"
 
@@ -300,11 +299,9 @@ store_exists "origin/main:.agents/skills/nested" "dir"
 store_exists "HEAD:.agents/skills/nested" "dir"
 store_exists "origin/main:.agents/skills/nested/SKILL.md" \
   $'---\nmetadata:\n  source:\n    github-repo: https://github.com/someone/else\n---\n'
-if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then
-  fail "nested provenance: expected UNKNOWN, got success"
-else
+if CHANGED_PATHS=".agents/skills/nested/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "nested provenance: rc=${rc} want=2 (must not be a refusal)"
+  fail "metadata.source.github-repo is not provenance: rc=${rc} want=0 — no provenance means LOCAL, and a local skill is editable"
 fi
 pass "metadata.source.github-repo is not provenance"
 
@@ -353,12 +350,89 @@ store_exists "origin/main:.agents/skills/decoy" "dir"
 store_exists "HEAD:.agents/skills/decoy" "dir"
 store_exists "origin/main:.agents/skills/decoy/SKILL.md" \
   $'---\nmetadataX: # decoy\n  github-repo: https://github.com/someone/else\n---\n'
-if CHANGED_PATHS=".agents/skills/decoy/SKILL.md"$'\n' run_guard; then
-  fail "decoy key: expected UNKNOWN, got success"
-else
+if CHANGED_PATHS=".agents/skills/decoy/SKILL.md"$'\n' run_guard; then :; else
   rc=$?
-  [ "${rc}" -eq 2 ] || fail "decoy key: rc=${rc} want=2 (metadataX must not open the mapping)"
+  fail "control: metadataX: does not open the metadata mapping: rc=${rc} want=0 — no provenance means LOCAL, and a local skill is editable"
 fi
 pass "control: metadataX: does not open the metadata mapping"
+
+# 14. An UNREADABLE provenance record is still UNKNOWN. This is the companion to case 6:
+#     "no provenance" may mean local only because a failed read is caught separately — without
+#     this, an unreadable SKILL.md would yield an empty result and be waved through.
+export FAKE_GIT_STORE="${tmp}/objects13"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/unreadable"
+store_exists "origin/main:.agents/skills/unreadable" "dir"
+store_exists "HEAD:.agents/skills/unreadable" "dir"
+store_exists "origin/main:.agents/skills/unreadable/SKILL.md" "__UNREADABLE__"
+if CHANGED_PATHS=".agents/skills/unreadable/SKILL.md"$'\n' run_guard; then
+  fail "unreadable SKILL.md: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "unreadable SKILL.md: rc=${rc} want=2"
+fi
+pass "an unreadable provenance record is UNKNOWN, not 'local'"
+
+# 15. A `./`-prefixed skill root still matches. Git emits repository-relative paths with no
+#     `./`, so an un-normalised prefix matched nothing and the guard exited 0 having checked
+#     nothing at all — a silent fail-open reachable from a perfectly valid input value.
+export FAKE_GIT_STORE="${tmp}/objects14"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/ways-of-working"
+store_exists "origin/main:.agents/skills/ways-of-working" "dir"
+store_exists "HEAD:.agents/skills/ways-of-working" "dir"
+store_exists "origin/main:.agents/skills/ways-of-working/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+if SKILL_ROOT="./.agents/skills" CHANGED_PATHS=".agents/skills/ways-of-working/SKILL.md"$'\n' run_guard; then
+  fail "./-prefixed root: expected a refusal, got success (fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "./-prefixed root: rc=${rc} want=1"
+fi
+pass "a ./-prefixed skill root is normalised and still refuses"
+
+# 15b. Same for a trailing slash, which is equally valid to supply.
+if SKILL_ROOT=".agents/skills/" CHANGED_PATHS=".agents/skills/ways-of-working/SKILL.md"$'\n' run_guard; then
+  fail "trailing-slash root: expected a refusal, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "trailing-slash root: rc=${rc} want=1"
+fi
+pass "a trailing-slash skill root is normalised and still refuses"
+
+# 16. A housekeeping file directly under the root is not a skill. `README.md` has no directory
+#     component, so returning it as a skill name made the guard look for `README.md/SKILL.md`,
+#     fail to find it, and block an unrelated edit as UNKNOWN.
+export FAKE_GIT_STORE="${tmp}/objects15"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+# The un-fixed code returns "README.md" as a skill name, so BOTH refs must exist or it
+# short-circuits at the cat-file check and the case passes without exercising the fix.
+store_exists "origin/main:.agents/skills/README.md" "housekeeping"
+store_exists "HEAD:.agents/skills/README.md" "housekeeping"
+mkdir -p "${tmp}/.agents/skills"
+if CHANGED_PATHS=".agents/skills/README.md"$'\n' run_guard; then :; else
+  rc=$?
+  fail "root-level housekeeping file: rc=${rc} want=0 (it names no skill)"
+fi
+pass "a file directly under the skill root names no skill"
+
+# 17. CRLF line endings are valid in a committed SKILL.md. Leaving the trailing CR on made the
+#     first line differ from `---`, so front matter was never entered and a synced skill read as
+#     having no provenance — which, under case 6's semantics, now means it would be EDITABLE.
+export FAKE_GIT_STORE="${tmp}/objects16"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/crlf"
+store_exists "origin/main:.agents/skills/crlf" "dir"
+store_exists "HEAD:.agents/skills/crlf" "dir"
+store_exists "origin/main:.agents/skills/crlf/SKILL.md" \
+  $'---\r\nmetadata:\r\n  github-repo: https://github.com/devantler-tech/agent-skills\r\n---\r\n'
+if out="$(CHANGED_PATHS=".agents/skills/crlf/SKILL.md"$'\n' run_guard 2>&1)"; then
+  fail "CRLF SKILL.md: expected a refusal, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "CRLF SKILL.md: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "CRLF: upstream should be named cleanly"
+fi
+pass "a CRLF SKILL.md still yields provenance"
 
 echo "ALL PASS"
