@@ -90,16 +90,25 @@ for wf in "${workflows[@]}"; do
 
     badtoken="$(
       yq -o=json '.' "$wf" | jq -r '
-        def toks($e): [$e | scan("github\\.token|secrets\\.[A-Za-z0-9_]+|steps\\.[A-Za-z0-9_-]+\\.outputs\\.[A-Za-z0-9_-]+|inputs\\.[A-Za-z0-9_-]+|vars\\.[A-Za-z0-9_-]+|env\\.[A-Za-z0-9_-]+")];
-        # An App-token step is identified by its own `uses`, never by its id, so renaming the
-        # step id cannot smuggle a PAT past this.
-        def signer($r; $appIds):
-          $r == "github.token"
-          or $r == "secrets.GITHUB_TOKEN"
-          or (($r | startswith("steps.")) and (($appIds | index($r | split(".")[1])) != null));
+        # WHITELIST, not a blacklist: rather than hunting for disapproved reference spellings,
+        # subtract every APPROVED reference from the expression and require nothing to remain.
+        # Extracting only recognised fragments let an unrecognised spelling ride alongside an
+        # approved one -- `${{ github.token || github.event.inputs['"'"'token'"'"'] }}` scanned as
+        # "github.token, all approved". Anything this cannot account for is unproven, so it fails.
+        def approved($id): "steps\\." + $id + "\\.outputs\\.[A-Za-z0-9_-]+";
+        def residue($e; $appIds):
+          (reduce $appIds[] as $id ($e; gsub(approved($id); " ")))
+          | gsub("secrets\\.GITHUB_TOKEN"; " ")
+          | gsub("github\\.token"; " ")
+          | gsub("\\|\\|"; " ")
+          | gsub("\\s"; "");
         (.jobs // {}) | to_entries[]
         | (.value.steps // []) as $steps
-        | ([$steps[] | select((.uses // "") | startswith("actions/create-github-app-token@")) | .id | select(. != null)]) as $appIds
+        # A step id is trusted only when it is BOTH an App-token step and a plain identifier --
+        # an exotic id would otherwise be interpolated straight into the regex above.
+        | ([$steps[]
+            | select((.uses // "") | startswith("actions/create-github-app-token@"))
+            | .id | select(type == "string" and test("^[A-Za-z0-9_-]+$"))]) as $appIds
         | $steps[]
         | select((.uses // "") | startswith("peter-evans/create-pull-request@"))
         | select(((.with // {})."sign-commits" // false) == true)
@@ -109,11 +118,15 @@ for wf in "${workflows[@]}"; do
         | (($s.with // {})[$key] // null) as $val
         | select($val != null)
         | ($val | tostring) as $expr
-        | (toks($expr)) as $rs
-        # No recognised reference at all is rejected too: a literal or an unknown context is
-        # unproven, and this guard fails closed.
-        | select(($rs | length) == 0 or ([$rs[] | select(signer(.; $appIds) | not)] | length) > 0)
-        | "\($label) :: \($key): \($expr)"'
+        | ([$expr | scan("\\$\\{\\{([^}]*)\\}\\}")] | map(.[0])) as $inner
+        # Text outside every ${{ }} must be whitespace: a literal, or a token glued onto an
+        # interpolation, is not a reference this can vet.
+        | ($expr | gsub("\\$\\{\\{[^}]*\\}\\}"; "") | gsub("\\s"; "")) as $outside
+        | select(($inner | length) == 0
+                 or ($outside | length) > 0
+                 or ([$inner[] | select(residue(.; $appIds) != "")] | length) > 0)
+        | "\($label) :: \($key): \($expr)"
+'
     )" || fail "could not resolve token sources in '$wf'"
     while IFS= read -r step; do
       [[ -n "$step" ]] || continue
