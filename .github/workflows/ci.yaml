@@ -2091,6 +2091,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-automated-commits-signed.sh
 
+      - name: 🔐 Check the signing guard accepts and rejects the right token sources
+        shell: bash
+        run: bash .github/tests/test-automated-commits-signed-blocks.sh
+
       - name: 🔀 Check Zizmor event routing
         shell: bash
         run: bash .github/tests/test-zizmor-routing.sh

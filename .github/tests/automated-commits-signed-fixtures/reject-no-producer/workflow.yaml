@@ -1,0 +1,8 @@
+name: reject-no-producer
+on: workflow_dispatch
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - name: nothing commits here
+        run: echo hi

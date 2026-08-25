@@ -1,0 +1,15 @@
+name: accept-app-token-fallback
+on: workflow_dispatch
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔑 Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+      - name: 📦 Create pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          sign-commits: true
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          branch-token: ${{ steps.app-token.outputs.token || github.token }}
