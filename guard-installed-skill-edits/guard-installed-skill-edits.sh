@@ -35,20 +35,28 @@ if [ "${PR_ACTOR:-}" = "${SYNC_ACTOR}" ] && [ "${PR_HEAD_BRANCH:-}" = "${SYNC_BR
 fi
 
 provenance_repo() {
-  local file="$1"
-  awk '
-    BEGIN { in_fm=0 }
-    NR==1 && $0=="---" { in_fm=1; next }
-    in_fm && $0=="---" { exit }
-    in_fm {
-      if (match($0, /^[[:space:]]*github-repo:[[:space:]]*(.*)$/, m)) {
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", m[1])
-        gsub(/^["'\'']+|["'\'']+$/, "", m[1])
-        print m[1]
-        exit
-      }
-    }
-  ' "$file"
+  local file="$1" line value first=1 in_fm=0
+  # Pure-bash: awk's three-argument match() is a GNU extension, and the default
+  # awk is mawk on Ubuntu runners and BSD awk on macOS, where it is a syntax
+  # error — the provenance would silently read empty and every synced skill
+  # would report UNKNOWN instead of being refused.
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$first" = 1 ]; then
+      first=0
+      if [ "$line" = "---" ]; then in_fm=1; continue; fi
+      return 0
+    fi
+    [ "$in_fm" = 1 ] || continue
+    [ "$line" = "---" ] && return 0
+    if [[ $line =~ ^[[:space:]]*github-repo:[[:space:]]*(.*)$ ]]; then
+      value="${BASH_REMATCH[1]}"
+      value="${value%"${value##*[![:space:]]}"}"
+      value="${value#\"}"; value="${value%\"}"
+      value="${value#\'}"; value="${value%\'}"
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done <"$file"
 }
 
 skill_dir_of() {

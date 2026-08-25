@@ -22,7 +22,6 @@ store="${FAKE_GIT_STORE:?}"
       case "${1}" in
         --no-replace-objects) shift ;;
         -C) shift 2 ;;
-        cat-file) shift ;;
         *) break ;;
       esac
     done
