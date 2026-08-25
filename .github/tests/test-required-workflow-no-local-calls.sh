@@ -23,7 +23,7 @@ consumer_relative_calls="$(
 [[ -z "$consumer_relative_calls" ]] ||
   fail "required workflow contains consumer-relative reusable-workflow calls: ${consumer_relative_calls//$'\n'/, }"
 
-expected_ref='devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@89aefc0240d649baf069afa5bc3962f078a8a74d'
+expected_ref='devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@78ce1aca1e4736f4c4fe24975b085938805421f7'
 for job in apply-tidy-fixes apply-golangci-lint-fixes apply-fixes; do
   actual_ref="$(yq -r ".jobs.\"${job}\".uses // \"\"" "$workflow")"
   [[ "$actual_ref" == "$expected_ref" ]] ||
