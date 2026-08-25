@@ -207,4 +207,55 @@ conjuncts="$(grep -o '&&' <<<"$job_if" | wc -l | tr -d ' ')"
 [[ "$conjuncts" == "3" ]] ||
   fail "apply-fixes' if: must carry exactly the 4 audited conjuncts (pull_request, non-fork, non-bot author, non-bot pr-owner), found $((conjuncts + 1)); a predicate added here can suppress every eligible pull request while assertions 7-9 stay green"
 
+
+# ── The job executes nothing from the checked-out tree ───────────────────────────────────
+
+# CodeQL alert 312 (actions/untrusted-checkout/medium) on this workflow was dismissed as a
+# false positive during review of #1011, and that dismissal rests entirely on one property:
+# no step in apply-fixes executes code from the checked-out repository. The job checks out the
+# pull request's head branch and holds an App token scoped `contents: write`, so the property
+# is the whole reason that combination is safe. Dismissal is per-alert rather than
+# per-condition, so the alert does NOT re-fire when the property stops holding -- a build step,
+# an `npm ci`, or a local action would simply land green. Assertions 11 and 12 are what stop
+# that, and they are whitelists for the reason assertion 10 gives: a blacklist of forbidden
+# spellings is out-run by the next spelling.
+
+# 11. Every `uses:` is a SHA-pinned action from an audited identity. Both axes matter and they
+#     fail differently: an unpinned or local ref (`uses: ./...`) runs a definition out of the
+#     untrusted tree, which is exactly the shape the alert was raised for, while a tag or
+#     branch ref lets an audited identity's contents change with no edit here at all.
+audited_actions=$'step-security/harden-runner\nactions/create-github-app-token\nactions/checkout\nactions/download-artifact'
+# Captured rather than piped from a process substitution: a yq failure inside `< <(...)` is
+# invisible to both `set -e` and `pipefail`, so it would read as an empty step list and this
+# assertion would pass having checked nothing.
+step_uses_list="$(yq -r "[${job}.steps[] | .uses // \"\"] | .[]" "$signer_workflow")"
+# An empty projection would run the loop zero times and report PASS having checked nothing --
+# the same vacuous-success shape the yq failure probe at the top of this file guards against.
+[[ -n "$step_uses_list" ]] ||
+  fail "apply-fixes yielded no steps to check; this assertion is not reading the job it thinks it is"
+while IFS= read -r step_uses; do
+  [[ -n "$step_uses" ]] || continue
+  [[ "$step_uses" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+(/[^@]+)?@[0-9a-f]{40}$ ]] ||
+    fail "apply-fixes step 'uses: ${step_uses}' must be a SHA-pinned action reference; a local 'uses: ./...' executes an action definition from the checked-out tree, and a tag or branch ref can change under the pin"
+  grep -qxF -- "${step_uses%%@*}" <<<"$audited_actions" ||
+    fail "apply-fixes uses the unaudited action '${step_uses%%@*}'; add it to audited_actions here only after confirming it executes nothing from the checked-out tree"
+done <<<"$step_uses_list"
+
+# 12. The step inventory is pinned: how many steps there are, and whether each one is a `uses:`
+#     or a `run:`, in order. This is the load-bearing half. Assertion 11 can only judge steps
+#     that declare a `uses:`, so on its own it cannot see a `run: npm ci` appended to the job --
+#     the step inventory can, because the count changes whatever the new step is spelled like.
+#     Pinning the shape rather than the step NAMES is deliberate: #1048 records an exact-spelling
+#     match in this same guard breaking on a reformat, and a name is prose that gets reworded.
+#     A step carrying BOTH `uses:` and `run:` is not valid workflow syntax and is reported rather
+#     than silently classified as one of them.
+step_shape="$(
+  yq -r "[${job}.steps[] | (((.uses // \"\") | length > 0) | tostring) + \":\" + (((.run // \"\") | length > 0) | tostring)] | join(\",\")" \
+    "$signer_workflow" |
+    sed -e 's/true:false/uses/g' -e 's/false:true/run/g' \
+      -e 's/true:true/uses+run/g' -e 's/false:false/empty/g'
+)"
+[[ "$step_shape" == "uses,run,uses,uses,uses,run,run" ]] ||
+  fail "apply-fixes' step inventory changed (found '${step_shape}', audited 'uses,run,uses,uses,uses,run,run'); a step added or retyped here can execute checked-out code, which is the premise CodeQL alert 312 was dismissed on -- re-audit the job and update this pin deliberately"
+
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"

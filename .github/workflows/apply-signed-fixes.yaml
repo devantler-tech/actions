@@ -62,6 +62,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # This job checks out the pull request's head branch while holding an App token scoped
+    # `contents: write`. That is only safe because NO step below executes code from the
+    # checked-out tree: every `uses:` is a SHA-pinned third-party action, and the three `run:`
+    # blocks invoke git, jq, base64 and gh and nothing out of the repository. CodeQL alert 312
+    # (actions/untrusted-checkout) was dismissed on exactly that property.
+    #
+    # Dismissal is per-alert, not per-condition, so the alert does not re-fire if the property
+    # stops holding. Assertions 11 and 12 in .github/tests/test-lint-signed-commit.sh enforce it
+    # instead: 11 pins every `uses:` to an audited SHA-pinned identity, and 12 pins the step
+    # inventory, so a build step or a local action cannot be added here without coming to that
+    # test first. Adding a step means updating assertion 12 deliberately (devantler-tech/actions#1019).
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
