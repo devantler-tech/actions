@@ -137,5 +137,11 @@ jobs:
           branch: ${{ inputs.pr-branch }}
           labels: ${{ inputs.pr-labels }}
           delete-branch: true
+          # Commit through the GitHub API rather than locally, so GitHub signs the commit.
+          # Without this the updater's commit is `verified: false, reason: unsigned`, which
+          # holds the branch-scoped signature rule open for the whole org
+          # (devantler-tech/.github#142). The fixer lanes were migrated in #1005/#1011/#1036
+          # and sync-cluster-policies.yaml already sets this; this workflow was missed.
+          sign-commits: true
           token: ${{ steps.app-token.outputs.token || github.token }}
           branch-token: ${{ steps.app-token.outputs.token || github.token }}
