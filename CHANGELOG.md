@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.1.6](https://github.com/devantler-tech/actions/compare/v13.1.5...v13.1.6) (2026-08-25)
+
+
+### Bug Fixes
+
+* **validate-go:** keep signed fixes valid as a required workflow ([#1041](https://github.com/devantler-tech/actions/issues/1041)) ([6e85410](https://github.com/devantler-tech/actions/commit/6e85410f115222848854f80b3c5a2f67e978509c))
+
 ## [13.1.5](https://github.com/devantler-tech/actions/compare/v13.1.4...v13.1.5) (2026-08-24)
 
 
