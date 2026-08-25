@@ -279,24 +279,16 @@ step_shape="$(
 #                    `defaults`. Action refs are reduced to `owner/repo`, dropping the pinned SHA,
 #                    so routine dependency bumps do not fire; assertion 11 is what holds those to
 #                    a SHA-pinned audited identity.
-#       run text  -- the post-checkout run blocks, comments and indentation stripped, so prose
-#                    edits and reindentation do not fire.
+#       run text  -- EVERY run block, comments and indentation stripped, so prose edits and
+#                    reindentation do not fire. Every one, not just the post-checkout pair: a
+#                    pre-checkout step can write BASH_ENV into $GITHUB_ENV, which GitHub hands to
+#                    later steps, so scoping this to post-checkout was itself a bypass.
 #
 #     Both verified stable across a full `yq -i '.'` round-trip, which is the specific brittleness
 #     #1048 reports for the exact-spacing match elsewhere in this guard.
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi
 }
-checkout_index=""
-step_index=0
-while IFS= read -r step_uses; do
-  case "$step_uses" in
-    actions/checkout@*) checkout_index="$step_index" ;;
-  esac
-  step_index=$((step_index + 1))
-done <<<"$step_uses_list"
-[[ -n "$checkout_index" ]] ||
-  fail "apply-fixes has no actions/checkout step, so the post-checkout boundary cannot be located"
 
 # 13a. Structure.
 job_structure="$(
@@ -312,19 +304,19 @@ audited_structure_digest="c30fd2206162b276086b2c73eb18ff02b8dd1a7b8b507ed607ef3d
   fail "apply-fixes' job structure changed (found ${structure_digest}, audited ${audited_structure_digest}). Something other than the run text moved -- a step's or the job's \`env\` (BASH_ENV executes a file before the script), \`shell\`, \`working-directory\`, \`defaults.run\`, or a key this guard has never seen. Confirm it cannot execute code from the checked-out tree, then set audited_structure_digest to the value above. Dependency bumps of the pinned actions do NOT reach here."
 
 # 13b. Run text.
-post_checkout_runs="$(
-  yq -r "[${job}.steps[] | .run // \"\"] | .[$((checkout_index + 1)):] | join(\"\n\")" "$signer_workflow"
+all_runs="$(
+  yq -r "[${job}.steps[] | .run // \"\"] | join(\"\n\")" "$signer_workflow"
 )"
 # sed throughout rather than `grep -v '^$'`: grep exits 1 when it emits nothing, which under
 # `set -e` would abort here with a shell error instead of this assertion's message.
 normalized_runs="$(
-  printf '%s\n' "$post_checkout_runs" |
+  printf '%s\n' "$all_runs" |
     sed -e '/^[[:space:]]*#/d' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
 )"
 [[ -n "$normalized_runs" ]] ||
-  fail "apply-fixes has no post-checkout run content to pin; this assertion is not reading the job it thinks it is"
+  fail "apply-fixes has no run content to pin; this assertion is not reading the job it thinks it is"
 runs_digest="$(printf '%s' "$normalized_runs" | sha256_of)"
-audited_runs_digest="9b779a1505a9fd1b8039f028468115da1bd3e5aabe2bc713cb4360b861c90fd4"
+audited_runs_digest="ed563d75b254d92c5e468cfaf7d15aaaa45e3197fd5afe6754ff3cee480b6e35"
 [[ "$runs_digest" == "$audited_runs_digest" ]] ||
-  fail "apply-fixes' post-checkout run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). These run with the pull request's code on disk and a write-scoped token, so re-read them and confirm they still invoke nothing from the repository -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
+  fail "apply-fixes' run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). Re-read every run block and confirm none invokes anything from the repository AND none writes state (GITHUB_ENV, GITHUB_PATH) that a later step inherits -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"
