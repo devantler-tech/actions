@@ -1,0 +1,15 @@
+name: reject-workflow-input
+on:
+  workflow_call:
+    inputs:
+      tok:
+        type: string
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Create pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+        with:
+          sign-commits: true
+          token: ${{ inputs.tok }}
