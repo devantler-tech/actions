@@ -774,4 +774,100 @@ else
 fi
 pass "control: readable commits with no root still no-op"
 
+
+# 25. A QUOTED provenance key is the same key in valid YAML, and a plain-key-only match
+#     cannot see it: the loop falls off the end, provenance reads EMPTY, and empty means
+#     LOCAL — so the guard PERMITS a hand-edit to a synced skill, the one thing it exists
+#     to refuse. This is the fourth legal spelling of this document to reach that same
+#     fail-open, so the guard now treats any unreadable direct child as UNKNOWN.
+export FAKE_GIT_STORE="${tmp}/objects36"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/dquoted"
+store_exists "origin/main:.agents/skills/dquoted" "dir"
+store_exists "HEAD:.agents/skills/dquoted" "dir"
+store_exists "origin/main:.agents/skills/dquoted/SKILL.md" \
+  $'---\nmetadata:\n  "github-repo": "https://github.com/devantler-tech/agent-skills"\n---\n'
+if CHANGED_PATHS=".agents/skills/dquoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "double-quoted provenance key: expected UNKNOWN, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "double-quoted provenance key: rc=${rc} want=2"
+fi
+pass "a double-quoted provenance key is UNKNOWN, not local"
+
+# 25b. Single quotes are the same valid YAML, and must not need their own special case.
+export FAKE_GIT_STORE="${tmp}/objects37"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/squoted"
+store_exists "origin/main:.agents/skills/squoted" "dir"
+store_exists "HEAD:.agents/skills/squoted" "dir"
+store_exists "origin/main:.agents/skills/squoted/SKILL.md" \
+  $'---\nmetadata:\n  \'github-repo\': https://github.com/devantler-tech/agent-skills\n---\n'
+if CHANGED_PATHS=".agents/skills/squoted/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then
+  fail "single-quoted provenance key: expected UNKNOWN, got success"
+else
+  rc=$?
+  [ "${rc}" -eq 2 ] || fail "single-quoted provenance key: rc=${rc} want=2"
+fi
+pass "a single-quoted provenance key is UNKNOWN, not local"
+
+# 25c. CONTROL for 25/25b: a genuinely local skill — plain metadata children, no
+#      github-repo — is still EDITABLE. Without this, both cases above would also pass if
+#      the guard had simply started refusing every skill it was shown, which is the cheap
+#      way to satisfy a fail-closed test and is not the fix.
+export FAKE_GIT_STORE="${tmp}/objects38"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills/plainlocal"
+store_exists "origin/main:.agents/skills/plainlocal" "dir"
+store_exists "HEAD:.agents/skills/plainlocal" "dir"
+store_exists "origin/main:.agents/skills/plainlocal/SKILL.md" \
+  $'---\nname: plainlocal\nmetadata:\n  version: 1.2.3\n  tags: [a, b]\n---\n'
+if CHANGED_PATHS=".agents/skills/plainlocal/SKILL.md"$'\n' run_guard >/dev/null 2>&1; then :; else
+  rc=$?
+  fail "control 25c: a plain local skill must stay editable: rc=${rc} want=0"
+fi
+pass "control: plain metadata children with no github-repo stay local"
+
+# 26. A Git-valid path may CONTAIN a newline. Translating the -z diff to newline-delimited
+#     text split such a path into two records: the first has no directory component below
+#     the root and the second has lost the root prefix, so BOTH were ignored and an edit to
+#     a provenanced skill exited 0. The diff is now consumed NUL-delimited end to end.
+export FAKE_GIT_STORE="${tmp}/objects39"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills"
+nl_dir=$'.agents/skills/sync\ned'
+store_exists "origin/main:${nl_dir}" "dir"
+store_exists "HEAD:${nl_dir}" "dir"
+store_exists "origin/main:${nl_dir}/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+printf '%s\0' "${nl_dir}/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
+if out="$(run_guard 2>&1)"; then
+  fail "newline in path: expected refusal, got success (this is the fail-open)"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "newline in path: rc=${rc} want=1"
+  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+    || fail "newline in path: should name the upstream"
+fi
+rm -f "${FAKE_GIT_STORE}/diff_out"
+pass "a changed path containing a newline is still matched to its skill"
+
+# 26b. CONTROL for 26: the SAME fixture with an ordinary path is refused too, so case 26
+#      cannot be satisfied by a reader that refuses whatever it fails to parse.
+export FAKE_GIT_STORE="${tmp}/objects40"
+mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
+mkdir -p "${tmp}/.agents/skills"
+store_exists "origin/main:.agents/skills/ordinary" "dir"
+store_exists "HEAD:.agents/skills/ordinary" "dir"
+store_exists "origin/main:.agents/skills/ordinary/SKILL.md" \
+  $'---\nmetadata:\n  github-repo: https://github.com/devantler-tech/agent-skills\n---\n'
+printf '%s\0' ".agents/skills/ordinary/SKILL.md" >"${FAKE_GIT_STORE}/diff_out"
+if run_guard >/dev/null 2>&1; then
+  fail "control 26b: an ordinary NUL-delimited path should still be refused"
+else
+  rc=$?
+  [ "${rc}" -eq 1 ] || fail "control 26b: rc=${rc} want=1"
+fi
+rm -f "${FAKE_GIT_STORE}/diff_out"
+pass "control: an ordinary NUL-delimited path is still refused"
 echo "ALL PASS"

@@ -219,6 +219,26 @@ provenance_repo() {
       printf '%s\n' "$value"
       return 0
     fi
+    # 🔴 AN UNRECOGNISED DIRECT CHILD IS UNDECIDABLE — IT IS NEVER "NO PROVENANCE".
+    #
+    # `"github-repo": ...` and `'github-repo': ...` are the SAME key in valid YAML, and a
+    # plain-key-only match simply cannot see them: the loop falls off the end, provenance
+    # reads EMPTY, and empty means LOCAL — so the guard permits a hand-edit to a synced
+    # skill, the one thing it exists to refuse.
+    #
+    # That is the FOURTH legal spelling of this document to reach that same fail-open
+    # (column-zero comment, comment indentation, flow mapping, and now a quoted key), so
+    # this closes the CLASS instead of adding a fourth special case: at the direct-child
+    # level, anything that is not a plain `key:` THIS parser can read is UNKNOWN. A quoted
+    # key, a sequence item, a stray scalar — all of them fail closed with a named remedy
+    # rather than silently rendering as "local".
+    # Pattern held in a variable: a bare single quote inside [[ =~ ]] opens a quoted
+    # string and makes the conditional a syntax error.
+    local plain_key_re="^[[:space:]]+[^[:space:]\"'#][^:]*:"
+    if [[ ! $line =~ $plain_key_re ]]; then
+      printf '%s\n' "__UNKNOWN__"
+      return 0
+    fi
   done <"$file"
 }
 
@@ -241,14 +261,20 @@ skill_dir_of() {
 
 list_changed_paths() {
   if [ -n "${CHANGED_PATHS:-}" ]; then
-    printf '%s\n' "${CHANGED_PATHS}"
+    # The seam is newline-delimited (action.yaml pins CHANGED_PATHS to empty, so this arm
+    # is reachable only from the hermetic suite). Re-emit it NUL-delimited so both arms speak
+    # one delimiter and the consumer never has to know which one ran.
+    printf '%s' "${CHANGED_PATHS}" | tr '\n' '\0'
     return 0
   fi
   # THREE-dot: the paths this PR changed relative to the merge base, never the two-commit
   # difference. With a two-dot diff a base branch that advanced after the PR branched drags
   # the base-only changes in. Provenance is still read from the BASE_SHA snapshot below.
-  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${ROOT_DIR}" |
-    tr '\0' '\n'
+  # 🔴 CONSUME THE -z OUTPUT AS-IS. Translating NUL to newline splits a Git-valid path that
+  # CONTAINS a newline into two records: the first has no directory component below the root
+  # and the second has lost the root prefix, so BOTH are ignored and an edit to a provenanced
+  # skill exits 0. NUL is the one delimiter that cannot occur inside a path.
+  git --no-replace-objects diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" -- "${ROOT_DIR}"
 }
 
 unknown=0
@@ -266,7 +292,7 @@ if ! list_changed_paths >"${changed_paths}"; then
   exit 2
 fi
 
-while IFS= read -r path; do
+while IFS= read -r -d '' path || [ -n "$path" ]; do
   [ -n "$path" ] || continue
   skill_dir="$(skill_dir_of "$path")"
   [ -n "$skill_dir" ] || continue

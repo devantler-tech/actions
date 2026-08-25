@@ -995,6 +995,12 @@ jobs:
       - name: ⬇️ Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The consumer-style invocation below needs BOTH the PR base and head commits to
+          # be locally readable. The default depth-1 checkout has neither (the checked-out
+          # ref is the synthetic merge commit), so the guard correctly exits 2 UNKNOWN and
+          # this REQUIRED job can never pass. fetch-depth: 0 is what the action's own README
+          # tells consumers to use, so the CI job must invoke it the documented way.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: 🧪 Run hermetic guard suite
