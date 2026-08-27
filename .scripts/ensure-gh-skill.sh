@@ -109,6 +109,46 @@ if [ "$actual_digest" != "$expected_digest" ]; then
   exit 1
 fi
 
+# Bind the archive to a digest this repository REVIEWED, not one the release served.
+# Both gates above are satisfiable by a substituted archive: attestation cannot tell
+# cli/cli releases apart, and the checksums file comes from the same mutable release as
+# the asset, so an actor rewriting that release can pair a genuinely-attested archive from
+# a DIFFERENT version with a matching checksums entry. The post-install version assertion
+# below rejects an OLDER archive, but it is a floor (REQUIRED <= installed), so a
+# same-or-newer substitution still installs and silently defeats version pinning.
+# An exact match against the in-repo manifest is equality rather than a floor, and its
+# value entered the repository through review rather than over the network.
+#
+# Enforcement is per row: an unknown version warns and falls through to the existing
+# gates, so a consumer passing a custom gh-version is never blocked by a missing row.
+# The manifest is read as plain text with awk and is never sourced, so a malformed or
+# hostile line cannot execute anything.
+digest_manifest="$(dirname "${BASH_SOURCE[0]}")/gh-release-digests.tsv"
+if [ -f "$digest_manifest" ]; then
+  pinned_digest=$(awk -F'\t' -v v="$REQUIRED" -v o="$os" -v a="$arch" \
+    '$1 !~ /^#/ && $1 == v && $2 == o && $3 == a { print $4; exit }' "$digest_manifest")
+else
+  pinned_digest=""
+  echo "::warning::No gh release digest manifest at $digest_manifest; installing v${REQUIRED} on the release-served digest alone."
+fi
+
+if [ -n "$pinned_digest" ]; then
+  # A row that exists but is malformed must fail closed. Silently treating an unusable
+  # value as "no row" would let a corrupted manifest downgrade this gate to a warning,
+  # which is the one outcome an attacker editing it would want.
+  if ! printf '%s' "$pinned_digest" | grep -Eq '^[0-9a-f]{64}$'; then
+    echo "::error::$digest_manifest has a malformed sha256 for v${REQUIRED} ${os}/${arch}; refusing to install it."
+    exit 1
+  fi
+  if [ "$actual_digest" != "$pinned_digest" ]; then
+    echo "::error::$asset does not match the digest this repository pinned for v${REQUIRED} ${os}/${arch} (pinned $pinned_digest, got $actual_digest); the release served a different archive than the one reviewed here. Refusing to install it."
+    exit 1
+  fi
+  echo "Verified $asset against the reviewed digest pinned for v${REQUIRED} ${os}/${arch}."
+elif [ -f "$digest_manifest" ]; then
+  echo "::warning::$digest_manifest pins no digest for v${REQUIRED} ${os}/${arch}; installing on the release-served digest alone. Run 'bash .scripts/refresh-gh-digests.sh ${REQUIRED}' to pin it."
+fi
+
 # --signer-workflow narrows this from "any workflow in cli/cli" to the release workflow specifically.
 # If cli/cli ever renames that workflow this fails closed: read the new path from
 # `gh attestation verify <asset> --repo cli/cli --format json` (.buildSignerURI) and update it here.
