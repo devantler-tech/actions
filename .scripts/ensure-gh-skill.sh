@@ -136,7 +136,10 @@ if [ -n "$pinned_digest" ]; then
   # A row that exists but is malformed must fail closed. Silently treating an unusable
   # value as "no row" would let a corrupted manifest downgrade this gate to a warning,
   # which is the one outcome an attacker editing it would want.
-  if ! printf '%s' "$pinned_digest" | grep -Eq '^[0-9a-f]{64}$'; then
+  # Matched with bash's own regex rather than `printf | grep -q`: under `set -o pipefail`
+  # grep exits as soon as it matches, so printf can take SIGPIPE and turn a MATCHING
+  # digest into a non-zero pipeline — rejecting a perfectly good manifest row.
+  if ! [[ "$pinned_digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "::error::$digest_manifest has a malformed sha256 for v${REQUIRED} ${os}/${arch}; refusing to install it."
     exit 1
   fi

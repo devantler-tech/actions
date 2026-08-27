@@ -21,7 +21,9 @@ if [ -z "$version" ]; then
 fi
 # Reject anything that is not a plain dotted version before it reaches a URL: this argument
 # is the only untrusted input here, and it must never be able to redirect the fetch.
-if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+# Bash-native match, not `printf | grep -q`: with `set -o pipefail` an early grep exit can
+# SIGPIPE the printf and invert the result.
+if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "::error::version must be a bare X.Y.Z (got '$version')" >&2
   exit 2
 fi
@@ -56,7 +58,7 @@ for pair in "linux amd64 tar.gz" "linux arm64 tar.gz" "macOS amd64 zip" "macOS a
     echo "::error::$asset is absent from the checksums file for v${version}; refusing to write a partial manifest." >&2
     exit 1
   fi
-  if ! printf '%s' "$digest" | grep -Eq '^[0-9a-f]{64}$'; then
+  if ! [[ "$digest" =~ ^[0-9a-f]{64}$ ]]; then
     echo "::error::checksums file gave a malformed digest for $asset: '$digest'" >&2
     exit 1
   fi
