@@ -585,6 +585,8 @@ The same explicit token boundary keeps the Code Quality uploader out of credenti
 jobs:
   todos:
     uses: devantler-tech/actions/.github/workflows/scan-for-todo-comments.yaml@{ref} # ref
+    with:
+      ignore: "^third_party/"
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
@@ -596,6 +598,7 @@ jobs:
 | `APP_CLIENT_ID`   | Variable        | -       | Yes      | GitHub App client ID used to mint the issue-creation token |
 | `APP_PRIVATE_KEY` | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable) |
 | `dry-run`         | Input (boolean) | `false` | No       | Skip issue creation (validate workflow interface only)     |
+| `ignore`          | Input (string)  | `""`    | No       | Regular expression matching repository-relative paths to ignore |
 
 </details>
 

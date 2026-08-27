@@ -14,6 +14,10 @@ inputs:
   project:
     description: GitHub Project to add issues to
     required: false
+  ignore:
+    description: Regular expression matching repository-relative paths to ignore
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -70,6 +74,7 @@ runs:
         INPUT_ESCAPE: "true"
         INPUT_NO_STANDARD: "false"
         INPUT_INSERT_ISSUE_URLS: "false"
+        INPUT_IGNORE: ${{ inputs.ignore }}
         # Pinned by DIGEST, not by tag: this image runs with `github.token` and the
         # App `PROJECTS_SECRET`, so a retag of `:v5.1.15` upstream would otherwise
         # execute unreviewed code with those credentials. The tag is kept in front of
@@ -102,4 +107,5 @@ runs:
           --env INPUT_ESCAPE \
           --env INPUT_NO_STANDARD \
           --env INPUT_INSERT_ISSUE_URLS \
+          --env INPUT_IGNORE \
           "$TODO_TO_ISSUE_IMAGE"
