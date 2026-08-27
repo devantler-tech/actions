@@ -37,6 +37,13 @@ forwarded="$(yq -r \
 [[ "$forwarded" == '${{ inputs.ignore }}' ]] ||
   fail "ignore must be forwarded unchanged to create-issues-from-todos; got: ${forwarded:-<missing>}"
 
+ci_pattern="$(yq -r '.jobs["test-scan-for-todo-comments"].with.ignore // ""' \
+  .github/workflows/ci.yaml)"
+[[ ".github/tests/fixture" =~ $ci_pattern ]] ||
+  fail "the CI ignore pattern must match the intended .github/tests fixture path"
+[[ ! "xgithub/tests/fixture" =~ $ci_pattern ]] ||
+  fail "the CI ignore pattern must not treat the leading dot as a regex wildcard"
+
 action_required="$(yq -r '.inputs.ignore.required // false' "$action")"
 [[ "$action_required" == "false" ]] ||
   fail "the scanner action's ignore input must remain optional; got required: $action_required"

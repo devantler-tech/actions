@@ -2940,7 +2940,7 @@ jobs:
       issues: write
     with:
       dry-run: true
-      ignore: "^.github/tests/"
+      ignore: '^\.github/tests/'
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
