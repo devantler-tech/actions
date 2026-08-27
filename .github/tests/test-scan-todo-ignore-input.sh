@@ -37,7 +37,17 @@ forwarded="$(yq -r \
 [[ "$forwarded" == '${{ inputs.ignore }}' ]] ||
   fail "ignore must be forwarded unchanged to create-issues-from-todos; got: ${forwarded:-<missing>}"
 
-ci_pattern="$(yq -r '.jobs["test-scan-for-todo-comments"].with.ignore // ""' \
+default_has_ignore="$(yq -r \
+  '.jobs["test-scan-for-todo-comments"].with | has("ignore")' .github/workflows/ci.yaml)"
+[[ "$default_has_ignore" == "false" ]] ||
+  fail "the default-state workflow_call test must omit ignore"
+
+opt_in_uses="$(yq -r \
+  '.jobs["test-scan-for-todo-comments-ignore"].uses // ""' .github/workflows/ci.yaml)"
+[[ "$opt_in_uses" == "./.github/workflows/scan-for-todo-comments.yaml" ]] ||
+  fail "the opt-in workflow_call test must invoke scan-for-todo-comments.yaml"
+
+ci_pattern="$(yq -r '.jobs["test-scan-for-todo-comments-ignore"].with.ignore // ""' \
   .github/workflows/ci.yaml)"
 [[ ".github/tests/fixture" =~ $ci_pattern ]] ||
   fail "the CI ignore pattern must match the intended .github/tests fixture path"
