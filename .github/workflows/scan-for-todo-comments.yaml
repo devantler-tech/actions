@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      ignore:
+        description: "Regular expression matching repository-relative paths to ignore"
+        required: false
+        default: ""
+        type: string
     secrets:
       APP_PRIVATE_KEY:
         required: true
@@ -53,6 +58,7 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
           project: organization/devantler-tech/5
+          ignore: ${{ inputs.ignore }}
 
       # The sibling composite runs its own actions/checkout, whose git clean deletes this
       # untracked self-checkout mid-job. That is intended (it hides the actions sources from

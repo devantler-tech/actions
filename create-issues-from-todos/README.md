@@ -10,6 +10,7 @@ Scan code for TODO comments and automatically create corresponding GitHub issues
 | `app-id` | GitHub App ID. **Deprecated** — use `client-id` instead | ❌¹ | - |
 | `app-private-key` | GitHub App Private Key | ✅ | - |
 | `project` | GitHub Project to add issues to | ❌ | - |
+| `ignore` | Regular expression matching repository-relative paths to ignore | ❌ | `""` |
 
 ¹ Provide exactly one of `client-id` or `app-id`. Prefer `client-id`: `actions/create-github-app-token` has deprecated `app-id`, so passing it emits a `Input 'app-id' has been deprecated` warning.
 
@@ -24,6 +25,7 @@ steps:
     with:
       client-id: ${{ vars.APP_CLIENT_ID }}
       app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      ignore: "^third_party/"
 ```
 
 ### With project integration

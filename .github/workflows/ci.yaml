@@ -2338,6 +2338,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-publish-caller-pin.sh
 
+      - name: 📝 Check TODO scanner ignore-input forwarding
+        shell: bash
+        run: bash .github/tests/test-scan-todo-ignore-input.sh
+
       - name: 🔐 Check merge-group credential isolation
         shell: bash
         run: bash .github/tests/test-ci-merge-group-isolation.sh
@@ -2936,6 +2940,19 @@ jobs:
       issues: write
     with:
       dry-run: true
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-scan-for-todo-comments-ignore:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Scan for TODO Comments - Dry Run (ignore configured)"
+    uses: ./.github/workflows/scan-for-todo-comments.yaml
+    permissions:
+      contents: read
+      issues: write
+    with:
+      dry-run: true
+      ignore: '^\.github/tests/'
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
@@ -3848,6 +3865,7 @@ jobs:
       - test-publish-manifests-caller-pin
       - test-publish-caller-pin-live
       - test-scan-for-todo-comments
+      - test-scan-for-todo-comments-ignore
       - test-sync-cluster-policies
       - test-update-agent-skills
       - test-template-sync
@@ -3950,6 +3968,7 @@ jobs:
             ${{ needs.test-publish-manifests-caller-pin.result }}
             ${{ needs.test-publish-caller-pin-live.result }}
             ${{ needs.test-scan-for-todo-comments.result }}
+            ${{ needs.test-scan-for-todo-comments-ignore.result }}
             ${{ needs.test-sync-cluster-policies.result }}
             ${{ needs.test-update-agent-skills.result }}
             ${{ needs.test-template-sync.result }}
