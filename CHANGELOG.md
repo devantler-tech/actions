@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.2.2](https://github.com/devantler-tech/actions/compare/v13.2.1...v13.2.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* **todo-scanner:** expose reusable ignore input ([87f431f](https://github.com/devantler-tech/actions/commit/87f431f7bc8dadc4afad5cf9ea02e9b14e45d23d))
+
 ## [13.2.1](https://github.com/devantler-tech/actions/compare/v13.2.0...v13.2.1) (2026-08-25)
 
 
