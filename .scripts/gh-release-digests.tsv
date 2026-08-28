@@ -1,0 +1,38 @@
+# Reviewed version-to-digest mapping for the cli/cli release archives that
+# ensure-gh-skill.sh installs.
+#
+# WHY THIS FILE EXISTS
+# The installer verifies a downloaded gh archive two ways, and neither binds it to a
+# VERSION. GitHub artifact attestation proves cli/cli built the archive but cannot say
+# which release it is (every cli/cli release is attested from refs/heads/trunk, so the
+# certificate's source ref is identical across versions). The checksums file that supplies
+# the expected digest is served from the same mutable release as the archive, so it is not
+# an independent authority. A digest recorded HERE is reviewed in a pull request rather
+# than fetched at run time, which is what makes it independent.
+#
+# FORMAT — tab-separated, four fields, one release asset per line:
+#   version<TAB>os<TAB>arch<TAB>sha256
+# version  the cli/cli release without a leading "v" (e.g. 2.90.0)
+# os       linux | macOS   (the token cli/cli uses in its asset names)
+# arch     amd64 | arm64
+# sha256   64 lowercase hex characters, the digest of gh_<version>_<os>_<arch>.<ext>
+#
+# Lines beginning with "#" and blank lines are ignored. The file is parsed as plain text
+# and is never sourced or otherwise evaluated as shell.
+#
+# ENFORCEMENT IS PER ROW, so this file is additive and never breaks a consumer:
+#   row present for the requested version+os+arch  -> the archive MUST match it, or the
+#                                                     install is refused
+#   no row                                         -> a warning is emitted and the existing
+#                                                     attestation, checksum and post-install
+#                                                     version gates still apply
+# A missing row therefore leaves behaviour exactly as it was before this file existed,
+# which is what lets a consumer pass a custom gh-version without being blocked.
+#
+# REFRESHING — do not hand-edit a digest. Run, from the repository root:
+#   bash .scripts/refresh-gh-digests.sh <version>
+# It fetches that release's published checksums file, extracts the four supported assets
+# and rewrites the rows, so the value entering review is the one the release actually
+# published. Review the resulting diff like any other change.
+#
+# version	os	arch	sha256

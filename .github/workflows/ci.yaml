@@ -1471,6 +1471,165 @@ jobs:
           fi
           echo "✅ honest-release: installs cleanly AND is published (version assertion is not a blanket reject)"
 
+          # 8e. The substitution case 8c CANNOT catch. The post-install version assertion is a
+          #     FLOOR (`sort -V -C` succeeds when REQUIRED <= installed), so an attested archive
+          #     from a SAME-OR-NEWER release, served under this version's asset name with a
+          #     matching checksums entry, clears attestation, the checksum gate AND the version
+          #     assertion — defeating version pinning silently. The in-repo digest manifest is
+          #     equality rather than a floor, and is the only gate that rejects it.
+          #     The archive deliberately reports the REQUESTED version so 8c's assertion cannot
+          #     fire: if this case ever passes for the "is older than the requested" reason, the
+          #     manifest gate has stopped biting and the test has gone vacuous.
+          #     The script is exercised from a COPY beside a test manifest (it resolves the
+          #     manifest relative to its own path), so the repository's real manifest is untouched.
+          pinned=$(mktemp -d)
+          cp "$script" "$GITHUB_WORKSPACE/.scripts/retry.sh" "$pinned/"
+          mkdir -p "$pinned/src/gh_999.0.0_linux_amd64/bin"
+          cat > "$pinned/src/gh_999.0.0_linux_amd64/bin/gh" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "$1" = "skill" ]; then exit 0; fi
+          echo "gh version 999.0.0 (2026-01-01)"
+          EOF
+          chmod +x "$pinned/src/gh_999.0.0_linux_amd64/bin/gh"
+          tar -czf "$pinned/served.tar.gz" -C "$pinned/src" gh_999.0.0_linux_amd64
+          served_digest=$(sha256sum "$pinned/served.tar.gz" | awk '{print $1}')
+
+          cat > "$pinned/gh" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "$1" = "attestation" ] && [ "$2" = "--help" ]; then exit 0; fi
+          if [ "$1" = "attestation" ] && [ "$2" = "verify" ]; then exit 0; fi
+          if [ "$1" = "skill" ]; then exit 1; fi
+          echo "gh version 2.81.0 (2026-01-01)"
+          EOF
+          # Serves the prebuilt archive and a checksums entry that MATCHES it, so every
+          # release-served gate is satisfied and the manifest is the sole gate under test.
+          cat > "$pinned/curl" <<'EOF'
+          #!/usr/bin/env bash
+          while [ "$1" != "-o" ]; do shift; done
+          dest="$2"
+          case "$dest" in
+            *checksums.txt)
+              a=$(ls "$(dirname "$dest")" | grep -v 'checksums.txt$' | head -1)
+              printf '%s  %s\n' "$(sha256sum "$(dirname "$dest")/$a" | awk '{print $1}')" "$a" > "$dest" ;;
+            *) cp "$SERVED_ARCHIVE" "$dest" ;;
+          esac
+          EOF
+          chmod +x "$pinned/gh" "$pinned/curl"
+
+          # Manifest pins a DIFFERENT digest for exactly this version/os/arch.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\t%064d\n' 0 > "$pinned/gh-release-digests.tsv"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "does not match the digest this repository pinned"; then
+            echo "::error::expected a same-version substituted archive to be rejected by the pinned manifest; status=$status out=$out"; exit 1
+          fi
+          if printf '%s' "$out" | grep -q "is older than the requested"; then
+            echo "::error::8e went vacuous: rejected by the version floor, not the manifest; out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ] || [ -e "$pinned/rt/t/bin/gh" ]; then
+            echo "::error::substituted archive was published despite the pinned-digest mismatch"; exit 1
+          fi
+          echo "✅ pinned-digest-mismatch: same-version substitution rejected, and never published"
+
+          # 8f. Positive control for 8e: the SAME archive, with the manifest pinning its real
+          #     digest, must install cleanly — so 8e cannot be satisfied by a manifest gate that
+          #     rejects everything, and a stale manifest row is visibly a hard failure rather
+          #     than a silent one.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\t%s\n' "$served_digest" > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -ne 0 ] || ! printf '%s' "$out" | grep -q "against the reviewed digest pinned"; then
+            echo "::error::expected an archive matching the pinned digest to install cleanly; status=$status out=$out"; exit 1
+          fi
+          if [ ! -s "$pinned/ghpath" ] || [ ! -x "$pinned/rt/t/bin/gh" ]; then
+            echo "::error::archive matching the pinned digest was not published"; exit 1
+          fi
+          echo "✅ pinned-digest-match: installs cleanly (manifest gate is not a blanket reject)"
+
+          # 8g. No row for the requested version → the gate is ADDITIVE: it warns and falls
+          #     through to the existing checks rather than blocking. Without this, adding the
+          #     manifest would break every consumer passing a custom gh-version, which is the
+          #     DevEx tax the additive shape exists to avoid.
+          printf '# version\tos\tarch\tsha256\n2.81.0\tlinux\tamd64\t%064d\n' 0 > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -ne 0 ] || ! printf '%s' "$out" | grep -q "pins no digest for v999.0.0"; then
+            echo "::error::expected an unpinned version to warn and install; status=$status out=$out"; exit 1
+          fi
+          echo "✅ unpinned-version: warns and falls through (additive, does not block consumers)"
+
+          # 8h. A row that EXISTS but is malformed must fail closed. Treating an unusable value
+          #     as "no row" would let anyone who can corrupt the manifest downgrade this gate to
+          #     a warning — the one outcome an attacker editing it would want.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\tnot-a-digest\n' > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "malformed sha256"; then
+            echo "::error::expected a malformed manifest row to fail closed; status=$status out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ]; then
+            echo "::error::malformed manifest row still published the archive"; exit 1
+          fi
+          echo "✅ malformed-manifest-row: fails closed"
+
+          # 8i. A row that EXISTS but whose sha256 field is EMPTY must fail closed. This is
+          #     distinct from 8h: awk yields an empty string BOTH for "no matching row" and
+          #     for "matching row with a blank 4th field", so a gate that reads the digest
+          #     value alone routes this corruption into 8g's additive warn-and-install path
+          #     instead of rejecting it. Blanking a field is a far cheaper corruption than
+          #     forging a digest, so this is the likelier attack on the manifest.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\t\n' > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "malformed sha256"; then
+            echo "::error::expected an EMPTY manifest digest to fail closed; status=$status out=$out"; exit 1
+          fi
+          if printf '%s' "$out" | grep -q "pins no digest for v999.0.0"; then
+            echo "::error::8i went vacuous: empty digest took the no-row warning path, not the malformed path; out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ]; then
+            echo "::error::empty manifest digest still published the archive"; exit 1
+          fi
+          echo "✅ empty-manifest-digest: fails closed"
+
+          # 8j. The same corruption one field shorter: the row is TRUNCATED so the sha256
+          #     column is absent entirely rather than blank. awk treats an out-of-range field
+          #     as the empty string, so this reaches the gate identically to 8i and must also
+          #     be rejected rather than warned through.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\n' > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "malformed sha256"; then
+            echo "::error::expected a TRUNCATED manifest row to fail closed; status=$status out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ]; then
+            echo "::error::truncated manifest row still published the archive"; exit 1
+          fi
+          echo "✅ truncated-manifest-row: fails closed"
+
           # 9. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
           #    BEFORE any network download. A skill-LESS gh forces the install path;
           #    uname is faked to Darwin/arm64 (valid arch → passes the arch check);
