@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.2.3](https://github.com/devantler-tech/actions/compare/v13.2.2...v13.2.3) (2026-08-28)
+
+
+### Bug Fixes
+
+* **security:** pin gh release digests in-repo to close the substitution gap ([#1107](https://github.com/devantler-tech/actions/issues/1107)) ([130eca7](https://github.com/devantler-tech/actions/commit/130eca74eba6160f39d9dde6f68c3eb967fd0f3e))
+
 ## [13.2.2](https://github.com/devantler-tech/actions/compare/v13.2.1...v13.2.2) (2026-08-27)
 
 
