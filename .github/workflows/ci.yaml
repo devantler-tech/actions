@@ -1587,6 +1587,49 @@ jobs:
           fi
           echo "✅ malformed-manifest-row: fails closed"
 
+          # 8i. A row that EXISTS but whose sha256 field is EMPTY must fail closed. This is
+          #     distinct from 8h: awk yields an empty string BOTH for "no matching row" and
+          #     for "matching row with a blank 4th field", so a gate that reads the digest
+          #     value alone routes this corruption into 8g's additive warn-and-install path
+          #     instead of rejecting it. Blanking a field is a far cheaper corruption than
+          #     forging a digest, so this is the likelier attack on the manifest.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\t\n' > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "malformed sha256"; then
+            echo "::error::expected an EMPTY manifest digest to fail closed; status=$status out=$out"; exit 1
+          fi
+          if printf '%s' "$out" | grep -q "pins no digest for v999.0.0"; then
+            echo "::error::8i went vacuous: empty digest took the no-row warning path, not the malformed path; out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ]; then
+            echo "::error::empty manifest digest still published the archive"; exit 1
+          fi
+          echo "✅ empty-manifest-digest: fails closed"
+
+          # 8j. The same corruption one field shorter: the row is TRUNCATED so the sha256
+          #     column is absent entirely rather than blank. awk treats an out-of-range field
+          #     as the empty string, so this reaches the gate identically to 8i and must also
+          #     be rejected rather than warned through.
+          printf '# version\tos\tarch\tsha256\n999.0.0\tlinux\tamd64\n' > "$pinned/gh-release-digests.tsv"
+          rm -rf "$pinned/ghpath" "$pinned/rt"
+          set +e
+          out=$(PATH="$pinned:$PATH" SERVED_ARCHIVE="$pinned/served.tar.gz" \
+                GITHUB_PATH="$pinned/ghpath" RUNNER_TEMP="$pinned/rt" \
+                REQUIRED=999.0.0 INSTALL_NAMESPACE=t bash "$pinned/ensure-gh-skill.sh" 2>&1); status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! printf '%s' "$out" | grep -q "malformed sha256"; then
+            echo "::error::expected a TRUNCATED manifest row to fail closed; status=$status out=$out"; exit 1
+          fi
+          if [ -s "$pinned/ghpath" ]; then
+            echo "::error::truncated manifest row still published the archive"; exit 1
+          fi
+          echo "✅ truncated-manifest-row: fails closed"
+
           # 9. macOS (ext=zip) with unzip absent → the zip-needs-unzip guard fires
           #    BEFORE any network download. A skill-LESS gh forces the install path;
           #    uname is faked to Darwin/arm64 (valid arch → passes the arch check);

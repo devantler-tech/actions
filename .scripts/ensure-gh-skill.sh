@@ -124,15 +124,23 @@ fi
 # The manifest is read as plain text with awk and is never sourced, so a malformed or
 # hostile line cannot execute anything.
 digest_manifest="$(dirname "${BASH_SOURCE[0]}")/gh-release-digests.tsv"
+manifest_row=""
 if [ -f "$digest_manifest" ]; then
-  pinned_digest=$(awk -F'\t' -v v="$REQUIRED" -v o="$os" -v a="$arch" \
-    '$1 !~ /^#/ && $1 == v && $2 == o && $3 == a { print $4; exit }' "$digest_manifest")
+  # The "row:" marker carries ROW PRESENCE independently of the digest field's value.
+  # Reading $4 alone conflates "no matching row" with "a matching row whose sha256 is
+  # empty or absent", because awk yields an empty string for both. Those must diverge:
+  # the first warns and falls through (an unknown version is not the consumer's fault),
+  # while the second is a corrupted row that has to fail closed. Collapsing them is the
+  # one outcome an actor who can edit this manifest would want, since blanking a field
+  # is a far easier corruption than forging a digest.
+  manifest_row=$(awk -F'\t' -v v="$REQUIRED" -v o="$os" -v a="$arch" \
+    '$1 !~ /^#/ && $1 == v && $2 == o && $3 == a { print "row:" $4; exit }' "$digest_manifest")
 else
-  pinned_digest=""
   echo "::warning::No gh release digest manifest at $digest_manifest; installing v${REQUIRED} on the release-served digest alone."
 fi
 
-if [ -n "$pinned_digest" ]; then
+if [ -n "$manifest_row" ]; then
+  pinned_digest=${manifest_row#row:}
   # A row that exists but is malformed must fail closed. Silently treating an unusable
   # value as "no row" would let a corrupted manifest downgrade this gate to a warning,
   # which is the one outcome an attacker editing it would want.
