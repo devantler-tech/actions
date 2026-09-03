@@ -42,15 +42,32 @@ lint_write_scopes="$(
 [[ "$lint_write_scopes" == "0" ]] ||
   fail "the untrusted lint job must not grant any write-scoped GITHUB_TOKEN permission"
 
-lint_tokens="$(
+# Every string the lint job can see, matched whole: the workflow-level `env:` it inherits,
+# plus the complete job — a job-level `env:` reaches every step and would escape a
+# steps-only walk. `github.token` is the same credential as `secrets.GITHUB_TOKEN`, so
+# it is refused here in both spellings.
+lint_token_refs() { # <workflow>
   yq -r \
-    '[.jobs.lint.steps[]
+    '[((.env // {}), .jobs.lint)
       | ..
       | select(tag == "!!str")
       | select(test("secrets[[:space:]]*(\\.|\\[)|github[[:space:]]*(\\.token|\\[[[:space:]]*[\"'"'"']token[\"'"'"'][[:space:]]*\\])|toJSON[[:space:]]*\\([[:space:]]*(secrets|github)"))] | length' \
-    "$lint_workflow"
-)"
+    "$1"
+}
+lint_tokens="$(lint_token_refs "$lint_workflow")"
 [[ "$lint_tokens" == "0" ]] ||
   fail "the untrusted lint job must not receive the GitHub token or App private key"
+
+# Prove the scan reaches both inherited scopes: a token planted in the workflow-level env
+# and one in the job-level env must each be counted, or the assertion above reads clean
+# over a credential the lint job actually holds.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# shellcheck disable=SC2016 # literal Actions expressions handed to yq
+for mutation in '.env.TOKEN = "${{ github.token }}"' '.jobs.lint.env.TOKEN = "${{ github.token }}"'; do
+  yq "$mutation" "$lint_workflow" >"$work/mutant.yaml"
+  [[ "$(lint_token_refs "$work/mutant.yaml")" == "1" ]] ||
+    fail "the lint token scan must count a github.token planted with: $mutation"
+done
 
 echo "PASS: MegaLinter runs behind a live read-only caller without repository credentials"
