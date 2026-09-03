@@ -26,9 +26,11 @@ caller_write_scopes="$(
 [[ "$caller_write_scopes" == "0" ]] ||
   fail "the clean-fixture caller must not grant any write-scoped GITHUB_TOKEN permission"
 
-lint_contents="$(yq -r '.jobs.lint.permissions.contents // ""' "$lint_workflow")"
-[[ "$lint_contents" == "read" ]] ||
-  fail "the untrusted lint job must grant contents: read, found '${lint_contents:-unset}'"
+# The workflow-scoped half — contents: read, no App token, no App key, persist-credentials: false —
+# lives in test-fixer-credential-boundary.sh so the same assertions run against the org-required
+# Go pipeline's three fixer lanes. What follows is the STRICTER set that only lint.yaml meets:
+# no write scope of any kind and no GitHub token at all.
+bash "$(dirname "${BASH_SOURCE[0]}")/test-fixer-credential-boundary.sh" "$lint_workflow" lint >/dev/null
 
 lint_write_scopes="$(
   yq -r \
@@ -50,15 +52,5 @@ lint_tokens="$(
 )"
 [[ "$lint_tokens" == "0" ]] ||
   fail "the untrusted lint job must not receive the GitHub token or App private key"
-
-persisted_checkouts="$(
-  yq -r \
-    '[.jobs.lint.steps[]
-      | select((.uses // "") | contains("actions/checkout@"))
-      | select(.with."persist-credentials" != false)] | length' \
-    "$lint_workflow"
-)"
-[[ "$persisted_checkouts" == "0" ]] ||
-  fail "every checkout in the untrusted lint job must set persist-credentials: false"
 
 echo "PASS: MegaLinter runs behind a live read-only caller without repository credentials"
