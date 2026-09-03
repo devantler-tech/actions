@@ -15,6 +15,10 @@
 # `pull-requests: write` for its reporters, and a token scoped `contents: read` cannot push. Every
 # OTHER secret is refused: an App token, the App private key, or any PAT handed to a step or a
 # checkout is a credential GitHub does not scope to this job, so it is a write path by default.
+#
+# Every Actions expression form counts — `secrets.X`, `secrets['X']`, `secrets["X"]` and a
+# serialised `toJSON(secrets)` — because a matcher that reads only the dotted spelling is a
+# boundary with a documented hole in it.
 
 set -euo pipefail
 
@@ -25,6 +29,20 @@ shift
 fail() {
   echo "FAIL: $*" >&2
   exit 1
+}
+
+# Every string under the WHOLE job — a job-level `env:` reaches every step and would escape a
+# steps-only walk.
+job_strings() { # <job>
+  yq -r ".jobs.\"$1\" | .. | select(tag == \"!!str\")" "$workflow"
+}
+
+# The dotted and bracketed spellings of one secret name, as an extended regex over Actions
+# expression text: `secrets.NAME`, `secrets['NAME']`, `secrets["NAME"]`, with optional spaces.
+# Word boundaries are spelled out ([^[:alnum:]_]|$) rather than \b, which BSD sed does not know;
+# the boundary character is captured as group 2 so a strip can put it back.
+secret_ref_regex() { # <NAME>
+  printf 'secrets[[:space:]]*(\\.%s([^[:alnum:]_]|$)|\\[[[:space:]]*["'"'"']%s["'"'"'][[:space:]]*\\])' "$1" "$1"
 }
 
 for job in "$@"; do
@@ -44,29 +62,20 @@ for job in "$@"; do
   [[ "$app_token_steps" == "0" ]] ||
     fail "fixer lane '${job}' must not mint an App token — an installation token is valid on every repository the App is installed on"
 
-  # The WHOLE job, not only its steps: a job-level `env:` reaches every step and would escape a
-  # steps-only walk.
-  app_key_refs="$(
-    yq -r \
-      "[.jobs.\"${job}\"
-        | ..
-        | select(tag == \"!!str\")
-        | select(test(\"secrets\\\\.APP_PRIVATE_KEY\"))] | length" \
-      "$workflow"
-  )"
+  app_key_refs="$(job_strings "$job" | grep -Ec "$(secret_ref_regex APP_PRIVATE_KEY)" || true)"
   [[ "$app_key_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive the App private key"
 
-  # GITHUB_TOKEN is the one credential GitHub scopes to this job's `permissions`; any other
-  # `secrets.*` reference — a PAT on a checkout, a bot token in a step's env — is unscoped.
+  # GITHUB_TOKEN is the one credential GitHub scopes to this job's `permissions`; any other use
+  # of the `secrets` context is unscoped. The allowed spellings of GITHUB_TOKEN are stripped
+  # first, so a string carrying both an allowed and a forbidden reference still fails, and a
+  # bare word "secrets" in prose (a run-step comment) is not an expression and does not count.
+  # shellcheck disable=SC2016 # the literal expression opener is what is being matched
   other_secret_refs="$(
-    yq -r \
-      "[.jobs.\"${job}\"
-        | ..
-        | select(tag == \"!!str\")
-        | select(test(\"secrets\\\\.\"))
-        | select(test(\"secrets\\\\.GITHUB_TOKEN\") | not)] | length" \
-      "$workflow"
+    job_strings "$job" |
+      grep -F '${{' |
+      sed -E "s/$(secret_ref_regex GITHUB_TOKEN)/\\2/g" |
+      grep -Ec '(^|[^[:alnum:]_])secrets([^[:alnum:]_]|$)' || true
   )"
   [[ "$other_secret_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive any secret other than GITHUB_TOKEN — an unscoped credential here is a write path"

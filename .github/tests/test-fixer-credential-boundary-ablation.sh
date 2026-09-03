@@ -62,6 +62,18 @@ expect_rejected 'a lane receives the App private key at job level' \
 expect_rejected 'a lane hands a PAT to its checkout' \
   '(.jobs.lint.steps[] | select(.uses | test("actions/checkout@")) | .with.token) = "${{ secrets.BOT_PAT }}"' \
   'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane reads a PAT through the bracket form' \
+  '.jobs.tidy.steps[0].env.GH_TOKEN = "${{ secrets[\"BOT_PAT\"] }}"' \
+  'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane serialises the whole secrets context' \
+  '.jobs.tidy.steps[0].env.ALL = "${{ toJSON(secrets) }}"' \
+  'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane reads the App private key through the bracket form' \
+  '.jobs.lint.env.KEY = "${{ secrets[\"APP_PRIVATE_KEY\"] }}"' \
+  'must not receive the App private key'
 expect_rejected 'a lane persists the token into its checkout' \
   '(.jobs.lint.steps[] | select(.uses | test("actions/checkout@")) | .with."persist-credentials") = true' \
   'persist-credentials: false'
@@ -69,4 +81,13 @@ expect_rejected 'a lane named for assertion does not exist' \
   'del(.jobs.tidy)' \
   'does not exist'
 
-echo "PASS: fixer credential boundary assertion fires for its own reason on 8 mutations"
+# Control: GITHUB_TOKEN is the one permitted secret, in BOTH spellings — a matcher that rejected
+# the bracket form would fail the real workflow the day someone reformatted an expression.
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+yq '.jobs.tidy.steps[0].env.TOKEN = "${{ secrets[\"GITHUB_TOKEN\"] }}"' "$workflow" >"$work/allowed.yaml"
+bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
+  fail "control: the bracket spelling of GITHUB_TOKEN must remain permitted"
+echo "ok: control — bracket-form GITHUB_TOKEN still permitted"
+
+echo "PASS: fixer credential boundary assertion fires for its own reason on 11 mutations"
+

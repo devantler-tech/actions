@@ -47,7 +47,7 @@ lint_tokens="$(
     '[.jobs.lint.steps[]
       | ..
       | select(tag == "!!str")
-      | select(test("secrets\\.GITHUB_TOKEN|github\\.token"))] | length' \
+      | select(test("secrets[[:space:]]*(\\.|\\[)|github[[:space:]]*(\\.token|\\[)|toJSON[[:space:]]*\\([[:space:]]*(secrets|github)"))] | length' \
     "$lint_workflow"
 )"
 [[ "$lint_tokens" == "0" ]] ||
