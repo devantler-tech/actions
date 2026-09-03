@@ -139,4 +139,26 @@ grep -qF "$call_message" <<<"$out" ||
   fail "removed mutation: expected assertion 2's refusal with only the diagnostics left; got: ${out}"
 echo "ok: removed mutation — refused by assertion 2 although its diagnostics remain"
 
+# Decoy arm: the mutation is gone AND a comment line spelling the call is left behind in
+# the run block. A match over the raw run text would be satisfied by the comment alone;
+# the assertion drops comment lines first, so the decoy must still be refused with its
+# own message.
+fixture="$work/decoy.yaml"
+awk -v from="$call" '{
+  i = index($0, from)
+  if (i > 0) {
+    indent = $0; sub(/[^ ].*$/, "", indent)
+    print indent "# " from " is issued below by the signing helper"
+    $0 = substr($0, 1, i - 1) "commitPlaceholder" substr($0, i + length(from))
+  }
+  print
+}' "$signer" >"$fixture"
+grep -qF "# $call" "$fixture" || fail "the decoy fixture did not receive the comment line"
+[ "$(grep -cF "$call" "$fixture")" = "1" ] ||
+  fail "the decoy fixture must carry the call text exactly once, inside the comment"
+out="$(run_guard "$fixture")"
+grep -qF "$call_message" <<<"$out" ||
+  fail "decoy comment: a comment spelling the call satisfied the signing-API assertion; got: ${out}"
+echo "ok: decoy comment — a comment spelling the call does not stand in for the mutation"
+
 echo "PASS: the createCommitOnBranch assertion matches the call by shape, not by spacing, and still refuses a lane that dropped it"

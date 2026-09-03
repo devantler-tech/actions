@@ -178,9 +178,14 @@ run_block="$(yq -r "[${job}.steps[].run // \"\"] | join(\"\n\")" "$signer_workfl
 #    linter here pins it, and a reformat that splits them across lines leaves the call entirely
 #    intact — so the run block's whitespace is collapsed first and the call is found through
 #    any amount of it (#1048). The opening parenthesis is what still excludes both diagnostics.
+#    Comment lines are dropped BEFORE the match: a `# createCommitOnBranch(input: …)` note left
+#    beside a lane that no longer issues the call would otherwise satisfy this assertion on its
+#    own. Assertion 13b's run-text digest would still catch the removal, so this is defence in
+#    depth, but the assertion should answer its own question rather than lean on a later one.
 #    Proven both ways by test-lint-signed-commit-shape-ablation.sh.
 mutation_call_re='createCommitOnBranch\([[:space:]]*input[[:space:]]*:'
-grep -Eq "$mutation_call_re" <<<"$(tr -s '[:space:]' ' ' <<<"$run_block")" ||
+run_block_code="$(sed -e '/^[[:space:]]*#/d' <<<"$run_block")"
+grep -Eq "$mutation_call_re" <<<"$(tr -s '[:space:]' ' ' <<<"$run_block_code")" ||
   fail "apply-fixes must create its commit with the createCommitOnBranch API (a git CLI commit cannot be signed)"
 
 # 3. No step delegates the commit to a CLI-committing action. Checked against `uses:` rather
