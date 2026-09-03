@@ -171,9 +171,16 @@ run_block="$(yq -r "[${job}.steps[].run // \"\"] | join(\"\n\")" "$signer_workfl
 
 # 2. The commit is created through the commit API, not by the git CLI. Matched on the
 #    mutation call itself, not the bare name: the run block also carries diagnostics like
-#    `::error::createCommitOnBranch failed`, so a bare-name match would still pass if the
-#    mutation were removed and only its error handling left behind.
-grep -q 'createCommitOnBranch(input:' <<<"$run_block" ||
+#    `::error::createCommitOnBranch failed` and the response path
+#    `.data.createCommitOnBranch.commit.oid`, so a bare-name match would still pass if the
+#    mutation were removed and only its error handling left behind. Matched by SHAPE, not by
+#    spacing: GraphQL ignores the whitespace between `createCommitOnBranch(` and `input:`, no
+#    linter here pins it, and a reformat that splits them across lines leaves the call entirely
+#    intact — so the run block's whitespace is collapsed first and the call is found through
+#    any amount of it (#1048). The opening parenthesis is what still excludes both diagnostics.
+#    Proven both ways by test-lint-signed-commit-shape-ablation.sh.
+mutation_call_re='createCommitOnBranch\([[:space:]]*input[[:space:]]*:'
+grep -Eq "$mutation_call_re" <<<"$(tr -s '[:space:]' ' ' <<<"$run_block")" ||
   fail "apply-fixes must create its commit with the createCommitOnBranch API (a git CLI commit cannot be signed)"
 
 # 3. No step delegates the commit to a CLI-committing action. Checked against `uses:` rather
