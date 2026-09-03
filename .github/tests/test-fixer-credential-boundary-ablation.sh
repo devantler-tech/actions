@@ -106,6 +106,19 @@ expect_rejected 'a lane serialises the secrets context through a mixed-case func
 expect_rejected 'a lane reads the App private key through a mixed-case bracket form' \
   '.jobs.lint.env.KEY = "${{ Secrets[\"app_private_key\"] }}"' \
   'must not receive the App private key'
+# A job-level non-App secret is its own scope: the App-key assertion fires first on
+# APP_PRIVATE_KEY, so only a different secret proves the generic boundary reads job env.
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane receives a PAT at job level' \
+  '.jobs.tidy.env.GH_TOKEN = "${{ secrets.BOT_PAT }}"' \
+  'any secret other than GITHUB_TOKEN'
+# `uses:` is resolved case-insensitively by GitHub, so a re-cased action name is the same step.
+expect_rejected 'a lane persists the token into a re-cased checkout action' \
+  '(.jobs.lint.steps[] | select(.uses | test("actions/checkout@")) | .uses) |= sub("actions/checkout@"; "Actions/Checkout@") | (.jobs.lint.steps[] | select(.uses | test("Actions/Checkout@")) | .with."persist-credentials") = true' \
+  'persist-credentials: false'
+expect_rejected 'a lane mints an App token through a re-cased action name' \
+  '.jobs."golangci-lint".steps += [{"name": "token", "uses": "Actions/Create-GitHub-App-Token@0000000000000000000000000000000000000000"}]' \
+  'must not mint an App token'
 
 # Control: GITHUB_TOKEN is the one permitted secret, in BOTH spellings and across a line break —
 # a matcher that rejected the bracket form, or read a block scalar line by line, would fail the
@@ -116,5 +129,5 @@ bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
   fail "control: the bracket, split-line and mixed-case spellings of GITHUB_TOKEN must remain permitted"
 echo "ok: control — bracket-form, split-line and mixed-case GITHUB_TOKEN still permitted"
 
-echo "PASS: fixer credential boundary assertion fires for its own reason on 17 mutations"
+echo "PASS: fixer credential boundary assertion fires for its own reason on 20 mutations"
 

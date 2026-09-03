@@ -60,10 +60,12 @@ for job in "$@"; do
   [[ "$contents" == "read" ]] ||
     fail "fixer lane '${job}' must grant contents: read, found '${contents:-unset}' — a write-scoped token here can push PR-authored changes"
 
+  # `uses:` resolves the repository case-insensitively, so `Actions/Checkout@…` is the same
+  # action as `actions/checkout@…`; both action matches below lower-case it first.
   app_token_steps="$(
     yq -r \
       "[.jobs.\"${job}\".steps[]
-        | select((.uses // \"\") | contains(\"create-github-app-token\"))] | length" \
+        | select((.uses // \"\") | downcase | contains(\"create-github-app-token\"))] | length" \
       "$workflow"
   )"
   [[ "$app_token_steps" == "0" ]] ||
@@ -90,7 +92,7 @@ for job in "$@"; do
   persisted_checkouts="$(
     yq -r \
       "[.jobs.\"${job}\".steps[]
-        | select((.uses // \"\") | contains(\"actions/checkout@\"))
+        | select((.uses // \"\") | downcase | contains(\"actions/checkout@\"))
         | select(.with.\"persist-credentials\" != false)] | length" \
       "$workflow"
   )"
