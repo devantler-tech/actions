@@ -12,8 +12,9 @@
 #
 # Deliberately NOT asserted here: that the job holds no GITHUB_TOKEN at all, or no write scope of
 # any kind. The org-required Go pipeline's MegaLinter lane keeps `issues: write` and
-# `pull-requests: write` for its reporters, and a token scoped `contents: read` cannot push. What
-# is asserted is exactly what would restore a write path to the branch.
+# `pull-requests: write` for its reporters, and a token scoped `contents: read` cannot push. Every
+# OTHER secret is refused: an App token, the App private key, or any PAT handed to a step or a
+# checkout is a credential GitHub does not scope to this job, so it is a write path by default.
 
 set -euo pipefail
 
@@ -43,9 +44,11 @@ for job in "$@"; do
   [[ "$app_token_steps" == "0" ]] ||
     fail "fixer lane '${job}' must not mint an App token — an installation token is valid on every repository the App is installed on"
 
+  # The WHOLE job, not only its steps: a job-level `env:` reaches every step and would escape a
+  # steps-only walk.
   app_key_refs="$(
     yq -r \
-      "[.jobs.\"${job}\".steps[]
+      "[.jobs.\"${job}\"
         | ..
         | select(tag == \"!!str\")
         | select(test(\"secrets\\\\.APP_PRIVATE_KEY\"))] | length" \
@@ -53,6 +56,20 @@ for job in "$@"; do
   )"
   [[ "$app_key_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive the App private key"
+
+  # GITHUB_TOKEN is the one credential GitHub scopes to this job's `permissions`; any other
+  # `secrets.*` reference — a PAT on a checkout, a bot token in a step's env — is unscoped.
+  other_secret_refs="$(
+    yq -r \
+      "[.jobs.\"${job}\"
+        | ..
+        | select(tag == \"!!str\")
+        | select(test(\"secrets\\\\.\"))
+        | select(test(\"secrets\\\\.GITHUB_TOKEN\") | not)] | length" \
+      "$workflow"
+  )"
+  [[ "$other_secret_refs" == "0" ]] ||
+    fail "fixer lane '${job}' must not receive any secret other than GITHUB_TOKEN — an unscoped credential here is a write path"
 
   persisted_checkouts="$(
     yq -r \

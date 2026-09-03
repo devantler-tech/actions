@@ -3844,7 +3844,11 @@ jobs:
       - name: 🔐 Assert the org-required Go pipeline's fixer lanes hold no write credential
         shell: bash
         run: |
-          bash .github/tests/test-fixer-credential-boundary.sh .github/workflows/validate-go-project.yaml tidy golangci-lint lint
+          # The lanes are derived from the workflow, so a fourth fixer lane is covered by construction.
+          lanes=()
+          while IFS= read -r lane; do [[ -n "$lane" ]] && lanes+=("$lane"); done < <(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' .github/workflows/validate-go-project.yaml)
+          [[ ${#lanes[@]} -ge 1 ]] || { echo "::error::no fixer lane exports fixes-created"; exit 1; }
+          bash .github/tests/test-fixer-credential-boundary.sh .github/workflows/validate-go-project.yaml "${lanes[@]}"
           bash .github/tests/test-fixer-credential-boundary-ablation.sh
 
       # The apply-fixes job writes to contributors' branches, so its commits must be signed

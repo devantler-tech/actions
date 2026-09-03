@@ -10,7 +10,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 assertion="$repo_root/.github/tests/test-fixer-credential-boundary.sh"
 workflow="$repo_root/.github/workflows/validate-go-project.yaml"
-lanes=(tidy golangci-lint lint)
+# The fixer lanes are the jobs that export a patch for apply-signed-fixes.yaml. Deriving them
+# means a fourth fixer lane is covered by construction instead of by someone remembering.
+lanes=()
+while IFS= read -r lane; do
+  [[ -n "$lane" ]] && lanes+=("$lane")
+done < <(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' "$workflow")
+[[ ${#lanes[@]} -ge 1 ]] || { echo "FAIL: no fixer lane exports fixes-created; the assertion would run over nothing" >&2; exit 1; }
 
 fail() {
   echo "FAIL: $*" >&2
@@ -48,6 +54,14 @@ expect_rejected 'a lane mints an App token' \
 expect_rejected 'a lane receives the App private key' \
   '.jobs.lint.steps[0].env.KEY = "${{ secrets.APP_PRIVATE_KEY }}"' \
   'must not receive the App private key'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane receives the App private key at job level' \
+  '.jobs.tidy.env.KEY = "${{ secrets.APP_PRIVATE_KEY }}"' \
+  'must not receive the App private key'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane hands a PAT to its checkout' \
+  '(.jobs.lint.steps[] | select(.uses | test("actions/checkout@")) | .with.token) = "${{ secrets.BOT_PAT }}"' \
+  'any secret other than GITHUB_TOKEN'
 expect_rejected 'a lane persists the token into its checkout' \
   '(.jobs.lint.steps[] | select(.uses | test("actions/checkout@")) | .with."persist-credentials") = true' \
   'persist-credentials: false'
@@ -55,4 +69,4 @@ expect_rejected 'a lane named for assertion does not exist' \
   'del(.jobs.tidy)' \
   'does not exist'
 
-echo "PASS: fixer credential boundary assertion fires for its own reason on 6 mutations"
+echo "PASS: fixer credential boundary assertion fires for its own reason on 8 mutations"
