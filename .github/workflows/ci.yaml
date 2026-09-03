@@ -3859,6 +3859,16 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-signed-commit.sh
 
+      # The assertion above matches the createCommitOnBranch CALL by shape, not by spacing:
+      # a reformat that splits `createCommitOnBranch(` from `input:` leaves the call intact,
+      # and refusing it for whitespace would be a false positive that trains people to
+      # loosen the guard. This ablation proves both directions on fixtures — a reformatted
+      # call is still recognised, a lane that dropped the mutation and kept only its
+      # diagnostics is still refused — so neither can regress silently (#1048).
+      - name: 🔏 Ablate the signing-API assertion's call-shape match
+        shell: bash
+        run: bash .github/tests/test-lint-signed-commit-shape-ablation.sh
+
       # validate-go-project.yaml is the ORG-REQUIRED workflow: it runs on every Go pull request
       # in the organisation and carries three fixer lanes (tidy, golangci-lint, MegaLinter), so
       # it writes far more automation commits than lint.yaml does. The assertion is file-scoped,
