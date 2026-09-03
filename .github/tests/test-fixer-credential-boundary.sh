@@ -18,7 +18,9 @@
 #
 # Every Actions expression form counts — `secrets.X`, `secrets['X']`, `secrets["X"]` and a
 # serialised `toJSON(secrets)` — because a matcher that reads only the dotted spelling is a
-# boundary with a documented hole in it.
+# boundary with a documented hole in it. Every scalar is matched COMPLETE, never line by line: a
+# literal block scalar can carry `${{` on one line and `secrets.NAME` on the next, and a
+# line-wise grep would keep the first and discard the second.
 
 set -euo pipefail
 
@@ -31,18 +33,21 @@ fail() {
   exit 1
 }
 
-# Every string under the WHOLE job — a job-level `env:` reaches every step and would escape a
-# steps-only walk.
-job_strings() { # <job>
-  yq -r ".jobs.\"$1\" | .. | select(tag == \"!!str\")" "$workflow"
+# Count the strings reachable by the lane that satisfy a yq filter: the workflow-level `env:`,
+# which every job inherits, plus every string under the WHOLE job — a job-level `env:` reaches
+# every step and would escape a steps-only walk. yq hands each scalar to the filter whole, so a
+# multi-line value is one string, not one line per match.
+lane_scalars() { # <job> <yq-filter-over-each-string>
+  yq -r "[((.env // {}), .jobs.\"$1\") | .. | select(tag == \"!!str\") | $2] | length" "$workflow"
 }
 
-# The dotted and bracketed spellings of one secret name, as an extended regex over Actions
-# expression text: `secrets.NAME`, `secrets['NAME']`, `secrets["NAME"]`, with optional spaces.
-# Word boundaries are spelled out ([^[:alnum:]_]|$) rather than \b, which BSD sed does not know;
-# the boundary character is captured as group 2 so a strip can put it back.
+# The dotted and bracketed spellings of one secret name, as a Go regular expression spelled for
+# a yq double-quoted string: `secrets.NAME`, `secrets['NAME']`, `secrets["NAME"]`, with optional
+# spaces. Word boundaries are spelled out ([^[:alnum:]_]|$) rather than \b; the boundary
+# character is captured as group 2 so a substitution can put it back.
 secret_ref_regex() { # <NAME>
-  printf 'secrets[[:space:]]*(\\.%s([^[:alnum:]_]|$)|\\[[[:space:]]*["'"'"']%s["'"'"'][[:space:]]*\\])' "$1" "$1"
+  local quote='[\"'"'"']'
+  printf '%s' "secrets[[:space:]]*(\\\\.$1([^[:alnum:]_]|\$)|\\\\[[[:space:]]*${quote}$1${quote}[[:space:]]*\\\\])"
 }
 
 for job in "$@"; do
@@ -62,20 +67,20 @@ for job in "$@"; do
   [[ "$app_token_steps" == "0" ]] ||
     fail "fixer lane '${job}' must not mint an App token — an installation token is valid on every repository the App is installed on"
 
-  app_key_refs="$(job_strings "$job" | grep -Ec "$(secret_ref_regex APP_PRIVATE_KEY)" || true)"
+  app_key_refs="$(lane_scalars "$job" "select(test(\"$(secret_ref_regex APP_PRIVATE_KEY)\"))")"
   [[ "$app_key_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive the App private key"
 
   # GITHUB_TOKEN is the one credential GitHub scopes to this job's `permissions`; any other use
-  # of the `secrets` context is unscoped. The allowed spellings of GITHUB_TOKEN are stripped
-  # first, so a string carrying both an allowed and a forbidden reference still fails, and a
-  # bare word "secrets" in prose (a run-step comment) is not an expression and does not count.
-  # shellcheck disable=SC2016 # the literal expression opener is what is being matched
+  # of the `secrets` context is unscoped. Only strings carrying an expression opener are read, so
+  # a bare word "secrets" in prose (a run-step comment) does not count; the allowed spellings of
+  # GITHUB_TOKEN are stripped first, so a string carrying both an allowed and a forbidden
+  # reference still fails.
   other_secret_refs="$(
-    job_strings "$job" |
-      grep -F '${{' |
-      sed -E "s/$(secret_ref_regex GITHUB_TOKEN)/\\2/g" |
-      grep -Ec '(^|[^[:alnum:]_])secrets([^[:alnum:]_]|$)' || true
+    lane_scalars "$job" \
+      "select(test(\"\\\\$\\\\{\\\\{\"))
+        | sub(\"$(secret_ref_regex GITHUB_TOKEN)\"; \"\${2}\")
+        | select(test(\"(^|[^[:alnum:]_])secrets([^[:alnum:]_]|\$)\"))"
   )"
   [[ "$other_secret_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive any secret other than GITHUB_TOKEN — an unscoped credential here is a write path"

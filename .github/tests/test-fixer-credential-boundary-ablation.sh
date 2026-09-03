@@ -80,14 +80,27 @@ expect_rejected 'a lane persists the token into its checkout' \
 expect_rejected 'a lane named for assertion does not exist' \
   'del(.jobs.tidy)' \
   'does not exist'
-
-# Control: GITHUB_TOKEN is the one permitted secret, in BOTH spellings — a matcher that rejected
-# the bracket form would fail the real workflow the day someone reformatted an expression.
+# shellcheck disable=SC2016 # literal Actions expression handed to yq; the \n is a real newline inside the scalar
+expect_rejected 'a lane receives a PAT through a block scalar that splits the expression across lines' \
+  '.jobs.tidy.steps[0].env.GH_TOKEN = "${{\n  secrets.BOT_PAT }}"' \
+  'any secret other than GITHUB_TOKEN'
 # shellcheck disable=SC2016 # literal Actions expression handed to yq
-yq '.jobs.tidy.steps[0].env.TOKEN = "${{ secrets[\"GITHUB_TOKEN\"] }}"' "$workflow" >"$work/allowed.yaml"
-bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
-  fail "control: the bracket spelling of GITHUB_TOKEN must remain permitted"
-echo "ok: control — bracket-form GITHUB_TOKEN still permitted"
+expect_rejected 'the workflow-level env hands every lane a PAT' \
+  '.env.GH_TOKEN = "${{ secrets.BOT_PAT }}"' \
+  'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'the workflow-level env hands every lane the App private key' \
+  '.env.KEY = "${{ secrets.APP_PRIVATE_KEY }}"' \
+  'must not receive the App private key'
 
-echo "PASS: fixer credential boundary assertion fires for its own reason on 11 mutations"
+# Control: GITHUB_TOKEN is the one permitted secret, in BOTH spellings and across a line break —
+# a matcher that rejected the bracket form, or read a block scalar line by line, would fail the
+# real workflow the day someone reformatted an expression.
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+yq '.jobs.tidy.steps[0].env.TOKEN = "${{ secrets[\"GITHUB_TOKEN\"] }}" | .jobs.tidy.steps[0].env.SPLIT = "${{\n  secrets.GITHUB_TOKEN }}"' "$workflow" >"$work/allowed.yaml"
+bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
+  fail "control: the bracket and split-line spellings of GITHUB_TOKEN must remain permitted"
+echo "ok: control — bracket-form and split-line GITHUB_TOKEN still permitted"
+
+echo "PASS: fixer credential boundary assertion fires for its own reason on 14 mutations"
 
