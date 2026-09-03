@@ -51,7 +51,7 @@ lint_token_refs() { # <workflow>
     '[((.env // {}), .jobs.lint)
       | ..
       | select(tag == "!!str")
-      | select(test("secrets[[:space:]]*(\\.|\\[)|github[[:space:]]*(\\.token|\\[[[:space:]]*[\"'"'"']token[\"'"'"'][[:space:]]*\\])|toJSON[[:space:]]*\\([[:space:]]*(secrets|github)"))] | length' \
+      | select(test("(?i)secrets[[:space:]]*(\\.|\\[)|github[[:space:]]*(\\.token|\\[[[:space:]]*[\"'"'"']token[\"'"'"'][[:space:]]*\\])|toJSON[[:space:]]*\\([[:space:]]*(secrets|github)"))] | length' \
     "$1"
 }
 lint_tokens="$(lint_token_refs "$lint_workflow")"
@@ -64,7 +64,7 @@ lint_tokens="$(lint_token_refs "$lint_workflow")"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 # shellcheck disable=SC2016 # literal Actions expressions handed to yq
-for mutation in '.env.TOKEN = "${{ github.token }}"' '.jobs.lint.env.TOKEN = "${{ github.token }}"'; do
+for mutation in '.env.TOKEN = "${{ github.token }}"' '.jobs.lint.env.TOKEN = "${{ github.token }}"' '.jobs.lint.env.TOKEN = "${{ GITHUB.TOKEN }}"' '.jobs.lint.env.ALL = "${{ toJson(Secrets) }}"'; do
   yq "$mutation" "$lint_workflow" >"$work/mutant.yaml"
   [[ "$(lint_token_refs "$work/mutant.yaml")" == "1" ]] ||
     fail "the lint token scan must count a github.token planted with: $mutation"

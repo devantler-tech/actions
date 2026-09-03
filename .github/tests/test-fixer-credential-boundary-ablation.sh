@@ -92,15 +92,29 @@ expect_rejected 'the workflow-level env hands every lane a PAT' \
 expect_rejected 'the workflow-level env hands every lane the App private key' \
   '.env.KEY = "${{ secrets.APP_PRIVATE_KEY }}"' \
   'must not receive the App private key'
+# Context, function and secret names are case-insensitive in Actions expressions, so a
+# lowercase-only matcher is a boundary with a spelling-shaped hole in it.
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane reads a PAT through an upper-case context name' \
+  '.jobs.tidy.steps[0].env.GH_TOKEN = "${{ SECRETS.BOT_PAT }}"' \
+  'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane serialises the secrets context through a mixed-case function name' \
+  '.jobs.tidy.steps[0].env.ALL = "${{ toJson(Secrets) }}"' \
+  'any secret other than GITHUB_TOKEN'
+# shellcheck disable=SC2016 # literal Actions expression handed to yq
+expect_rejected 'a lane reads the App private key through a mixed-case bracket form' \
+  '.jobs.lint.env.KEY = "${{ Secrets[\"app_private_key\"] }}"' \
+  'must not receive the App private key'
 
 # Control: GITHUB_TOKEN is the one permitted secret, in BOTH spellings and across a line break —
 # a matcher that rejected the bracket form, or read a block scalar line by line, would fail the
 # real workflow the day someone reformatted an expression.
 # shellcheck disable=SC2016 # literal Actions expression handed to yq
-yq '.jobs.tidy.steps[0].env.TOKEN = "${{ secrets[\"GITHUB_TOKEN\"] }}" | .jobs.tidy.steps[0].env.SPLIT = "${{\n  secrets.GITHUB_TOKEN }}"' "$workflow" >"$work/allowed.yaml"
+yq '.jobs.tidy.steps[0].env.TOKEN = "${{ secrets[\"GITHUB_TOKEN\"] }}" | .jobs.tidy.steps[0].env.SPLIT = "${{\n  secrets.GITHUB_TOKEN }}" | .jobs.tidy.steps[0].env.MIXED = "${{ Secrets.github_token }}"' "$workflow" >"$work/allowed.yaml"
 bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
-  fail "control: the bracket and split-line spellings of GITHUB_TOKEN must remain permitted"
-echo "ok: control — bracket-form and split-line GITHUB_TOKEN still permitted"
+  fail "control: the bracket, split-line and mixed-case spellings of GITHUB_TOKEN must remain permitted"
+echo "ok: control — bracket-form, split-line and mixed-case GITHUB_TOKEN still permitted"
 
-echo "PASS: fixer credential boundary assertion fires for its own reason on 14 mutations"
+echo "PASS: fixer credential boundary assertion fires for its own reason on 17 mutations"
 

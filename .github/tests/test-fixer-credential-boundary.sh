@@ -18,7 +18,9 @@
 #
 # Every Actions expression form counts — `secrets.X`, `secrets['X']`, `secrets["X"]` and a
 # serialised `toJSON(secrets)` — because a matcher that reads only the dotted spelling is a
-# boundary with a documented hole in it. Every scalar is matched COMPLETE, never line by line: a
+# boundary with a documented hole in it. Context and function names are case-insensitive in
+# Actions expressions, and so are secret names, so every scan matches case-insensitively:
+# `SECRETS.BOT_PAT` and `toJson(Secrets)` are the same credential. Every scalar is matched COMPLETE, never line by line: a
 # literal block scalar can carry `${{` on one line and `secrets.NAME` on the next, and a
 # line-wise grep would keep the first and discard the second.
 
@@ -47,7 +49,7 @@ lane_scalars() { # <job> <yq-filter-over-each-string>
 # character is captured as group 2 so a substitution can put it back.
 secret_ref_regex() { # <NAME>
   local quote='[\"'"'"']'
-  printf '%s' "secrets[[:space:]]*(\\\\.$1([^[:alnum:]_]|\$)|\\\\[[[:space:]]*${quote}$1${quote}[[:space:]]*\\\\])"
+  printf '%s' "(?i)secrets[[:space:]]*(\\\\.$1([^[:alnum:]_]|\$)|\\\\[[[:space:]]*${quote}$1${quote}[[:space:]]*\\\\])"
 }
 
 for job in "$@"; do
@@ -80,7 +82,7 @@ for job in "$@"; do
     lane_scalars "$job" \
       "select(test(\"\\\\$\\\\{\\\\{\"))
         | sub(\"$(secret_ref_regex GITHUB_TOKEN)\"; \"\${2}\")
-        | select(test(\"(^|[^[:alnum:]_])secrets([^[:alnum:]_]|\$)\"))"
+        | select(test(\"(?i)(^|[^[:alnum:]_])secrets([^[:alnum:]_]|\$)\"))"
   )"
   [[ "$other_secret_refs" == "0" ]] ||
     fail "fixer lane '${job}' must not receive any secret other than GITHUB_TOKEN — an unscoped credential here is a write path"
