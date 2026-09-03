@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Assert that a fixer lane holds no credential that can write to the branch it is linting.
+#
+#   bash .github/tests/test-fixer-credential-boundary.sh <workflow> <job> [<job> ...]
+#
+# A fixer lane runs tooling configured by the pull request under review — `go mod tidy`,
+# `golangci-lint --fix`, MegaLinter — so anything it holds is reachable from PR-authored code.
+# The commit is made elsewhere, on a fresh runner, by apply-signed-fixes.yaml. These are the
+# WORKFLOW-SCOPED assertions: they read only the named workflow's jobs, so they can be pointed
+# at any workflow, unlike the self-test-caller assertions that stay in
+# test-lint-credential-boundary.sh.
+#
+# Deliberately NOT asserted here: that the job holds no GITHUB_TOKEN at all, or no write scope of
+# any kind. The org-required Go pipeline's MegaLinter lane keeps `issues: write` and
+# `pull-requests: write` for its reporters, and a token scoped `contents: read` cannot push. Every
+# OTHER secret is refused: an App token, the App private key, or any PAT handed to a step or a
+# checkout is a credential GitHub does not scope to this job, so it is a write path by default.
+#
+# Every Actions expression form counts — `secrets.X`, `secrets['X']`, `secrets["X"]` and a
+# serialised `toJSON(secrets)` — because a matcher that reads only the dotted spelling is a
+# boundary with a documented hole in it. Context and function names are case-insensitive in
+# Actions expressions, and so are secret names, so every scan matches case-insensitively:
+# `SECRETS.BOT_PAT` and `toJson(Secrets)` are the same credential. Every scalar is matched COMPLETE, never line by line: a
+# literal block scalar can carry `${{` on one line and `secrets.NAME` on the next, and a
+# line-wise grep would keep the first and discard the second.
+
+set -euo pipefail
+
+workflow="${1:?usage: $0 <workflow> <job> [<job> ...]}"
+shift
+[[ $# -ge 1 ]] || { echo "usage: $0 <workflow> <job> [<job> ...]" >&2; exit 2; }
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+# Count the strings reachable by the lane that satisfy a yq filter: the workflow-level `env:`,
+# which every job inherits, plus every string under the WHOLE job — a job-level `env:` reaches
+# every step and would escape a steps-only walk. yq hands each scalar to the filter whole, so a
+# multi-line value is one string, not one line per match.
+lane_scalars() { # <job> <yq-filter-over-each-string>
+  yq -r "[((.env // {}), .jobs.\"$1\") | .. | select(tag == \"!!str\") | $2] | length" "$workflow"
+}
+
+# The dotted and bracketed spellings of one secret name, as a Go regular expression spelled for
+# a yq double-quoted string: `secrets.NAME`, `secrets['NAME']`, `secrets["NAME"]`, with optional
+# spaces. Word boundaries are spelled out ([^[:alnum:]_]|$) rather than \b; the boundary
+# character is captured as group 2 so a substitution can put it back.
+secret_ref_regex() { # <NAME>
+  local quote='[\"'"'"']'
+  printf '%s' "(?i)secrets[[:space:]]*(\\\\.$1([^[:alnum:]_]|\$)|\\\\[[[:space:]]*${quote}$1${quote}[[:space:]]*\\\\])"
+}
+
+for job in "$@"; do
+  yq -e ".jobs.\"${job}\"" "$workflow" >/dev/null 2>&1 ||
+    fail "job '${job}' does not exist in ${workflow}; an assertion over a missing job proves nothing"
+
+  contents="$(yq -r ".jobs.\"${job}\".permissions.contents // \"\"" "$workflow")"
+  [[ "$contents" == "read" ]] ||
+    fail "fixer lane '${job}' must grant contents: read, found '${contents:-unset}' — a write-scoped token here can push PR-authored changes"
+
+  # `uses:` resolves the repository case-insensitively, so `Actions/Checkout@…` is the same
+  # action as `actions/checkout@…`; both action matches below lower-case it first.
+  app_token_steps="$(
+    yq -r \
+      "[.jobs.\"${job}\".steps[]
+        | select((.uses // \"\") | downcase | contains(\"create-github-app-token\"))] | length" \
+      "$workflow"
+  )"
+  [[ "$app_token_steps" == "0" ]] ||
+    fail "fixer lane '${job}' must not mint an App token — an installation token is valid on every repository the App is installed on"
+
+  app_key_refs="$(lane_scalars "$job" "select(test(\"$(secret_ref_regex APP_PRIVATE_KEY)\"))")"
+  [[ "$app_key_refs" == "0" ]] ||
+    fail "fixer lane '${job}' must not receive the App private key"
+
+  # GITHUB_TOKEN is the one credential GitHub scopes to this job's `permissions`; any other use
+  # of the `secrets` context is unscoped. Only strings carrying an expression opener are read, so
+  # a bare word "secrets" in prose (a run-step comment) does not count; the allowed spellings of
+  # GITHUB_TOKEN are stripped first, so a string carrying both an allowed and a forbidden
+  # reference still fails.
+  other_secret_refs="$(
+    lane_scalars "$job" \
+      "select(test(\"\\\\$\\\\{\\\\{\"))
+        | sub(\"$(secret_ref_regex GITHUB_TOKEN)\"; \"\${2}\")
+        | select(test(\"(?i)(^|[^[:alnum:]_])secrets([^[:alnum:]_]|\$)\"))"
+  )"
+  [[ "$other_secret_refs" == "0" ]] ||
+    fail "fixer lane '${job}' must not receive any secret other than GITHUB_TOKEN — an unscoped credential here is a write path"
+
+  persisted_checkouts="$(
+    yq -r \
+      "[.jobs.\"${job}\".steps[]
+        | select((.uses // \"\") | downcase | contains(\"actions/checkout@\"))
+        | select(.with.\"persist-credentials\" != false)] | length" \
+      "$workflow"
+  )"
+  [[ "$persisted_checkouts" == "0" ]] ||
+    fail "every checkout in fixer lane '${job}' must set persist-credentials: false, so the token is not left in the working tree the fixer runs in"
+done
+
+echo "PASS: fixer lane(s) $* in ${workflow} hold no credential that can write to the branch"

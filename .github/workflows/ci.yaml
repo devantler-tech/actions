@@ -3836,6 +3836,21 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-credential-boundary.sh
 
+      # validate-go-project.yaml is the ORG-REQUIRED workflow, so its three fixer lanes run
+      # PR-authored tooling on essentially every Go pull request in the organisation. The
+      # boundary that keeps a write credential out of those lanes is asserted here so that a
+      # future edit restoring `contents: write` or an App token to one of them fails this job;
+      # the ablation proves each assertion fires for its own reason, not incidentally.
+      - name: 🔐 Assert the org-required Go pipeline's fixer lanes hold no write credential
+        shell: bash
+        run: |
+          # The lanes are derived from the workflow, so a fourth fixer lane is covered by construction.
+          lanes=()
+          while IFS= read -r lane; do [[ -n "$lane" ]] && lanes+=("$lane"); done < <(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' .github/workflows/validate-go-project.yaml)
+          [[ ${#lanes[@]} -ge 1 ]] || { echo "::error::no fixer lane exports fixes-created"; exit 1; }
+          bash .github/tests/test-fixer-credential-boundary.sh .github/workflows/validate-go-project.yaml "${lanes[@]}"
+          bash .github/tests/test-fixer-credential-boundary-ablation.sh
+
       # The apply-fixes job writes to contributors' branches, so its commits must be signed
       # — which is only possible through the commit API. The workflow proves that at runtime
       # on the commit it just made; this is the static half, so a reshape back to a CLI
