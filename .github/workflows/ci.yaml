@@ -2693,6 +2693,8 @@ jobs:
       pull-requests: write
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 
   # ── Flag-ON counterpart of test-validate-go-project (the both-states rule) ──
   # test-validate-go-project above omits `scan-default-branch` entirely, so it exercises

@@ -1042,3 +1042,29 @@ jobs:
           file: ${{ inputs.working-directory || '.' }}/coverage.cobertura.xml
           language: Go
           label: code-coverage/go
+
+  # THROWAWAY (proof branch only, never merged): measure which github.* value tells a direct
+  # org-required run apart from a workflow_call invocation, so the activation gate is keyed on
+  # a measured identity rather than an assumed one (devantler-tech/actions#1075).
+  probe-invocation-identity:
+    name: 🔬 Probe invocation identity
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Print identity
+        env:
+          WORKFLOW: ${{ github.workflow }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          JOB_WORKFLOW_SHA: ${{ github.job_workflow_sha }}
+          INPUTS_JSON: ${{ toJSON(inputs) }}
+          APPLY_INPUT: ${{ inputs.apply-signed-fixes }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "workflow=${WORKFLOW}"
+          echo "workflow_ref=${WORKFLOW_REF}"
+          echo "workflow_sha=${WORKFLOW_SHA}"
+          echo "job_workflow_sha=${JOB_WORKFLOW_SHA}"
+          echo "inputs=${INPUTS_JSON}"
+          echo "apply-signed-fixes=[${APPLY_INPUT}]"
+          echo "event=${EVENT}"
