@@ -2668,8 +2668,10 @@ jobs:
     # Fixture-targeted: validate the known-good Go fixture (this repo is not itself a Go module).
     with:
       working-directory: .github/tests/go-valid-fixture
-      # apply-signed-fixes is omitted deliberately: its default-off read-only state must run the
-      # fixers and reject an unexpected dirty tree without committing to the branch under test.
+      # The OFF state, passed explicitly now that the input defaults to true: the read-only path
+      # must still run the fixers and reject an unexpected dirty tree without committing to the
+      # branch under test.
+      apply-signed-fixes: false
     permissions:
       contents: write
       pull-requests: write
@@ -2677,10 +2679,11 @@ jobs:
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
   # ── Flag-ON counterpart for signed auto-fixes ──
-  # The default-off job above proves the read-only path. This call opts in against the same
+  # The opted-out job above proves the read-only path. This call opts in against the same
   # known-clean fixture, so GitHub instantiates the privileged path without producing an
-  # artifact or mutating the pull request branch. A successful signing-path self-test would
-  # necessarily change that branch and remains a controlled post-release consumer proof.
+  # artifact or mutating the pull request branch. The success arm was executed once for real
+  # on a throwaway branch (devantler-tech/actions#1129): the tidy lane committed
+  # `chore: tidy go modules` through the App and read it back verified.
   test-validate-go-project-apply-signed-fixes:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Go Project - Signed Fixes Opted In"
@@ -2713,7 +2716,8 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       scan-default-branch: true
-      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
+      # Opted out explicitly: this self-test proves a different input and must not write to its branch.
+      apply-signed-fixes: false
     permissions:
       contents: write
       pull-requests: write
@@ -2746,7 +2750,8 @@ jobs:
     with:
       working-directory: .github/tests/go-valid-fixture
       test-default-branch: false
-      # apply-signed-fixes stays default-off, so this self-test cannot write to its branch.
+      # Opted out explicitly: this self-test proves a different input and must not write to its branch.
+      apply-signed-fixes: false
     permissions:
       contents: write
       pull-requests: write
@@ -3886,7 +3891,10 @@ jobs:
       # validate-go-project.yaml is also the org-required workflow, reached directly from
       # pull_request, where `inputs` is empty — so a default:true input read as a bare truthy
       # gate is false there, and every self-test here (which does use workflow_call) stays green
-      # while the guarded behaviour is off for every consumer.
+      # while the guarded behaviour is silently off for that direct run. The signed-fixes decision
+      # deliberately does NOT rely on the input there: it recognises the direct run by its empty
+      # inputs object and its own workflow ref instead (#1075), which this guard does not scan —
+      # test-validate-go-signed-fixes-contract.sh pins that expression.
       - name: 🎚️ Assert multi-trigger input gates cannot silently evaluate false
         shell: bash
         run: bash .github/tests/test-multi-trigger-input-gate-polarity.sh

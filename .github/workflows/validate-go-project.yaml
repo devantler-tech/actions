@@ -10,8 +10,8 @@ on:
       apply-signed-fixes:
         required: false
         type: boolean
-        default: false
-        description: "Opt in to signed auto-fix commits on same-repository pull requests. Off by default while this new write path is rolled out. When off (and on forks or non-PR events), fixer lanes still run and fail with their diff when changes remain."
+        default: true
+        description: "Commit each fixer lane's auto-fixes back to the pull request branch as a signed commit. On by default: a same-repository pull request gets its fixes committed rather than a red check. Pass false to keep a caller read-only, in which case a fixer that changes the tree fails with its diff. Forks, dependency-bot branches and non-PR events are always read-only whatever this says. The org-required direct run has no inputs at all, so it is recognised by its workflow ref and treated as opted in (devantler-tech/actions#1075)."
       working-directory:
         required: false
         type: string
@@ -76,6 +76,17 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       govulncheck: ${{ steps.filter.outputs.govulncheck }}
       lintable: ${{ steps.filter.outputs.lintable }}
+      # One decision, read by every fixer lane and every apply job: are signed auto-fix commits
+      # enabled for this invocation? A workflow_call caller answers through the input. The
+      # org-required direct run cannot: outside workflow_call the `inputs` context is EMPTY, so
+      # the input reads as null there and no default can reach it. That run is recognised by two
+      # facts a called run never has at once: an empty inputs object (a call always carries its
+      # declared inputs, defaults filled in) and its own path in the workflow ref (a called
+      # workflow inherits the CALLER's ref). Both measured on #1129. The empty-inputs test is
+      # what keeps a caller's explicit `apply-signed-fixes: false` honoured even if its wrapper
+      # happens to share this file's path: null, false and '' all compare equal in an expression,
+      # so no comparison on the input alone can tell absent from false.
+      signed-fixes: ${{ inputs.apply-signed-fixes == true || (toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@')) }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
@@ -230,7 +241,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -238,7 +249,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -319,7 +330,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -327,7 +338,7 @@ jobs:
           if-no-files-found: error
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -649,7 +660,7 @@ jobs:
           fi
 
       - name: 📤 Upload applied fixes
-        if: ${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}
@@ -662,7 +673,7 @@ jobs:
       # something they can act on locally. Gated on the fork flag directly now that this job no
       # longer mints a token whose failure used to stand in for it.
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -678,12 +689,15 @@ jobs:
 
   # ── Applying fixes ───────────────────────────────────────────────────────────────────────
   #
-  # Signed branch writes are a new privileged path, so `apply-signed-fixes` is deliberately
-  # default-off. That also fails closed for this workflow's direct pull_request trigger, where
-  # workflow_call defaults are absent and the input evaluates falsey. Fixer jobs still run in
-  # that state; if they change the tree, their read-only gate prints the diff and fails instead
-  # of silently discarding the finding. Consumers can opt in through workflow_call while the
-  # direct org-required path remains read-only until a later, separately reviewed rollout.
+  # Signed auto-fix commits are ON by default (devantler-tech/actions#1075). The gate is one
+  # decision, `needs.changes.outputs.signed-fixes`, rather than the raw input, because the
+  # org-required direct run has NO `inputs` context: the input reads as null there, a
+  # `default:` can never reach it, and a gate written on the input alone leaves exactly the
+  # callers that produce the unsigned commits read-only forever. The direct run is recognised
+  # by its own workflow ref instead (a called workflow inherits the caller's), and a
+  # workflow_call caller opts out with `apply-signed-fixes: false`. Fixer jobs still run when
+  # off; if they change the tree, their read-only gate prints the diff and fails instead of
+  # silently discarding the finding.
   #
   # The commit itself lives in apply-signed-fixes.yaml so every fixer lane in this repo commits
   # the same signed way: a `git commit` on a runner cannot be signed, and an unsigned automation
@@ -715,8 +729,8 @@ jobs:
   # such clause: it has one predecessor and keeps the implicit `success()`.
   apply-tidy-fixes:
     name: 📦 Tidy - apply fixes
-    needs: tidy
-    if: ${{ inputs.apply-signed-fixes == true }}
+    needs: [changes, tidy]
+    if: ${{ needs.changes.outputs.signed-fixes == 'true' }}
     uses: devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@78ce1aca1e4736f4c4fe24975b085938805421f7
     permissions:
       contents: read
@@ -730,8 +744,8 @@ jobs:
 
   apply-golangci-lint-fixes:
     name: 🧹 Lint - golangci-lint - apply fixes
-    needs: [golangci-lint, apply-tidy-fixes]
-    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}
+    needs: [changes, golangci-lint, apply-tidy-fixes]
+    if: ${{ !cancelled() && needs.changes.outputs.signed-fixes == 'true' && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}
     uses: devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@78ce1aca1e4736f4c4fe24975b085938805421f7
     permissions:
       contents: read
@@ -745,8 +759,8 @@ jobs:
 
   apply-fixes:
     name: 🧹 Lint - apply fixes
-    needs: [lint, apply-golangci-lint-fixes]
-    if: ${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}
+    needs: [changes, lint, apply-golangci-lint-fixes]
+    if: ${{ !cancelled() && needs.changes.outputs.signed-fixes == 'true' && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}
     uses: devantler-tech/actions/.github/workflows/apply-signed-fixes.yaml@78ce1aca1e4736f4c4fe24975b085938805421f7
     permissions:
       contents: read
