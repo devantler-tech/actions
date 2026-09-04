@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.3.0](https://github.com/devantler-tech/actions/compare/v13.2.3...v13.3.0) (2026-09-04)
+
+
+### Features
+
+* **security:** turn signed auto-fix commits on, including for the org-required Go run ([#1134](https://github.com/devantler-tech/actions/issues/1134)) ([86bf055](https://github.com/devantler-tech/actions/commit/86bf0556824f12bb7f639c082b8b5edb29e4bd59))
+
 ## [13.2.3](https://github.com/devantler-tech/actions/compare/v13.2.2...v13.2.3) (2026-08-28)
 
 
