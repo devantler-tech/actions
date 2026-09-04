@@ -27,8 +27,17 @@ bash .github/tests/test-required-workflow-no-local-calls.sh "$workflow"
 input='.["on"].workflow_call.inputs."apply-signed-fixes"'
 [[ "$(yq -r "${input}.type // \"\"" "$workflow")" == "boolean" ]] ||
   fail "apply-signed-fixes must be a boolean workflow_call input"
-[[ "$(yq -r "${input}.default" "$workflow")" == "false" ]] ||
-  fail "apply-signed-fixes must default to false; signed branch writes are rollout-gated"
+[[ "$(yq -r "${input}.default" "$workflow")" == "true" ]] ||
+  fail "apply-signed-fixes must default to true; signed auto-fix commits are the shipped state (#1075)"
+
+# The one decision every gate below reads. The org-required direct run has no `inputs` context at
+# all, so a gate written on the input alone can never enable that run; it is recognised by its own
+# workflow ref instead (a called workflow inherits the CALLER's ref -- measured on
+# devantler-tech/actions#1129: direct run `.../validate-go-project.yaml@refs/pull/1129/merge`,
+# called run `.../ci.yaml@refs/pull/1129/merge`).
+expected_decision="\${{ inputs.apply-signed-fixes == true || contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}"
+[[ "$(yq -r '.jobs.changes.outputs."signed-fixes" // ""' "$workflow")" == "$expected_decision" ]] ||
+  fail "changes must expose signed-fixes as exactly the opt-in-or-direct-run decision; the direct org-required run has no inputs context"
 
 flag_on='.jobs."test-validate-go-project-apply-signed-fixes"'
 [[ "$(yq -r "${flag_on}.with.\"apply-signed-fixes\"" "$ci_workflow")" == "true" ]] ||
@@ -36,8 +45,14 @@ flag_on='.jobs."test-validate-go-project-apply-signed-fixes"'
 [[ "$(yq -r "${flag_on}.with.\"working-directory\" // \"\"" "$ci_workflow")" == ".github/tests/go-valid-fixture" ]] ||
   fail "the apply-signed-fixes=true self-test must target the clean Go fixture"
 
-grep -Eq '^\| `apply-signed-fixes`[[:space:]]+\| Input \(boolean\)[[:space:]]+\| `false`' "$readme" ||
-  fail "README Validate Go Project inputs must document apply-signed-fixes default false"
+# Both states, now that the default is on: the read-only path is no longer what a caller gets by
+# omitting the input, so the OFF arm must be instantiated by passing false explicitly.
+flag_off_go='.jobs."test-validate-go-project"'
+[[ "$(yq -r "${flag_off_go}.with.\"apply-signed-fixes\"" "$ci_workflow")" == "false" ]] ||
+  fail "CI must instantiate apply-signed-fixes=false against the clean Go fixture; with the default on, the read-only arm only exists if a self-test opts out"
+
+grep -Eq '^\| `apply-signed-fixes`[[:space:]]+\| Input \(boolean\)[[:space:]]+\| `true`' "$readme" ||
+  fail "README Validate Go Project inputs must document apply-signed-fixes default true"
 
 dependency_bots='["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'
 
@@ -69,13 +84,13 @@ for job in tidy golangci-lint lint; do
   [[ "$(yq -r '.with.path // ""' <<<"$upload")" == '${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch' ]] ||
     fail "${job}'s patch filename must match its invocation-unique artifact name"
   upload_if="$(yq -r '.if // ""' <<<"$upload")"
-  expected_upload_if="\${{ inputs.apply-signed-fixes == true && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}"
+  expected_upload_if="\${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}"
   [[ "$upload_if" == "$expected_upload_if" ]] ||
     fail "${job}'s artifact export must use the audited opt-in, same-repository PR gate"
 
   read_only="$(yq -r ".jobs.\"${job}\".steps[] | select(.name == \"❌ Fail if uncommitted changes remain (read-only mode)\")" "$workflow")"
   read_only_if="$(yq -r '.if // ""' <<<"$read_only")"
-  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && (inputs.apply-signed-fixes != true || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) || contains(fromJSON('${dependency_bots}'), inputs.pr-owner)) }}"
+  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) || contains(fromJSON('${dependency_bots}'), inputs.pr-owner)) }}"
   [[ "$read_only_if" == "$expected_read_only_if" ]] ||
     fail "${job}'s dirty-tree gate must be the exact complement of the eligible write context"
 
@@ -113,16 +128,18 @@ for apply_job in apply-tidy-fixes apply-golangci-lint-fixes apply-fixes; do
   esac
   [[ "$(yq -r ".jobs.\"${apply_job}\".with.\"artifact-name\" // \"\"" "$workflow")" == "\${{ needs.${source_job}.outputs.fixes-artifact }}" ]] ||
     fail "${apply_job} must consume the unique artifact name exposed by ${source_job}"
+  [[ "$(yq -r ".jobs.\"${apply_job}\".needs | [.[]? | select(. == \"changes\")] | length" "$workflow")" == "1" ]] ||
+    fail "${apply_job} must list changes in needs; its gate reads needs.changes.outputs.signed-fixes and an unlisted job's outputs read as empty, which silently disables the signer"
   apply_if="$(yq -r ".jobs.\"${apply_job}\".if // \"\"" "$workflow")"
   case "$apply_job" in
     apply-tidy-fixes)
-      expected_apply_if="\${{ inputs.apply-signed-fixes == true }}"
+      expected_apply_if="\${{ needs.changes.outputs.signed-fixes == 'true' }}"
       ;;
     apply-golangci-lint-fixes)
-      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}"
+      expected_apply_if="\${{ !cancelled() && needs.changes.outputs.signed-fixes == 'true' && needs.golangci-lint.result == 'success' && (needs.apply-tidy-fixes.result == 'success' || needs.apply-tidy-fixes.result == 'skipped') }}"
       ;;
     apply-fixes)
-      expected_apply_if="\${{ !cancelled() && inputs.apply-signed-fixes == true && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}"
+      expected_apply_if="\${{ !cancelled() && needs.changes.outputs.signed-fixes == 'true' && needs.lint.result == 'success' && (needs.apply-golangci-lint-fixes.result == 'success' || needs.apply-golangci-lint-fixes.result == 'skipped') }}"
       ;;
   esac
   [[ "$apply_if" == "$expected_apply_if" ]] ||
@@ -167,4 +184,4 @@ flag_off='.jobs."test-apply-signed-fixes-verifies-without-a-patch"'
 [[ "$(yq -r "${flag_off}.secrets // \"none\"" "$ci_workflow")" == "none" ]] ||
   fail "the fixes-created=false self-test must pass no App key; that absence is what makes a gating regression fail it"
 
-echo "PASS: validate-go signed fixes are opt-in, collision-free, strict when read-only, and fail-closed in sequence"
+echo "PASS: validate-go signed fixes are on by default and for the org-required direct run, opt-out per caller, collision-free, strict when read-only, and fail-closed in sequence"
