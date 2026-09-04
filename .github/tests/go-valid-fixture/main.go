@@ -11,3 +11,5 @@ func add(a, b int) int {
 func main() {
 	_ = add(2, 3)
 }
+
+// touched so the path filter (which only matches a ROOT go.mod) sees a Go change (#1075).
