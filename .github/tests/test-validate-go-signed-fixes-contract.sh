@@ -35,7 +35,7 @@ input='.["on"].workflow_call.inputs."apply-signed-fixes"'
 # workflow ref instead (a called workflow inherits the CALLER's ref -- measured on
 # devantler-tech/actions#1129: direct run `.../validate-go-project.yaml@refs/pull/1129/merge`,
 # called run `.../ci.yaml@refs/pull/1129/merge`).
-expected_decision="\${{ inputs.apply-signed-fixes == true || contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}"
+expected_decision="\${{ inputs.apply-signed-fixes == true || (toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@')) }}"
 [[ "$(yq -r '.jobs.changes.outputs."signed-fixes" // ""' "$workflow")" == "$expected_decision" ]] ||
   fail "changes must expose signed-fixes as exactly the opt-in-or-direct-run decision; the direct org-required run has no inputs context"
 

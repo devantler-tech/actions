@@ -800,7 +800,7 @@ jobs:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     with:
       pr-owner: ${{ github.event.pull_request.user.login }} # optional
-      apply-signed-fixes: false # optional; on by default — pass false to keep this caller read-only
+      apply-signed-fixes: false # optional; on by default — pass false to keep this caller read-only (do so when the org-required run already signs for this repository, or two signers race for one branch tip)
 ```
 
 > **Note:** The calling workflow must grant `code-quality: write` so coverage can be uploaded to GitHub Code Quality. Coverage requires the repo's **Code Quality** to be enabled (_Settings → Code quality_).
@@ -811,7 +811,7 @@ jobs:
 |-------------------|----------------|---------|----------|---------------------------------------------------------------------|
 | `APP_PRIVATE_KEY`     | Secret          | -       | No       | GitHub App private key for authenticating the workflow                                                                                                                                                                          |
 | `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
-| `apply-signed-fixes`  | Input (boolean) | `true`  | No       | Commit each fixer lane's auto-fixes back to the pull request branch as a signed commit (on by default; the org-required direct run is opted in by its workflow ref). Pass false to keep a caller read-only; forks, dependency-bot branches and non-PR events are always read-only and fail with their diff if changes remain                                                                                                               |
+| `apply-signed-fixes`  | Input (boolean) | `true`  | No       | Commit each fixer lane's auto-fixes back to the pull request branch as a signed commit (on by default; the org-required direct run is opted in by its workflow ref). Pass false to keep a caller read-only. Forks, Dependabot/Renovate branches and non-PR events are always read-only and fail with their diff if changes remain; other same-repository automation branches (release, bot-authored) do receive fixer commits like any contributor branch                                                                                                               |
 | `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
 | `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 | `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |

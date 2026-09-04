@@ -79,10 +79,14 @@ jobs:
       # One decision, read by every fixer lane and every apply job: are signed auto-fix commits
       # enabled for this invocation? A workflow_call caller answers through the input. The
       # org-required direct run cannot: outside workflow_call the `inputs` context is EMPTY, so
-      # the input reads as null there and no default can reach it. That run identifies itself
-      # by its own workflow ref instead, which a called run never carries (a called workflow
-      # inherits the CALLER's ref).
-      signed-fixes: ${{ inputs.apply-signed-fixes == true || contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}
+      # the input reads as null there and no default can reach it. That run is recognised by two
+      # facts a called run never has at once: an empty inputs object (a call always carries its
+      # declared inputs, defaults filled in) and its own path in the workflow ref (a called
+      # workflow inherits the CALLER's ref). Both measured on #1129. The empty-inputs test is
+      # what keeps a caller's explicit `apply-signed-fixes: false` honoured even if its wrapper
+      # happens to share this file's path: null, false and '' all compare equal in an expression,
+      # so no comparison on the input alone can tell absent from false.
+      signed-fixes: ${{ inputs.apply-signed-fixes == true || (toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@')) }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0

@@ -3891,7 +3891,10 @@ jobs:
       # validate-go-project.yaml is also the org-required workflow, reached directly from
       # pull_request, where `inputs` is empty — so a default:true input read as a bare truthy
       # gate is false there, and every self-test here (which does use workflow_call) stays green
-      # while the guarded behaviour is off for every consumer.
+      # while the guarded behaviour is silently off for that direct run. The signed-fixes decision
+      # deliberately does NOT rely on the input there: it recognises the direct run by its empty
+      # inputs object and its own workflow ref instead (#1075), which this guard does not scan —
+      # test-validate-go-signed-fixes-contract.sh pins that expression.
       - name: 🎚️ Assert multi-trigger input gates cannot silently evaluate false
         shell: bash
         run: bash .github/tests/test-multi-trigger-input-gate-polarity.sh
