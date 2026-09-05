@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.3.3](https://github.com/devantler-tech/actions/compare/v13.3.2...v13.3.3) (2026-09-05)
+
+
+### Bug Fixes
+
+* **auto-merge:** add opt-in retention of queued evaluations ([#1151](https://github.com/devantler-tech/actions/issues/1151)) ([81ada4a](https://github.com/devantler-tech/actions/commit/81ada4a7aa6a99f1fabb60df89b62f452dcded15))
+
 ## [13.3.2](https://github.com/devantler-tech/actions/compare/v13.3.1...v13.3.2) (2026-09-05)
 
 
