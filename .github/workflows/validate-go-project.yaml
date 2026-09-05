@@ -64,7 +64,7 @@ jobs:
   changes:
     name: 🔍 Detect Changes
     runs-on: ubuntu-latest
-    # Ignore Required Workflow runs on the reusable-workflows repo itself
+    # Direct required runs skip this repository unless a fixture module is selected.
     # Skip merge queue — these checks already passed on the PR
     if: >-
       (inputs.working-directory != '' || github.repository != 'devantler-tech/actions')
@@ -188,10 +188,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on main/master branches or on reusable-workflows repo or in merge queue
+    # Run for Go changes outside main/master and the merge queue.
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      needs.changes.outputs.go == 'true'
       && github.ref != 'refs/heads/main'
       && github.ref != 'refs/heads/master'
       && github.event_name != 'merge_group'
@@ -270,10 +269,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo
+    # Run when Go files change.
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      needs.changes.outputs.go == 'true'
     outputs:
       fixes-created: ${{ steps.fixes.outputs.changed }}
       fixes-artifact: ${{ steps.fixes.outputs.artifact-name }}
@@ -359,10 +357,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo; only on PRs
+    # Run for Go changes on pull requests.
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      needs.changes.outputs.go == 'true'
       && github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -465,8 +462,7 @@ jobs:
     # The input is compared against both the boolean and the string because a workflow
     # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && ((
+      ((
         (
           needs.changes.outputs.go == 'true'
           || (
@@ -587,8 +583,7 @@ jobs:
         working-directory: ${{ inputs.working-directory || '.' }}
     # Run if Go files OR other lintable files changed (markdown, yaml, json, etc.)
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
+      (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
     outputs:
       fixes-created: ${{ steps.fixes.outputs.changed }}
       fixes-artifact: ${{ steps.fixes.outputs.artifact-name }}
@@ -779,10 +774,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo
+    # Run when Go files change.
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      needs.changes.outputs.go == 'true'
     permissions:
       contents: write
     steps:
@@ -835,7 +829,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo.
+    # Run for Go changes or an opted-in default-branch invocation.
     #
     # `needs.changes.outputs.go` answers "did a Go SOURCE file change", which is a strictly
     # narrower question than "could this suite's verdict have changed". A Go test may read a
@@ -861,8 +855,7 @@ jobs:
     # The input is compared against both the boolean and the string because a workflow
     # reachable from more than one trigger receives it either way (AGENTS.md, *Gotchas*).
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && (
+      (
         needs.changes.outputs.go == 'true'
         || (
           (inputs.test-default-branch == true || inputs.test-default-branch == 'true')
@@ -952,10 +945,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
-    # Skip if no Go files changed or on reusable-workflows repo
+    # Run when Go files change.
     if: |
-      github.repository != 'devantler-tech/reusable-workflows'
-      && needs.changes.outputs.go == 'true'
+      needs.changes.outputs.go == 'true'
     permissions:
       contents: write
       # Required by upload-coverage to post coverage to GitHub Code Quality. The CALLING workflow
