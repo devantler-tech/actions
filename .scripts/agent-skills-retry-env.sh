@@ -9,9 +9,13 @@
 #   source "${GITHUB_ACTION_PATH}/../.scripts/agent-skills-retry-env.sh" "<true|false>"
 #
 # When the first argument is exactly "true", it widens the shared retry.sh
-# envelope (5 attempts on a 10s→45s backoff ≈ 115s of retry) so a transient
-# GitHub rate-limit 403 during a Dependabot burst — which clears as the burst
-# subsides — does not red a required check. Any other value is a no-op, leaving
+# envelope (5 attempts, waiting 60, 120, 240, 240 seconds). GitHub prescribes
+# at least one minute before retrying a secondary limit when response headers
+# are unavailable, then exponential backoff. gh skill does not expose those
+# headers; this fallback does not resolve an exhausted primary hourly quota.
+# Total scheduled wait is bounded at 660 seconds, excluding command runtime.
+# https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit
+# Any other value is a no-op, leaving
 # retry.sh's fast-fail defaults in place, so no consumer's behaviour changes
 # until the opt-in is deliberately enabled.
 #
@@ -19,6 +23,6 @@
 # alter the caller's shell options.
 if [ "${1:-false}" = "true" ]; then
   export RETRY_MAX_ATTEMPTS=5
-  export RETRY_BASE_DELAY=10
-  export RETRY_MAX_DELAY=45
+  export RETRY_BASE_DELAY=60
+  export RETRY_MAX_DELAY=240
 fi

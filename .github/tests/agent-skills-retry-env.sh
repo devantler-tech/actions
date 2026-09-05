@@ -33,10 +33,10 @@ echo "✅ default (no arg): envelope untouched"
   # shellcheck source=/dev/null
   source "$script" "true"
   [ "${RETRY_MAX_ATTEMPTS:-}" = "5" ] &&
-    [ "${RETRY_BASE_DELAY:-}" = "10" ] &&
-    [ "${RETRY_MAX_DELAY:-}" = "45" ]
-) || { echo "::error::flag on must export the widened envelope (5 / 10 / 45)"; exit 1; }
-echo "✅ on: widened envelope exported (5 attempts, 10s→45s)"
+    [ "${RETRY_BASE_DELAY:-}" = "60" ] &&
+    [ "${RETRY_MAX_DELAY:-}" = "240" ]
+) || { echo "::error::flag on must export the widened envelope (5 / 60 / 240)"; exit 1; }
+echo "✅ on: widened envelope exported (5 attempts, 60s→240s)"
 
 # ── on → retry.sh actually HONORS the widened envelope: a 4-failure burst that
 #    the default 3-attempt envelope could never survive succeeds on the 5th try. ──
