@@ -95,7 +95,7 @@ Because composite actions and reusable workflows now live together, one componen
 3. **Include `step-security/harden-runner`** as the first step of every job (`egress-policy: audit`).
 4. **Set `permissions: {}` at the workflow top level** — grant per-job.
 5. **Set `persist-credentials: false`** on `actions/checkout` unless the job pushes.
-6. **Conventional commits / release-please.** Releases are cut by **release-please** from the commit types since the last release: `feat:` → minor; `fix:`/`perf:` → patch; a breaking change (`!` or a `BREAKING CHANGE:` footer) → major. **Changed from the former reusable-workflows repo (which used semantic-release):** `ci:`/`build:`/`refactor:`/`chore:`/`docs:` do **not** by themselves trigger a release — they ride the next `feat:`/`fix:` release and appear in its changelog. A workflow/action change consumers must receive promptly should be committed as `fix:` (or `feat:`), not `ci:`/`refactor:`.
+6. **Conventional commits / release-please.** This repository releases via **release-please**: `feat:` → minor; `fix:`/`perf:` → patch; a breaking change (`!` or a `BREAKING CHANGE:` footer), including on a hidden type, → major. Nonbreaking `ci:`/`build:`/`refactor:`/`chore:`/`docs:`/`test:` changes do **not** trigger releases and are **omitted from release notes**, including when a later feature or fix ships their code. The simple strategy uses visible changelog entries to decide whether to release, so visible-but-nontriggering sections are not supported. A workflow/action change consumers must receive promptly should be committed as `fix:` (or `feat:`), not `ci:`/`refactor:`. The reusable `create-release.yaml` product uses semantic-release with each consumer's configuration.
 7. **Document secrets and inputs** in `README.md` with usage examples.
 
 ### Required workflow triggers
@@ -164,6 +164,18 @@ actionlint
 ```
 
 `actionlint` 1.7.x does not yet recognise the `code-quality` permission scope (used by the coverage-upload jobs); that single warning is expected and not a defect.
+
+The repository's release semantics are exercised offline with the actual Release Please engine:
+
+```bash
+npm ci --ignore-scripts --prefix .github/tests/release-please
+npm test --prefix .github/tests/release-please
+```
+
+The fixture pins the engine version used by `active-release.yaml`. When updating that action,
+verify its bundled engine version and update the fixture's recorded action pin, package version,
+and generated lockfile together. Tests build release candidates and apply file updates in memory;
+they cannot publish a PR, tag, or release.
 
 ## Maintenance (autonomous AI assistant)
 

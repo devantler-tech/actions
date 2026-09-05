@@ -1,0 +1,11 @@
+{
+  "name": "actions-release-please-regression",
+  "private": true,
+  "releasePleaseAction": "45996ed1f6d02564a971a2fa1b5860e934307cf7",
+  "scripts": {
+    "test": "node --test release-semantics.test.cjs"
+  },
+  "devDependencies": {
+    "release-please": "17.6.0"
+  }
+}
