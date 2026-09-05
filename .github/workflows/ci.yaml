@@ -2923,6 +2923,34 @@ jobs:
       - name: 🧪 Verify issue side effects stay disabled
         run: bash .github/tests/test-create-release-config.sh
 
+  test-release-please-semantics:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Release Please - Commit Semantics"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ⚙️ Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: 📦 Install the pinned release engine
+        run: npm ci --ignore-scripts --prefix .github/tests/release-please
+
+      - name: 🧪 Exercise release candidates without publishing
+        run: npm test --prefix .github/tests/release-please
+
   test-deploy-github-pages:
     if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Deploy GitHub Pages - Dry Run"
@@ -4049,6 +4077,7 @@ jobs:
       - test-create-release
       - test-create-release-config
       - test-create-release-no-issue-side-effects
+      - test-release-please-semantics
       - test-deploy-github-pages
       - test-publish-dotnet-library
       - test-publish-app
@@ -4152,6 +4181,7 @@ jobs:
             ${{ needs.test-create-release.result }}
             ${{ needs.test-create-release-config.result }}
             ${{ needs.test-create-release-no-issue-side-effects.result }}
+            ${{ needs.test-release-please-semantics.result }}
             ${{ needs.test-deploy-github-pages.result }}
             ${{ needs.test-publish-dotnet-library.result }}
             ${{ needs.test-publish-app.result }}
