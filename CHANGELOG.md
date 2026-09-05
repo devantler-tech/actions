@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.3.1](https://github.com/devantler-tech/actions/compare/v13.3.0...v13.3.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **release:** honor non-releasing commit types ([#1143](https://github.com/devantler-tech/actions/issues/1143)) ([671d06a](https://github.com/devantler-tech/actions/commit/671d06ae748181c1ad640ea23f21aaeac7e65e1c))
+
 ## [13.3.0](https://github.com/devantler-tech/actions/compare/v13.2.3...v13.3.0) (2026-09-04)
 
 
