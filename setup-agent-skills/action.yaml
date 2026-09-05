@@ -30,12 +30,12 @@ inputs:
     default: ${{ github.token }}
   experimental-rate-limit-retry:
     description: |
-      Opt in (default off) to a widened retry envelope for the `gh skill install` registry pulls, to
-      ride out a transient GitHub rate-limit 403 during a burst (devantler-tech/actions#514). Off
-      keeps the shared retry.sh fast-fail defaults, so this changes no existing consumer's behaviour.
-      Activation is a deliberate, reversible step — validate that the widened envelope actually clears
-      the burst before flipping it on for a consumer; cutting the burst's request load is the
-      root-cause follow-up on #514.
+      Opt in (default off) to five attempts for failed gh skill install registry pulls, waiting
+      60, 120, 240, and 240 seconds between attempts (eleven minutes total, plus command runtime).
+      This respects GitHub's fallback cooldown for secondary limits when response headers are
+      unavailable; it does not resolve an exhausted primary hourly quota. Off keeps the shared
+      retry.sh fast-fail defaults. Validate real burst recovery before enabling for a consumer
+      (devantler-tech/actions#514).
     required: false
     default: "false"
 outputs:

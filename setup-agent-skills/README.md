@@ -13,7 +13,22 @@ Install agent skills with the [`gh skill`](https://github.blog/changelog/2026-04
 | `scope` | Value passed to `gh skill install --scope` (`project` or `user`) | ❌ | `project` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
-| `experimental-rate-limit-retry` | Opt in (default off) to a widened retry envelope for the `gh skill install` registry pulls, to ride out a transient GitHub rate-limit 403 during a burst ([#514](https://github.com/devantler-tech/actions/issues/514)). Off keeps the shared retry defaults; activation is a deliberate, reversible step. | ❌ | `false` |
+| `experimental-rate-limit-retry` | Opt in to five install attempts with waits of 60, 120, 240, and 240 seconds (eleven minutes total, plus command runtime). Off keeps the shared fast retry defaults. See [Rate-limit retries](#rate-limit-retries). | ❌ | `false` |
+
+## Rate-limit retries
+
+GitHub recommends waiting at least one minute after a secondary rate limit when
+response headers are unavailable, followed by exponential backoff.
+The opt-in follows that [fallback policy](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit),
+with a four-minute cap per wait and five total attempts. A successful install
+returns immediately; an exhausted retry sequence fails with the CLI's exit status.
+The policy applies to all failed skill-install commands, since the CLI does not
+expose the response headers needed to distinguish rate-limit classes reliably.
+
+This option does not guarantee recovery from a primary hourly quota or honor a
+server-provided reset deadline that the CLI does not expose. Keep it disabled
+until real burst recovery is evaluated for the consumer, as tracked in
+[#514](https://github.com/devantler-tech/actions/issues/514).
 
 ## Outputs
 

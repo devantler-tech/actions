@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.3.2](https://github.com/devantler-tech/actions/compare/v13.3.1...v13.3.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* **setup-agent-skills:** respect secondary-rate-limit cooldown ([#1141](https://github.com/devantler-tech/actions/issues/1141)) ([6aebf3c](https://github.com/devantler-tech/actions/commit/6aebf3c875de98df73a5d2f5c87e86c50d11c394))
+
 ## [13.3.1](https://github.com/devantler-tech/actions/compare/v13.3.0...v13.3.1) (2026-09-05)
 
 
