@@ -1693,7 +1693,10 @@ jobs:
   # ── .scripts/agent-skills-retry-env.sh (rate-limit-retry opt-in) ─
   test-agent-skills-retry-env:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     permissions:
       contents: read
     steps:
@@ -1711,6 +1714,8 @@ jobs:
         shell: bash
         run: |
           bash .github/tests/agent-skills-retry-env.sh
+          bash .github/tests/agent-skills-rate-limit-cooldown.sh
+          bash .github/tests/agent-skills-rate-limit-cooldown-ablation.sh
           bash .github/tests/agent-skills-update-fixture.sh
 
   # ── update-agent-skills ───────────────────────────────────
