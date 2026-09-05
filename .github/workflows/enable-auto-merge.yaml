@@ -33,6 +33,15 @@ on:
           auto-merge and merge-queue state when review gates are also
           enforced. Direct/required-workflow runs can opt in with the
           ENFORCE_ACTOR_TRUST repository or organization variable.
+      queue-pending-evaluations:
+        type: boolean
+        required: false
+        default: false
+        description: >-
+          Temporary opt-in to retain up to 100 pending evaluations instead of
+          replacing the pending evaluation during bursts. Existing callers
+          and direct/required runs retain the single queue. Intentional
+          actor-enforced cancellation remains active when opted in.
       concurrency-key:
         type: string
         required: false
@@ -157,9 +166,9 @@ concurrency:
       github.run_id
     }}
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
-  # Keep all pending evaluations except where actor enforcement deliberately
+  # Opted-in runs retain pending evaluations except where actor enforcement
   # supersedes old state. GitHub forbids queue:max with cancellation enabled.
-  queue: ${{ ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted')))) && 'single' || 'max' }}
+  queue: ${{ inputs.queue-pending-evaluations && !((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted')))) && 'max' || 'single' }}
 
 permissions: {}
 
@@ -342,12 +351,12 @@ jobs:
     # All arming/disarming mutations share one caller/PR lane. A stale rejected
     # event therefore checks the current authorization timestamp without racing
     # a newer arming; it either runs first and is followed by reauthorization,
-    # or observes and preserves the newer state. Both mutation jobs retain
-    # pending evaluations so an arriving job cannot discard a queued revocation.
+    # or observes and preserves the newer state. When opted in, both mutation
+    # jobs retain pending evaluations; the legacy single queue can replace them.
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
-      queue: max
+      queue: ${{ inputs.queue-pending-evaluations && 'max' || 'single' }}
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -410,7 +419,7 @@ jobs:
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
-      queue: max
+      queue: ${{ inputs.queue-pending-evaluations && 'max' || 'single' }}
     runs-on: ubuntu-latest
 
     steps:

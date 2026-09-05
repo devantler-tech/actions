@@ -2831,6 +2831,31 @@ jobs:
     with:
       concurrency-key: actor-trust-self-test
       enforce-actor-trust: true
+      queue-pending-evaluations: false
+    permissions:
+      actions: read
+      pull-requests: write
+      contents: write
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  test-enable-auto-merge-queued:
+    if: >-
+      ${{
+        github.event_name != 'merge_group' &&
+        !startsWith(github.head_ref, 'release-please--') &&
+        !startsWith(github.event.head_commit.message, 'chore(main): release ') &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == 'devantler'
+      }}
+    name: "[Test] Enable Auto-Merge - Pending Queue Enabled"
+    uses: ./.github/workflows/enable-auto-merge.yaml
+    # A maintainer-authored PR is ineligible for privileged mutations. Exercise
+    # the enabled public input without competing with real bot auto-merge.
+    with:
+      concurrency-key: queued-self-test
+      queue-pending-evaluations: true
     permissions:
       actions: read
       pull-requests: write
@@ -4133,6 +4158,7 @@ jobs:
       - test-run-dotnet-tests-workflow-authenticated
       - test-enable-auto-merge
       - test-enable-auto-merge-actor-trust
+      - test-enable-auto-merge-queued
       - test-enable-auto-merge-author-gate
       - test-enable-auto-merge-queue
       - test-enable-auto-merge-queue-results
@@ -4239,6 +4265,7 @@ jobs:
             ${{ needs.test-run-dotnet-tests-workflow-authenticated.result }}
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-actor-trust.result }}
+            ${{ needs.test-enable-auto-merge-queued.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
             ${{ needs.test-enable-auto-merge-queue.result }}
             ${{ needs.test-enable-auto-merge-queue-results.result }}

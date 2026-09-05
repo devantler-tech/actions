@@ -306,8 +306,13 @@ safe repository-wide actor-trust lane; explicit keys isolate independent callers
 The direct and cross-repository required-workflow paths have a built-in stable source identity.
 Legacy default-off callers retain their existing authorization behavior.
 
-Non-cancelling workflow runs and both approval/revocation jobs retain up to 100 pending evaluations
-with `concurrency.queue: max`. GitHub processes them in the order they begin waiting, which can
+Set `queue-pending-evaluations: true` on a `workflow_call` invocation to retain up to 100 pending
+evaluations in non-cancelling workflow runs and both approval/revocation jobs. This temporary opt-in
+defaults to `false`: omitted/false inputs and direct/required runs keep the existing single queue,
+which can replace a waiting evaluation. Rollout and flag removal are tracked in
+[#1155](https://github.com/devantler-tech/actions/issues/1155).
+
+When opted in, GitHub processes queued evaluations in the order they begin waiting, which can
 differ from event delivery order; evaluations still read current PR state. Actor-enforced lifecycle
 and evidence-removal events keep their intentional workflow-level cancellation of stale runs, using
 the compatible `single` queue. Additional arrivals beyond GitHub's 100-pending limit are cancelled.
@@ -386,6 +391,7 @@ jobs:
 | `APP_PRIVATE_KEY`      | Secret | -       | Yes      | GitHub App private key                                                    |
 | `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation            |
 | `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad     |
+| `queue-pending-evaluations` | Input | `false` | No | Temporary opt-in to retain pending evaluations during event bursts |
 | `concurrency-key`      | Input  | `""`    | No       | Recommended with actor trust; omitted calls share a safe fallback lane    |
 
 </details>
