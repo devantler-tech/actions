@@ -2864,6 +2864,67 @@ jobs:
       - name: 🧪 Verify durable pull-request lifecycle ordering
         run: bash .github/tests/test-is-current-pull-request-lifecycle.sh
 
+  # Exercise GitHub's scheduler without a PR mutation, checkout, or App token.
+  # A three-job burst exposes queue:single's replacement of the middle job.
+  test-enable-auto-merge-queue:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Enable Auto-Merge - Queue Slot ${{ matrix.slot }}"
+    runs-on: ubuntu-latest
+    permissions: {}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        slot: [1, 2, 3]
+    concurrency:
+      group: auto-merge-queue-test-${{ github.run_id }}-${{ github.run_attempt }}
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: 🧪 Hold the queue while the remaining evaluations wait
+        run: sleep 10
+
+  test-enable-auto-merge-queue-results:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') && always() && needs.test-enable-auto-merge-queue.result != 'skipped' }}"
+    needs: test-enable-auto-merge-queue
+    name: "[Test] Enable Auto-Merge - All Queued Evaluations Complete"
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: 🧪 Verify every slot completed in this run attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
+            --paginate --slurp > jobs.json
+          if ! jq -e '
+            [.[] | .jobs[] | select(.name | startswith("[Test] Enable Auto-Merge - Queue Slot "))]
+            | sort_by(.name)
+            | (map(.name) == [
+                "[Test] Enable Auto-Merge - Queue Slot 1",
+                "[Test] Enable Auto-Merge - Queue Slot 2",
+                "[Test] Enable Auto-Merge - Queue Slot 3"
+              ]) and all(.[]; .status == "completed" and .conclusion == "success")
+          ' jobs.json; then
+            echo "::error::All three queue slots must finish successfully in this run attempt. Use Re-run all jobs to repeat the burst; rerunning only this observer cannot recreate it."
+            exit 1
+          fi
+
   test-enable-auto-merge-pentad-gate:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Enable Auto-Merge - Pentad Gate"
@@ -4073,6 +4134,8 @@ jobs:
       - test-enable-auto-merge
       - test-enable-auto-merge-actor-trust
       - test-enable-auto-merge-author-gate
+      - test-enable-auto-merge-queue
+      - test-enable-auto-merge-queue-results
       - test-enable-auto-merge-pentad-gate
       - test-create-release
       - test-create-release-config
@@ -4177,6 +4240,8 @@ jobs:
             ${{ needs.test-enable-auto-merge.result }}
             ${{ needs.test-enable-auto-merge-actor-trust.result }}
             ${{ needs.test-enable-auto-merge-author-gate.result }}
+            ${{ needs.test-enable-auto-merge-queue.result }}
+            ${{ needs.test-enable-auto-merge-queue-results.result }}
             ${{ needs.test-enable-auto-merge-pentad-gate.result }}
             ${{ needs.test-create-release.result }}
             ${{ needs.test-create-release-config.result }}

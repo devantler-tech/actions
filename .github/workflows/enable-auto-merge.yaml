@@ -157,6 +157,9 @@ concurrency:
       github.run_id
     }}
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
+  # Keep all pending evaluations except where actor enforcement deliberately
+  # supersedes old state. GitHub forbids queue:max with cancellation enabled.
+  queue: ${{ ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted')))) && 'single' || 'max' }}
 
 permissions: {}
 
@@ -339,10 +342,12 @@ jobs:
     # All arming/disarming mutations share one caller/PR lane. A stale rejected
     # event therefore checks the current authorization timestamp without racing
     # a newer arming; it either runs first and is followed by reauthorization,
-    # is replaced while pending, or observes and preserves the newer state.
+    # or observes and preserves the newer state. Both mutation jobs retain
+    # pending evaluations so an arriving job cannot discard a queued revocation.
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -405,6 +410,7 @@ jobs:
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
 
     steps:

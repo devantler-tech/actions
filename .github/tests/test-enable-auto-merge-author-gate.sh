@@ -210,16 +210,24 @@ if grep -Fq 'APP_PRIVATE_KEY' <<<"$disarm_job" ||
 fi
 workflow_concurrency_group="$(yq -r '.concurrency.group // ""' "$workflow")"
 workflow_cancel_in_progress="$(yq -r '.concurrency."cancel-in-progress" // ""' "$workflow")"
+workflow_queue="$(yq -r '.concurrency.queue // "single"' "$workflow")"
 expected_workflow_cancel="\${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}"
+# The queue chooses single only for the same events that intentionally cancel
+# stale workflow runs. Every non-cancelling run retains its pending evaluation.
+cancel_condition="${expected_workflow_cancel#\$\{\{ }"
+cancel_condition="${cancel_condition% \}\}}"
+expected_workflow_queue="\${{ ($cancel_condition) && 'single' || 'max' }}"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 expected_workflow_group='enable-auto-merge-${{github.repository}}-${{inputs.concurrency-key||(startsWith(github.workflow_ref,'"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"')&&'"'"'direct'"'"')||((inputs.enforce-actor-trust||vars.ENFORCE_ACTOR_TRUST=='"'"'true'"'"')&&'"'"'actor-trust-legacy'"'"')||github.workflow_ref}}-${{github.event.pull_request.number||github.event.issue.number||github.run_id}}-${{((inputs.concurrency-key!='"'"''"'"'||startsWith(github.workflow_ref,'"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"')||inputs.enforce-actor-trust||vars.ENFORCE_ACTOR_TRUST=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'"'"'),github.event.pull_request.user.login))||((inputs.enforce-review-gates||vars.ENFORCE_MERGE_GATES=='"'"'true'"'"')&&((github.event_name=='"'"'pull_request_review'"'"'&&github.event.action=='"'"'dismissed'"'"'&&!github.event.pull_request.draft&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.review.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'"'"'),github.event.pull_request.user.login))||(github.event_name=='"'"'issue_comment'"'"'&&github.event.action=='"'"'deleted'"'"'&&github.event.issue.pull_request&&github.event.issue.state=='"'"'open'"'"'&&contains(fromJSON('"'"'["coderabbitai[bot]","chatgpt-codex-connector[bot]"]'"'"'),github.event.comment.user.login)&&contains(fromJSON('"'"'["dependabot[bot]","renovate[bot]","github-actions[bot]","ksail-bot[bot]","coderabbitai[bot]","cursor[bot]"]'"'"'),github.event.issue.user.login))))))&&'"'"'state'"'"'||github.run_id}}'
 normalized_workflow_group="$(tr -d '[:space:]' <<<"$workflow_concurrency_group")"
 review_job_group="$(yq -r '.jobs."auto-merge".concurrency.group // ""' "$workflow")"
 review_job_cancel="$(yq -r '.jobs."auto-merge".concurrency."cancel-in-progress" | tostring' "$workflow")"
+review_job_queue="$(yq -r '.jobs."auto-merge".concurrency.queue // "single"' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 expected_review_job_group='enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, '"'"'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@'"'"') && '"'"'direct'"'"') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == '"'"'true'"'"') && '"'"'actor-trust-legacy'"'"') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}'
 disarm_job_group="$(yq -r '.jobs."disarm-untrusted-update".concurrency.group // ""' "$workflow")"
 disarm_job_cancel="$(yq -r '.jobs."disarm-untrusted-update".concurrency."cancel-in-progress" | tostring' "$workflow")"
+disarm_job_queue="$(yq -r '.jobs."disarm-untrusted-update".concurrency.queue // "single"' "$workflow")"
 # shellcheck disable=SC2016 # GitHub expressions are compared literally.
 if [[ "$normalized_workflow_group" != "$expected_workflow_group" ||
   "$workflow_cancel_in_progress" != "$expected_workflow_cancel" ||
@@ -228,6 +236,20 @@ if [[ "$normalized_workflow_group" != "$expected_workflow_group" ||
   "$disarm_job_group" != "$expected_review_job_group" ||
   "$disarm_job_cancel" != "false" ]]; then
   echo "::error file=$workflow::lifecycle and evidence-removal runs must arbitrate at workflow creation before any privileged job can mutate the PR"
+  status=1
+fi
+if [[ "$workflow_queue" != "$expected_workflow_queue" ||
+  "$review_job_queue" != "max" || "$disarm_job_queue" != "max" ]]; then
+  echo "::error file=$workflow::non-cancelling workflow runs and both mutation jobs must retain pending evaluations; cancelling runs must use the single queue"
+  status=1
+fi
+queue_fixture="$(yq -o=json '.jobs."test-enable-auto-merge-queue"' "$ci_workflow")"
+if ! jq -e --arg queue "$review_job_queue" '
+  .concurrency.queue == $queue and .concurrency["cancel-in-progress"] == false
+  and .permissions == {} and .strategy["fail-fast"] == false
+  and .strategy["max-parallel"] == 3 and .strategy.matrix.slot == [1, 2, 3]
+' <<<"$queue_fixture" >/dev/null; then
+  echo "::error file=$ci_workflow::CI must exercise the production mutation queue with three concurrent, unprivileged slots"
   status=1
 fi
 disarm_checkout_uses="$(yq -r '
