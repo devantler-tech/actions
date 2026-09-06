@@ -26,6 +26,7 @@ export PATH="$tmp/bin:$PATH" GITHUB_ACTION_PATH="$root/setup-ksail-cli"
 export RETRY_BASE_DELAY=0 RETRY_MAX_ATTEMPTS=3 RETRY_MAX_DELAY=0
 export BREW_CALLS="$tmp/calls" FAIL_COMMAND FAIL_COUNT
 
+# Run the extracted installer and compare its exit status and complete call order.
 check() {
   local name="$1" expected_status="$2" expected_calls="$3" status=0
   : > "$BREW_CALLS"
@@ -72,6 +73,6 @@ $install"
 
 # The external setup action's channel cannot be exercised offline. Pin its input
 # here; the macOS/Linux CI matrix performs the real setup and installs this cask.
-stable="$(yq -r '.runs.steps[] | select(.uses | test("^Homebrew/actions/setup-homebrew@")) | .with.stable' "$action")"
+stable="$(yq -r '.runs.steps[] | select((.uses // "") | test("^Homebrew/actions/setup-homebrew@")) | .with.stable' "$action")"
 [[ "$stable" == true ]] || { echo 'FAIL: Homebrew must use its released channel' >&2; exit 1; }
 echo 'PASS: released Homebrew channel'
