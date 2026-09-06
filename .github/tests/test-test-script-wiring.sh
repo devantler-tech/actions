@@ -83,7 +83,8 @@ echo 'PASS: comments around a dedicated invocation'
 
 # Running a test is not sufficient if the required summary ignores its job.
 # Keep needs/result parity valid while removing only the test job from the gate.
-# shellcheck disable=SC2016 -- Preserve the literal GitHub expression in YAML.
+# Preserve the literal GitHub expression in YAML.
+# shellcheck disable=SC2016
 yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}] |
   .jobs.unrelated.steps = [{"run": "echo unrelated"}] |
   .jobs.ci-required-checks.needs = ["unrelated"] |
