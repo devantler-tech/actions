@@ -29,6 +29,25 @@ trap 'rm -rf "$work"' EXIT
 # Control: the real workflow passes, so a rejection below is caused by the mutation.
 bash "$assertion" "$workflow" "${lanes[@]}" >/dev/null ||
   fail "control: the unmodified workflow must pass the assertion"
+bash "$assertion" "$workflow" >/dev/null ||
+  fail "control: automatic lane discovery must pass the unmodified workflow"
+
+# The dedicated CI invocation discovers lanes itself. It must include new lanes
+# and fail closed if discovery has no subject or cannot parse the workflow.
+yq '.jobs.fourth = .jobs.tidy | .jobs.fourth.permissions.contents = "write"' "$workflow" >"$work/extra-lane.yaml"
+yq 'del(.jobs[].outputs."fixes-created")' "$workflow" >"$work/no-lanes.yaml"
+printf 'jobs: [invalid\n' >"$work/malformed.yaml"
+for fixture in extra-lane no-lanes malformed; do
+  if bash "$assertion" "$work/$fixture.yaml" >"$work/discovery.log" 2>&1; then
+    fail "automatic lane discovery accepted $fixture"
+  fi
+  case "$fixture" in
+    extra-lane) grep -qF "fixer lane 'fourth' must grant contents: read" "$work/discovery.log" ;;
+    no-lanes) grep -qF 'no fixer lane exports fixes-created' "$work/discovery.log" ;;
+    malformed) grep -qiF 'yaml' "$work/discovery.log" ;;
+  esac || fail "automatic lane discovery rejected $fixture for an unrelated reason"
+  echo "ok: automatic lane discovery rejects $fixture"
+done
 
 expect_rejected() { # <description> <yq-mutation> <required-message-fragment>
   local description="$1" mutation="$2" fragment="$3" out
@@ -130,4 +149,3 @@ bash "$assertion" "$work/allowed.yaml" "${lanes[@]}" >/dev/null ||
 echo "ok: control — bracket-form, split-line and mixed-case GITHUB_TOKEN still permitted"
 
 echo "PASS: fixer credential boundary assertion fires for its own reason on 20 mutations"
-

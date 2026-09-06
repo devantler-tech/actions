@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Assert that a fixer lane holds no credential that can write to the branch it is linting.
 #
-#   bash .github/tests/test-fixer-credential-boundary.sh <workflow> <job> [<job> ...]
+#   bash .github/tests/test-fixer-credential-boundary.sh <workflow> [<job> ...]
+# With no explicit jobs, check every lane exporting fixes-created.
 #
 # A fixer lane runs tooling configured by the pull request under review — `go mod tidy`,
 # `golangci-lint --fix`, MegaLinter — so anything it holds is reachable from PR-authored code.
@@ -26,9 +27,18 @@
 
 set -euo pipefail
 
-workflow="${1:?usage: $0 <workflow> <job> [<job> ...]}"
+workflow="${1:?usage: $0 <workflow> [<job> ...]}"
 shift
-[[ $# -ge 1 ]] || { echo "usage: $0 <workflow> <job> [<job> ...]" >&2; exit 2; }
+
+# Derive the lanes from the workflow so a new fixer is covered automatically.
+# Capture yq separately so a parse/read error cannot become an empty successful check.
+if [[ $# -eq 0 ]]; then
+  lane_names="$(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' "$workflow")"
+  lanes=()
+  while IFS= read -r lane; do [[ -n "$lane" ]] && lanes+=("$lane"); done <<<"$lane_names"
+  [[ ${#lanes[@]} -ge 1 ]] || { echo 'FAIL: no fixer lane exports fixes-created' >&2; exit 1; }
+  set -- "${lanes[@]}"
+fi
 
 fail() {
   echo "FAIL: $*" >&2

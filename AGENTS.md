@@ -119,9 +119,10 @@ Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/
 `ci-required-checks` is the sole exception to the harden-runner-first rule: adding any action would weaken its workspace-independent trust boundary. Every other step-bearing job must start with SHA-pinned `step-security/harden-runner` in audit mode, and `lint-ci-coverage-parity` enforces both sides of that contract.
 
 Every `.github/tests/test-*.sh` is a test entrypoint and must have an explicit invocation in a
-`ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) on its
-own shell line; quoting and arguments are supported. The wiring guard rejects missing invocations
-and ignores comments, step names, and printed commands. Helper scripts use names without the
+`ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) in a
+dedicated step; quoting, arguments, and surrounding comments or blank lines are supported. The wiring
+guard rejects missing invocations and ignores step names, printed commands, heredocs, and uncalled
+functions. Helper scripts use names without the
 `test-` prefix and are invoked by a tested entrypoint instead of needing an exemption list.
 
 ### Shipping a new capability behind an opt-in flag (feature-flag-first)

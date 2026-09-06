@@ -62,11 +62,25 @@ for command in 'bash .github/tests/test-sentinel.sh' 'bash "./.github/tests/test
 done
 echo 'PASS: direct and bash invocations with quoting and arguments'
 
+COMMAND=$'# Regression gate\nbash .github/tests/test-sentinel.sh\n' yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
+run_guard || fail 'comments and blank lines around an invocation were rejected'
+echo 'PASS: comments around a dedicated invocation'
+
 cp "$work/base.yaml" "$ci"
 blocked 'deleted CI step'
 for command in '# bash .github/tests/test-sentinel.sh' 'echo bash .github/tests/test-sentinel.sh' 'bash .github/tests/test-sentinel.sh.backup'; do
   COMMAND="$command" yq '.jobs.tests.steps += [{"name": "bash .github/tests/test-sentinel.sh", "run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
   blocked "non-invocation: $command"
+done
+
+# A shell-looking line inside data or an uncalled function does not execute the
+# test. Dedicated invocation steps keep the wiring contract statically decidable.
+for command in \
+  $'cat <<\'EOF\'\nbash .github/tests/test-sentinel.sh\nEOF' \
+  $'echo "\nbash .github/tests/test-sentinel.sh\n"' \
+  $'unused() {\nbash .github/tests/test-sentinel.sh\n}'; do
+  COMMAND="$command" yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
+  blocked "unexecuted multiline mention: $command"
 done
 
 # Helpers do not use the test-* entrypoint convention and need no exemption list.
