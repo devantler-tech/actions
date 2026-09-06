@@ -2545,6 +2545,14 @@ jobs:
         shell: bash
         run: bash .github/tests/test-world-at-ruin-required-regressions.sh
 
+      - name: 🔗 Check required workflows resolve sibling calls in the source repository
+        shell: bash
+        run: bash .github/tests/test-required-workflow-no-local-calls.sh
+
+      - name: 🧪 Check the test-wiring guard rejects disconnected scripts
+        shell: bash
+        run: bash .github/tests/test-test-script-wiring.sh
+
       - name: 📋 Check ci.yaml test wiring is complete
         shell: bash
         run: |
@@ -2558,6 +2566,7 @@ jobs:
           #        environment value name the SAME set of jobs — a job in
           #        `needs:` but missing from `JOB_RESULTS` has its failure
           #        silently ignored (the single required check stays green).
+          #   (3)  every test-*.sh entrypoint has an explicit run command.
           # yq is preinstalled on the GitHub-hosted ubuntu-latest runner image.
           ci=".github/workflows/ci.yaml"
           status=0
@@ -2611,8 +2620,56 @@ jobs:
             fi
           done <<<"$results"
 
+          # (3) shell test -> run command. Inspect run scalars, not YAML comments or
+          # step names. Entry points use a direct invocation or `bash <path>` on
+          # an unconditional dedicated step, optionally quoted and followed by arguments. Helpers
+          # use names without the test- prefix and are called by those entrypoints.
+          # Containing jobs may use only the existing merge-group/release scheduling
+          # exclusion, with no prerequisites that could skip the whole job. Neither
+          # job nor step may tolerate failures, and the invocation may not mask its
+          # status with shell control operators. The required summary must include
+          # the containing job so its failure actually blocks the required check.
+          # Shell overrides at every scope must use Bash, not a command that can
+          # return success without executing the generated script. Working-directory
+          # overrides must keep relative paths anchored at the repository root.
+          # Build the literal expression without letting GitHub interpolate it here.
+          export TESTED_JOB_CONDITION='$'"{{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+          invoked_tests="$(
+            yq -r '
+              select(.defaults.run.shell == null or .defaults.run.shell == "bash")
+              | select(.defaults.run.working-directory == null or .defaults.run.working-directory == ".")
+              | .jobs.ci-required-checks.needs as $required_jobs
+              | .jobs | to_entries[]
+              | .key as $job
+              | select($required_jobs[] == $job)
+              | .value
+              | select(.defaults.run.shell == null or .defaults.run.shell == "bash")
+              | select(.defaults.run.working-directory == null or .defaults.run.working-directory == ".")
+              | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION))
+              | select((has("needs") | not) or ((.needs | type) == "!!seq" and (.needs | length) == 0))
+              | select((has("continue-on-error") | not) or .continue-on-error == false)
+              | .steps[]?
+              | select((has("shell") | not) or .shell == "bash")
+              | select((has("working-directory") | not) or .working-directory == ".")
+              | select(.run != null and (has("if") | not))
+              | select((has("continue-on-error") | not) or .continue-on-error == false)
+              | .run
+              | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)
+            ' "$ci" \
+              | sed '/[;&|]/d' \
+              | sed -nE "s@^[[:space:]]*(bash[[:space:]]+)?[\"']?(\\./)?(\\.github/tests/test-[[:alnum:]_.-]*\\.sh)[\"']?([[:space:]].*)?\$@\\3@p" \
+              | sort -u
+          )"
+          for test_script in .github/tests/test-*.sh; do
+            [[ -f "$test_script" ]] || continue
+            if ! grep -qxF "$test_script" <<<"$invoked_tests"; then
+              echo "::error file=$test_script::test script has no blocking dedicated invocation in $ci (expected run: bash $test_script, without failure tolerance or prerequisites)"
+              status=1
+            fi
+          done
+
           if [[ "$status" -eq 0 ]]; then
-            echo "CI coverage parity OK: every action and reusable workflow has a test job, and ci-required-checks needs <-> JOB_RESULTS are in sync."
+            echo "CI coverage parity OK: every action, reusable workflow, and shell test is wired, and ci-required-checks needs <-> JOB_RESULTS are in sync."
           fi
           exit "$status"
 
@@ -4035,13 +4092,11 @@ jobs:
       # the ablation proves each assertion fires for its own reason, not incidentally.
       - name: 🔐 Assert the org-required Go pipeline's fixer lanes hold no write credential
         shell: bash
-        run: |
-          # The lanes are derived from the workflow, so a fourth fixer lane is covered by construction.
-          lanes=()
-          while IFS= read -r lane; do [[ -n "$lane" ]] && lanes+=("$lane"); done < <(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' .github/workflows/validate-go-project.yaml)
-          [[ ${#lanes[@]} -ge 1 ]] || { echo "::error::no fixer lane exports fixes-created"; exit 1; }
-          bash .github/tests/test-fixer-credential-boundary.sh .github/workflows/validate-go-project.yaml "${lanes[@]}"
-          bash .github/tests/test-fixer-credential-boundary-ablation.sh
+        run: bash .github/tests/test-fixer-credential-boundary.sh .github/workflows/validate-go-project.yaml
+
+      - name: 🧪 Prove fixer credential assertions reject each unsafe mutation
+        shell: bash
+        run: bash .github/tests/test-fixer-credential-boundary-ablation.sh
 
       # The apply-fixes job writes to contributors' branches, so its commits must be signed
       # — which is only possible through the commit API. The workflow proves that at runtime

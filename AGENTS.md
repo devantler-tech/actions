@@ -118,6 +118,24 @@ Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/
 
 `ci-required-checks` is the sole exception to the harden-runner-first rule: adding any action would weaken its workspace-independent trust boundary. Every other step-bearing job must start with SHA-pinned `step-security/harden-runner` in audit mode, and `lint-ci-coverage-parity` enforces both sides of that contract.
 
+Every `.github/tests/test-*.sh` is a test entrypoint and must have an explicit invocation in a
+`ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) in a
+dedicated step without a step-level `if`; quoting, arguments, and surrounding comments or blank lines
+are supported. Use portable filenames containing letters, digits, dots, underscores, and hyphens.
+Explicit shells and job/workflow shell defaults must use `bash`; a custom shell could return
+success without executing the test script.
+Working-directory overrides at those scopes must be `.` so relative paths identify the repository's
+actual test entrypoints, rather than a shadow script in a fixture directory.
+The containing job may omit `if` or use CI's exact merge-group/release scheduling
+exclusion; arbitrary job conditions do not count because they could silently disable the test. The
+containing job has no prerequisites and appears in `ci-required-checks.needs` and `JOB_RESULTS`,
+so its failure reaches the required check. Neither the job nor the step may use `continue-on-error`
+except literal `false`. Keep shell control operators (`;`, `&`, `|`) out of invocation lines so test
+failures reach CI. The wiring
+guard rejects missing invocations and ignores step names, printed commands, heredocs, and uncalled
+functions. Helper scripts use names without the
+`test-` prefix and are invoked by a tested entrypoint instead of needing an exemption list.
+
 ### Shipping a new capability behind an opt-in flag (feature-flag-first)
 
 A new job/step/behaviour must not go live for every consumer the moment it merges. Ship it as the CI analog of a release flag — an **opt-in input, default-off, backward-compatible** — so it can be validated on a few callers before broad rollout (the portfolio-wide **feature-flag-first delivery** contract in the monorepo `AGENTS.md`; [monorepo#2059](https://github.com/devantler-tech/monorepo/issues/2059)):
