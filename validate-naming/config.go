@@ -24,6 +24,7 @@ type config struct {
 	FilenameExemptDirectories []string `yaml:"filename-exempt-directories"`
 }
 
+// loadConfig accepts exactly one versioned document and rejects unknown fields.
 func loadConfig(file string) (config, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -42,6 +43,7 @@ func loadConfig(file string) (config, error) {
 	return cfg, cfg.check()
 }
 
+// check validates repository-relative paths, pattern syntax, and root separation.
 func (c config) check() error {
 	if c.Version != 1 {
 		return errors.New("configuration version must be 1")
@@ -82,6 +84,7 @@ func (c config) check() error {
 	return nil
 }
 
+// expandRoots selects real directories and rejects unmatched or overlapping patterns.
 func (c config) expandRoots(root string) (config, error) {
 	for _, roots := range []*[]string{&c.ResourceRoots, &c.PatchRoots} {
 		var expanded []string

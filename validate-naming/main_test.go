@@ -85,7 +85,7 @@ func TestSymlinksAndEmptyRootsFail(t *testing.T) {
 }
 
 func TestKebabAndPlural(t *testing.T) {
-	for kind, want := range map[string]string{"VerticalPodAutoscaler": "vertical-pod-autoscalers", "HTTPScaledObject": "http-scaled-objects", "ClusterPolicy": "cluster-policies", "Ingress": "ingresses", "EndpointSlice": "endpoint-slices", "SecurityContextConstraints": "security-context-constraintses"} {
+	for kind, want := range map[string]string{"VerticalPodAutoscaler": "vertical-pod-autoscalers", "HTTPScaledObject": "http-scaled-objects", "ClusterPolicy": "cluster-policies", "Ingress": "ingresses", "EndpointSlice": "endpoint-slices", "Endpoints": "endpoints", "SecurityContextConstraints": "security-context-constraints"} {
 		if got := plural(kind); got != want {
 			t.Errorf("plural(%s)=%s, want %s", kind, got, want)
 		}

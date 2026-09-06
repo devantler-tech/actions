@@ -24,12 +24,17 @@ var kebabName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 var acronymBoundary = regexp.MustCompile(`([A-Z]+)([A-Z][a-z])`)
 var wordBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
+// kebab separates Kind words while preserving acronyms such as HTTP and OCI.
 func kebab(kind string) string {
 	return strings.ToLower(wordBoundary.ReplaceAllString(acronymBoundary.ReplaceAllString(kind, "${1}-${2}"), "${1}-${2}"))
 }
 
+// plural retains established plural Kind names before applying English suffixes.
 func plural(kind string) string {
 	word := kebab(kind)
+	if kind == "Endpoints" || kind == "SecurityContextConstraints" {
+		return word
+	}
 	for _, suffix := range []string{"s", "x", "z", "ch", "sh"} {
 		if strings.HasSuffix(word, suffix) {
 			return word + "es"
@@ -41,10 +46,12 @@ func plural(kind string) string {
 	return word + "s"
 }
 
+// under compares whole path segments so similarly prefixed directories stay distinct.
 func under(name string, dirs []string) bool {
 	return slices.ContainsFunc(dirs, func(dir string) bool { return name == dir || strings.HasPrefix(name, dir+"/") })
 }
 
+// matches applies the already-validated, nonrecursive filename exception patterns.
 func matches(name string, patterns []string) bool {
 	return slices.ContainsFunc(patterns, func(pattern string) bool {
 		ok, err := path.Match(pattern, name)
@@ -52,10 +59,12 @@ func matches(name string, patterns []string) bool {
 	})
 }
 
+// leadsWith requires a hyphen boundary between a Kind prefix and its purpose.
 func leadsWith(stem, prefix string) bool {
 	return stem == prefix || strings.HasPrefix(stem, prefix+"-")
 }
 
+// documents extracts metadata from nonempty YAML documents without exposing parser excerpts.
 func documents(file string) ([]document, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -113,6 +122,7 @@ func (s *scan) add(name, rule, message string) {
 	s.violations = append(s.violations, violation{name, rule, message})
 }
 
+// file applies one rule family and collects the resource kinds needed for folder checks.
 func (s *scan) file(full, name string, machine bool) error {
 	base := path.Base(name)
 	if path.Ext(base) != ".yaml" && path.Ext(base) != ".yml" {
@@ -188,6 +198,7 @@ func (s *scan) file(full, name string, machine bool) error {
 	return nil
 }
 
+// validate rejects incomplete scans and returns naming findings in stable path/rule order.
 func validate(root string, cfg config) ([]violation, error) {
 	if err := cfg.check(); err != nil {
 		return nil, err
@@ -256,6 +267,7 @@ func validate(root string, cfg config) ([]violation, error) {
 	return s.violations, nil
 }
 
+// grouping checks homogeneous non-workload folders after all direct files are known.
 func (s *scan) grouping() {
 	workloads := []string{"HelmRelease", "HelmRepository", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Pod", "Job", "CronJob", "OCIRepository", "Kustomization", "Component"}
 	for dir, kinds := range s.folders {

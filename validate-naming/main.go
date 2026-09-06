@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 )
 
+// run keeps naming failures distinct from invalid input or an incomplete scan.
 func run(args []string, out, errOut io.Writer) int {
 	flags := flag.NewFlagSet("validate-naming", flag.ContinueOnError)
 	flags.SetOutput(errOut)
@@ -52,6 +53,7 @@ func run(args []string, out, errOut io.Writer) int {
 	return 0
 }
 
+// reportError preserves failure even when the diagnostic stream cannot be written.
 func reportError(out io.Writer, format string, args ...any) int {
 	if _, err := fmt.Fprintf(out, format, args...); err != nil {
 		return 2 // A broken diagnostic stream must still leave the CLI unsuccessful.

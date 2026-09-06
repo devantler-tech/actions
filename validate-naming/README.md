@@ -102,6 +102,7 @@ the consumer; these examples are not live defaults.
 6. A directory with two or more files of one non-workload kind uses the kind's
    kebab-case plural. Organizational descendants of configured CR directories
    are exempt. Component/workload kinds follow the original gates' conventions.
+   Already-plural `Endpoints` and `SecurityContextConstraints` names stay unchanged.
 7. Kindless Kubernetes patch fragments belong in `patches/`; kindless
    `kustomization.yaml` build files are allowed.
 8. Patches use intent names without a kind prefix or redundant `-patch` suffix.
