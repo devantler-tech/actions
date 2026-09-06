@@ -120,7 +120,9 @@ Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/
 
 Every `.github/tests/test-*.sh` is a test entrypoint and must have an explicit invocation in a
 `ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) in a
-dedicated step without a step-level `if`; quoting, arguments, and surrounding comments or blank lines are supported. The wiring
+dedicated step without a step-level `if`; quoting, arguments, and surrounding comments or blank lines
+are supported. The containing job may omit `if` or use CI's exact merge-group/release scheduling
+exclusion; arbitrary job conditions do not count because they could silently disable the test. The wiring
 guard rejects missing invocations and ignores step names, printed commands, heredocs, and uncalled
 functions. Helper scripts use names without the
 `test-` prefix and are invoked by a tested entrypoint instead of needing an exemption list.

@@ -2624,8 +2624,12 @@ jobs:
           # step names. Entry points use a direct invocation or `bash <path>` on
           # an unconditional dedicated step, optionally quoted and followed by arguments. Helpers
           # use names without the test- prefix and are called by those entrypoints.
+          # Containing jobs may use only the existing merge-group/release scheduling
+          # exclusion. Arbitrary job gates could silently disable every invocation.
+          # Build the literal expression without letting GitHub interpolate it here.
+          export TESTED_JOB_CONDITION='$'"{{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
           invoked_tests="$(
-            yq -r '.jobs[].steps[]? | select(.run != null and (has("if") | not)) | .run | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)' "$ci" \
+            yq -r '.jobs[] | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION)) | .steps[]? | select(.run != null and (has("if") | not)) | .run | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)' "$ci" \
               | sed -nE "s@^[[:space:]]*(bash[[:space:]]+)?[\"']?(\\./)?(\\.github/tests/test-[[:alnum:]_-]+\\.sh)[\"']?([[:space:]].*)?\$@\\3@p" \
               | sort -u
           )"

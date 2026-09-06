@@ -75,6 +75,21 @@ done
 yq '.jobs.tests.steps += [{"if": false, "run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
 blocked 'boolean false test step'
 
+# A job condition skips all of its otherwise-unconditional steps. The repository
+# intentionally omits tests on merge groups and release-only runs; only that exact
+# scheduling gate, or no job gate, is part of the supported wiring contract.
+# shellcheck disable=SC2016
+for condition in 'false' '${{ false }}' '${{ github.event_name == "never" }}'; do
+  CONDITION="$condition" yq '.jobs.tests.if = strenv(CONDITION) | .jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+  blocked "conditional test job: $condition"
+done
+yq '.jobs.tests.if = false | .jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+blocked 'boolean false test job'
+CONDITION="\${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}" \
+  yq '.jobs.tests.if = strenv(CONDITION) | .jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+run_guard || fail 'supported CI event scheduling gate rejected'
+echo 'PASS: supported merge-group and release scheduling exclusions'
+
 cp "$work/base.yaml" "$ci"
 blocked 'deleted CI step'
 for command in '# bash .github/tests/test-sentinel.sh' 'echo bash .github/tests/test-sentinel.sh' 'bash .github/tests/test-sentinel.sh.backup'; do
