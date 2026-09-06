@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.4.0](https://github.com/devantler-tech/actions/compare/v13.3.4...v13.4.0) (2026-09-06)
+
+
+### Features
+
+* **validate-go:** opt in to default-branch maintenance checks ([#1171](https://github.com/devantler-tech/actions/issues/1171)) ([76f4f7b](https://github.com/devantler-tech/actions/commit/76f4f7b56258ea1cf788149767b4fe291c244b70))
+
 ## [13.3.4](https://github.com/devantler-tech/actions/compare/v13.3.3...v13.3.4) (2026-09-06)
 
 
