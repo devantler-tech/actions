@@ -1006,12 +1006,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 🧪 Verify KSail installation and trust boundaries
+        shell: bash
+        run: bash .github/tests/test-setup-ksail-cli.sh
+
       - name: 🧪 Run setup-ksail-cli
         uses: ./setup-ksail-cli
 
       - name: ✅ Verify ksail is installed
         shell: bash
-        run: ksail --version
+        run: |
+          brew list --cask --versions devantler-tech/tap/ksail
+          ksail --version
 
   # ── .scripts/retry.sh (shared reliability helper) ──────────
   test-retry-script:
