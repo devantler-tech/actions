@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.4.1](https://github.com/devantler-tech/actions/compare/v13.4.0...v13.4.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **lint:** opt in to recoverable workflow-file fixes ([#1162](https://github.com/devantler-tech/actions/issues/1162)) ([d775642](https://github.com/devantler-tech/actions/commit/d775642608de1145bb7f3a00ca6fc434caa23d61))
+
 ## [13.4.0](https://github.com/devantler-tech/actions/compare/v13.3.4...v13.4.0) (2026-09-06)
 
 
