@@ -993,6 +993,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
@@ -1006,12 +1007,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 🧪 Verify KSail installation and trust boundaries
+        shell: bash
+        run: bash .github/tests/test-setup-ksail-cli.sh
+
       - name: 🧪 Run setup-ksail-cli
         uses: ./setup-ksail-cli
 
       - name: ✅ Verify ksail is installed
         shell: bash
-        run: ksail --version
+        run: |
+          brew list --cask --versions ksail
+          ksail --version
 
   # ── .scripts/retry.sh (shared reliability helper) ──────────
   test-retry-script:
