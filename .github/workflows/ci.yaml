@@ -2630,23 +2630,27 @@ jobs:
           # status with shell control operators. The required summary must include
           # the containing job so its failure actually blocks the required check.
           # Shell overrides at every scope must use Bash, not a command that can
-          # return success without executing the generated script.
+          # return success without executing the generated script. Working-directory
+          # overrides must keep relative paths anchored at the repository root.
           # Build the literal expression without letting GitHub interpolate it here.
           export TESTED_JOB_CONDITION='$'"{{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
           invoked_tests="$(
             yq -r '
               select(.defaults.run.shell == null or .defaults.run.shell == "bash")
+              | select(.defaults.run.working-directory == null or .defaults.run.working-directory == ".")
               | .jobs.ci-required-checks.needs as $required_jobs
               | .jobs | to_entries[]
               | .key as $job
               | select($required_jobs[] == $job)
               | .value
               | select(.defaults.run.shell == null or .defaults.run.shell == "bash")
+              | select(.defaults.run.working-directory == null or .defaults.run.working-directory == ".")
               | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION))
               | select((has("needs") | not) or ((.needs | type) == "!!seq" and (.needs | length) == 0))
               | select((has("continue-on-error") | not) or .continue-on-error == false)
               | .steps[]?
               | select((has("shell") | not) or .shell == "bash")
+              | select((has("working-directory") | not) or .working-directory == ".")
               | select(.run != null and (has("if") | not))
               | select((has("continue-on-error") | not) or .continue-on-error == false)
               | .run

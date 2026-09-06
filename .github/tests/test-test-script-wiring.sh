@@ -116,6 +116,31 @@ yq '.defaults.run.shell = "bash" | .jobs.tests.defaults.run.shell = "bash" |
 run_guard || fail 'explicit Bash shell and defaults rejected'
 echo 'PASS: explicit Bash at every shell scope'
 
+# A valid relative command in another directory can execute a shadow entrypoint.
+mkdir -p "$work/repo/fixture/.github/tests"
+printf 'exit 23\n' >"$work/repo/.github/tests/test-sentinel.sh"
+printf 'exit 0\n' >"$work/repo/fixture/.github/tests/test-sentinel.sh"
+if (cd "$work/repo" && bash .github/tests/test-sentinel.sh); then
+  fail 'root sentinel unexpectedly passed'
+else
+  [[ "$?" -eq 23 ]] || fail 'root sentinel failed for an unexpected reason'
+fi
+(cd "$work/repo/fixture" && bash .github/tests/test-sentinel.sh) || fail 'shadow sentinel failed'
+for scope in step job workflow; do
+  yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+  case "$scope" in
+    step) yq -i '.jobs.tests.steps[-1].working-directory = "fixture"' "$ci" ;;
+    job) yq -i '.jobs.tests.defaults.run.working-directory = "fixture"' "$ci" ;;
+    workflow) yq -i '.defaults.run.working-directory = "fixture"' "$ci" ;;
+  esac
+  blocked "$scope working directory executes a shadow script"
+done
+yq '.defaults.run.working-directory = "." | .jobs.tests.defaults.run.working-directory = "." |
+  .jobs.tests.steps += [{"working-directory": ".", "run": "bash .github/tests/test-sentinel.sh"}]' \
+  "$work/base.yaml" >"$ci"
+run_guard || fail 'explicit repository-root working directories rejected'
+echo 'PASS: repository-root working directory at every scope'
+
 # These are literal GitHub expressions, not shell interpolation.
 # shellcheck disable=SC2016
 for condition in 'false' '${{ false }}' '${{ github.event_name == "never" }}'; do

@@ -124,6 +124,8 @@ dedicated step without a step-level `if`; quoting, arguments, and surrounding co
 are supported. Use portable filenames containing letters, digits, dots, underscores, and hyphens.
 Explicit shells and job/workflow shell defaults must use `bash`; a custom shell could return
 success without executing the test script.
+Working-directory overrides at those scopes must be `.` so relative paths identify the repository's
+actual test entrypoints, rather than a shadow script in a fixture directory.
 The containing job may omit `if` or use CI's exact merge-group/release scheduling
 exclusion; arbitrary job conditions do not count because they could silently disable the test. The
 containing job has no prerequisites and appears in `ci-required-checks.needs` and `JOB_RESULTS`,
