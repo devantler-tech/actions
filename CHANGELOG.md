@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.3.4](https://github.com/devantler-tech/actions/compare/v13.3.3...v13.3.4) (2026-09-06)
+
+
+### Bug Fixes
+
+* **setup-ksail:** install from the canonical tap with stable Homebrew ([#1167](https://github.com/devantler-tech/actions/issues/1167)) ([9661529](https://github.com/devantler-tech/actions/commit/9661529c7918485f81a8f408d27f13e7c8427837))
+
 ## [13.3.3](https://github.com/devantler-tech/actions/compare/v13.3.2...v13.3.3) (2026-09-05)
 
 
