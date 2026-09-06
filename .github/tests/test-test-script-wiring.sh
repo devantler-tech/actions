@@ -92,6 +92,25 @@ yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}] |
   "$work/base.yaml" >"$ci"
 blocked 'test job omitted from required summary'
 
+# A custom shell can return success without executing the generated script.
+# Check inherited defaults as well as the step's explicit shell selection.
+for scope in step job workflow; do
+  for runner_shell in '"true"' 'true' '"true {0}"' '"echo {0}"'; do
+    yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+    case "$scope" in
+      step) RUNNER_SHELL="$runner_shell" yq -i '.jobs.tests.steps[-1].shell = env(RUNNER_SHELL)' "$ci" ;;
+      job) RUNNER_SHELL="$runner_shell" yq -i '.jobs.tests.defaults.run.shell = env(RUNNER_SHELL)' "$ci" ;;
+      workflow) RUNNER_SHELL="$runner_shell" yq -i '.defaults.run.shell = env(RUNNER_SHELL)' "$ci" ;;
+    esac
+    blocked "$scope custom shell: $runner_shell"
+  done
+done
+yq '.defaults.run.shell = "bash" | .jobs.tests.defaults.run.shell = "bash" |
+  .jobs.tests.steps += [{"shell": "bash", "run": "bash .github/tests/test-sentinel.sh"}]' \
+  "$work/base.yaml" >"$ci"
+run_guard || fail 'explicit Bash shell and defaults rejected'
+echo 'PASS: explicit Bash at every shell scope'
+
 # These are literal GitHub expressions, not shell interpolation.
 # shellcheck disable=SC2016
 for condition in 'false' '${{ false }}' '${{ github.event_name == "never" }}'; do

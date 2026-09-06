@@ -122,6 +122,8 @@ Every `.github/tests/test-*.sh` is a test entrypoint and must have an explicit i
 `ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) in a
 dedicated step without a step-level `if`; quoting, arguments, and surrounding comments or blank lines
 are supported. Use portable filenames containing letters, digits, dots, underscores, and hyphens.
+Explicit shells and job/workflow shell defaults must use `bash`; a custom shell could return
+success without executing the test script.
 The containing job may omit `if` or use CI's exact merge-group/release scheduling
 exclusion; arbitrary job conditions do not count because they could silently disable the test. The
 containing job has no prerequisites and appears in `ci-required-checks.needs` and `JOB_RESULTS`,

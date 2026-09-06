@@ -2629,19 +2629,24 @@ jobs:
           # job nor step may tolerate failures, and the invocation may not mask its
           # status with shell control operators. The required summary must include
           # the containing job so its failure actually blocks the required check.
+          # Shell overrides at every scope must use Bash, not a command that can
+          # return success without executing the generated script.
           # Build the literal expression without letting GitHub interpolate it here.
           export TESTED_JOB_CONDITION='$'"{{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
           invoked_tests="$(
             yq -r '
-              .jobs.ci-required-checks.needs as $required_jobs
+              select(.defaults.run.shell == null or .defaults.run.shell == "bash")
+              | .jobs.ci-required-checks.needs as $required_jobs
               | .jobs | to_entries[]
               | .key as $job
               | select($required_jobs | contains([$job]))
               | .value
+              | select(.defaults.run.shell == null or .defaults.run.shell == "bash")
               | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION))
               | select((has("needs") | not) or ((.needs | type) == "!!seq" and (.needs | length) == 0))
               | select((has("continue-on-error") | not) or .continue-on-error == false)
               | .steps[]?
+              | select((has("shell") | not) or .shell == "bash")
               | select(.run != null and (has("if") | not))
               | select((has("continue-on-error") | not) or .continue-on-error == false)
               | .run
