@@ -2622,17 +2622,17 @@ jobs:
 
           # (3) shell test -> run command. Inspect run scalars, not YAML comments or
           # step names. Entry points use a direct invocation or `bash <path>` on
-          # a dedicated step, optionally quoted and followed by arguments. Helpers
+          # an unconditional dedicated step, optionally quoted and followed by arguments. Helpers
           # use names without the test- prefix and are called by those entrypoints.
           invoked_tests="$(
-            yq -r '.jobs[].steps[]? | select(.run != null) | .run | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)' "$ci" \
+            yq -r '.jobs[].steps[]? | select(.run != null and (has("if") | not)) | .run | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)' "$ci" \
               | sed -nE "s@^[[:space:]]*(bash[[:space:]]+)?[\"']?(\\./)?(\\.github/tests/test-[[:alnum:]_-]+\\.sh)[\"']?([[:space:]].*)?\$@\\3@p" \
               | sort -u
           )"
           for test_script in .github/tests/test-*.sh; do
             [[ -f "$test_script" ]] || continue
             if ! grep -qxF "$test_script" <<<"$invoked_tests"; then
-              echo "::error file=$test_script::test script has no explicit invocation in $ci (expected run: bash $test_script)"
+              echo "::error file=$test_script::test script has no unconditional dedicated invocation in $ci (expected run: bash $test_script)"
               status=1
             fi
           done

@@ -66,6 +66,15 @@ COMMAND=$'# Regression gate\nbash .github/tests/test-sentinel.sh\n' yq '.jobs.te
 run_guard || fail 'comments and blank lines around an invocation were rejected'
 echo 'PASS: comments around a dedicated invocation'
 
+# These are literal GitHub expressions, not shell interpolation.
+# shellcheck disable=SC2016
+for condition in 'false' '${{ false }}' '${{ github.event_name == "never" }}'; do
+  CONDITION="$condition" yq '.jobs.tests.steps += [{"if": strenv(CONDITION), "run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+  blocked "conditional test step: $condition"
+done
+yq '.jobs.tests.steps += [{"if": false, "run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+blocked 'boolean false test step'
+
 cp "$work/base.yaml" "$ci"
 blocked 'deleted CI step'
 for command in '# bash .github/tests/test-sentinel.sh' 'echo bash .github/tests/test-sentinel.sh' 'bash .github/tests/test-sentinel.sh.backup'; do
