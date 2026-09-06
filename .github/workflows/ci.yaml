@@ -993,6 +993,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
@@ -1016,7 +1017,7 @@ jobs:
       - name: ✅ Verify ksail is installed
         shell: bash
         run: |
-          brew list --cask --versions devantler-tech/tap/ksail
+          brew list --cask --versions ksail
           ksail --version
 
   # ── .scripts/retry.sh (shared reliability helper) ──────────
