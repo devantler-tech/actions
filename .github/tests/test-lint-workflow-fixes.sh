@@ -14,18 +14,21 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 for workflow in lint validate-go-project; do
   file="$root/.github/workflows/$workflow.yaml"
   yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .run' "$file" >"$work/export.sh"
-  for scenario in workflow clean ordinary new-workflow deleted-workflow mixed rename-in rename-out similar-directory nested-workflow; do
+  for scenario in workflow clean ordinary new-workflow deleted-workflow mixed rename-in rename-out similar-directory nested-workflow binary-only binary-mixed mode-only mode-mixed; do
     fixture="$work/$workflow-$scenario"
     mkdir -p "$fixture/.github/workflows" "$fixture/.github/workflows-extra" "$fixture/nested/.github/workflows" "$fixture/nested/module" "$fixture/../artifacts-$workflow-$scenario"
     git -C "$fixture" init -q
     git -C "$fixture" config user.name test
     git -C "$fixture" config user.email test@example.invalid
     git -C "$fixture" config commit.gpgsign false
+    git -C "$fixture" config core.filemode true
     printf 'original\n' >"$fixture/.github/workflows/ci.yaml"
     printf 'original\n' >"$fixture/value.txt"
     printf 'original\n' >"$fixture/.github/workflows-extra/value.yaml"
     printf 'original\n' >"$fixture/nested/.github/workflows/ci.yaml"
-    git -C "$fixture" add -- .github value.txt nested
+    printf 'before\000binary\n' >"$fixture/payload.bin"
+    printf '#!/bin/sh\necho fixture\n' >"$fixture/script.sh"
+    git -C "$fixture" add -- .github value.txt nested payload.bin script.sh
     git -C "$fixture" commit -qm base
 
     changed=true
@@ -45,6 +48,16 @@ for workflow in lint validate-go-project; do
       rename-out) mv "$fixture/.github/workflows/ci.yaml" "$fixture/moved.txt" ;;
       similar-directory) printf 'formatted\n' >"$fixture/.github/workflows-extra/value.yaml"; manual=false ;;
       nested-workflow) printf 'formatted\n' >"$fixture/nested/.github/workflows/ci.yaml"; manual=false ;;
+      binary-only) printf 'after\000binary\n' >"$fixture/payload.bin"; manual=false ;;
+      binary-mixed)
+        printf 'after\000binary\n' >"$fixture/payload.bin"
+        printf 'formatted\n' >"$fixture/.github/workflows/ci.yaml"
+        ;;
+      mode-only) chmod +x "$fixture/script.sh"; manual=false ;;
+      mode-mixed)
+        chmod +x "$fixture/script.sh"
+        printf 'formatted\n' >"$fixture/.github/workflows/ci.yaml"
+        ;;
     esac
 
     artifacts="$fixture/../artifacts-$workflow-$scenario"
@@ -65,11 +78,14 @@ for workflow in lint validate-go-project; do
       [[ -s "$patch" ]] || fail "$workflow/$scenario lost the patch"
       # Stage the fixture's intended result only AFTER export, so additions above really
       # are untracked when the production exporter sees them.
-      git -C "$fixture" add -- .github nested
+      git -C "$fixture" add -- .github nested payload.bin script.sh
       [[ ! -e "$fixture/value.txt" ]] || git -C "$fixture" add -- value.txt
       [[ ! -e "$fixture/moved.txt" ]] || git -C "$fixture" add -- moved.txt
       expected="$(git -C "$fixture" write-tree)"
-      git clone -q "$fixture" "$artifacts/replay"
+      # Transfer only committed objects. A local clone also copies unreachable
+      # blobs staged above, which could let git apply recover omitted binary
+      # payloads from the fixture's object store instead of from the artifact.
+      git clone -q --no-local "$fixture" "$artifacts/replay"
       git -C "$artifacts/replay" apply --index "$patch" || fail "$workflow/$scenario patch cannot be applied"
       [[ "$(git -C "$artifacts/replay" write-tree)" == "$expected" ]] || fail "$workflow/$scenario exported only part of the fix"
     else
