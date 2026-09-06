@@ -74,6 +74,8 @@ func TestNamingRules(t *testing.T) {
 		{name: "instance-owned exception stays narrow", files: map[string]string{"k8s/clusters/prod/wrong.yaml": secret}, cfg: config{KindPrefixExemptFiles: []string{"k8s/clusters/*/variables-secret.enc.yaml"}}, want: "kind-prefix"},
 		{name: "vendor filename exception", files: map[string]string{"k8s/custom-resource-definitions/tests.example.io.yaml": "kind: CustomResourceDefinition\n"}, cfg: config{CRDirectories: []string{"k8s/custom-resource-definitions"}, FilenameExemptDirectories: []string{"k8s/custom-resource-definitions"}}},
 		{name: "Talos intent", files: map[string]string{"talos/enable-feature.yaml": "machine:\n  features: {}\n"}, cfg: config{PatchRoots: []string{"talos"}}},
+		{name: "new Talos environments are covered", files: map[string]string{"talos/enable-feature.yaml": "machine: {}\n", "talos-staging/hostname-config.yaml": "kind: HostnameConfig\n"}, cfg: config{PatchRoots: []string{"talos*"}}, want: "patch-intent"},
+		{name: "root patterns select directories", files: map[string]string{"talos/enable-feature.yaml": "machine: {}\n", "talosconfig": "not a manifest\n"}, cfg: config{PatchRoots: []string{"talos*"}}},
 		{name: "Talos kind prefix", files: map[string]string{"talos/hostname-config.yaml": "apiVersion: v1alpha1\nkind: HostnameConfig\n"}, cfg: config{PatchRoots: []string{"talos"}}, want: "patch-intent"},
 		{name: "Talos multiple kindless docs", files: map[string]string{"talos/enable-feature.yaml": "machine: {}\n---\ncluster: {}\n"}, cfg: config{PatchRoots: []string{"talos"}}, want: "one-document"},
 		{name: "Talos redundant suffix", files: map[string]string{"talos/enable-feature-patch.yaml": "machine: {}\n"}, cfg: config{PatchRoots: []string{"talos"}}, want: "patch-suffix"},

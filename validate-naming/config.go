@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -52,7 +54,7 @@ func (c config) check() error {
 		values   []string
 		patterns bool
 	}{
-		{"resource-roots", c.ResourceRoots, false}, {"patch-roots", c.PatchRoots, false},
+		{"resource-roots", c.ResourceRoots, true}, {"patch-roots", c.PatchRoots, true},
 		{"cr-directories", c.CRDirectories, false}, {"multi-resource-files", c.MultiResourceFiles, false},
 		{"kind-prefix-exempt-files", c.KindPrefixExemptFiles, true}, {"filename-exempt-directories", c.FilenameExemptDirectories, false},
 	} {
@@ -78,4 +80,35 @@ func (c config) check() error {
 		}
 	}
 	return nil
+}
+
+func (c config) expandRoots(root string) (config, error) {
+	for _, roots := range []*[]string{&c.ResourceRoots, &c.PatchRoots} {
+		var expanded []string
+		for _, pattern := range *roots {
+			matches, err := fs.Glob(os.DirFS(root), pattern)
+			if err != nil {
+				return c, fmt.Errorf("scan root %q: invalid pattern", pattern)
+			}
+			var directories []string
+			for _, match := range matches {
+				info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(match)))
+				if err != nil {
+					return c, fmt.Errorf("scan root %q: %w", pattern, err)
+				}
+				if info.Mode()&os.ModeSymlink != 0 {
+					return c, fmt.Errorf("scan root %q: symlinks are not supported", match)
+				}
+				if info.IsDir() {
+					directories = append(directories, match)
+				}
+			}
+			if len(directories) == 0 {
+				return c, fmt.Errorf("scan root %q did not match a directory", pattern)
+			}
+			expanded = append(expanded, directories...)
+		}
+		*roots = expanded
+	}
+	return c, c.check() // Also reject overlaps that appear only after pattern expansion.
 }

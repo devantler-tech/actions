@@ -50,7 +50,7 @@ Create `.github/manifest-naming.yaml` in the repository being checked:
 ```yaml
 version: 1
 resource-roots: [k8s]
-patch-roots: [talos, talos-local]
+patch-roots: ["talos*"]
 cr-directories:
   - k8s/infrastructure/cluster-policies
 multi-resource-files:
@@ -61,16 +61,16 @@ filename-exempt-directories:
   - k8s/controllers/example/custom-resource-definitions
 ```
 
-`version` must be `1`. At least one scan root is required. Roots must exist, be
-non-overlapping directories, and collectively contain at least one `.yaml` or
+`version` must be `1`. At least one scan root is required. Root patterns must
+match existing, non-overlapping directories and collectively contain at least one `.yaml` or
 `.yml` file. Paths use `/`, are relative to the repository root, and cannot contain
 `..`, absolute paths, or symlinks. Unknown configuration fields, malformed YAML,
 and multiple configuration documents fail validation.
 
 | Field | Scope |
 |-------|-------|
-| `resource-roots` | Directories recursively checked as Kubernetes manifests. |
-| `patch-roots` | Directories recursively checked as machine configuration patches. |
+| `resource-roots` | Directory paths or patterns recursively checked as Kubernetes manifests. |
+| `patch-roots` | Directory paths or patterns recursively checked as machine configuration patches; `talos*` includes new environments automatically. |
 | `cr-directories` | Directories whose resource files use instance/purpose names; descendants inherit this exception. |
 | `multi-resource-files` | Exact files exempt only from the one-resource rule, for upstream bundles. |
 | `kind-prefix-exempt-files` | Files exempt only from the ordinary resource kind prefix. Supports Go `path.Match` patterns: `*` stays within one path segment; `**` has no special meaning. |
@@ -78,8 +78,10 @@ and multiple configuration documents fail validation.
 
 All lists are optional except that `resource-roots` and `patch-roots` cannot both
 be empty. Exception paths may be absent, allowing configurations to retain an
-exception when a provider component is not present. Patterns are supported only
-in `kind-prefix-exempt-files`; the other lists contain exact paths.
+exception when a provider component is not present. Patterns in scan roots and
+`kind-prefix-exempt-files` use Go path matching: `*` does not cross `/`, and `**`
+has no recursive meaning. The other lists contain exact paths. An unmatched root
+pattern is an error, so a misspelled directory cannot silently disable the gate.
 
 The [Platform](examples/platform.yaml) and
 [platform-template](examples/platform-template.yaml) configurations illustrate

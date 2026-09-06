@@ -29,6 +29,8 @@ func TestCLI(t *testing.T) {
 		{"parent traversal", deployment, "version: 1\nresource-roots: [../k8s]\n", "repository-relative", 2},
 		{"absolute path", deployment, "version: 1\nresource-roots: [/k8s]\n", "repository-relative", 2},
 		{"overlapping roots", deployment, "version: 1\nresource-roots: [k8s]\npatch-roots: [k8s/app]\n", "overlap", 2},
+		{"overlapping expanded roots", deployment, "version: 1\nresource-roots: ['k*', k8s/app]\n", "overlap", 2},
+		{"unmatched root pattern", deployment, "version: 1\npatch-roots: ['talos*']\n", "scan root", 2},
 		{"configuration stream", deployment, basicConfig + "---\nversion: 1\n", "exactly one", 2},
 		{"configuration glob typo", deployment, basicConfig + "kind-prefix-exempt-files: ['[']\n", "invalid path pattern", 2},
 	} {

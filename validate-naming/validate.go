@@ -192,6 +192,11 @@ func validate(root string, cfg config) ([]violation, error) {
 	if err := cfg.check(); err != nil {
 		return nil, err
 	}
+	var err error
+	cfg, err = cfg.expandRoots(root)
+	if err != nil {
+		return nil, err
+	}
 	s := scan{cfg: cfg, folders: make(map[string][]string)}
 	for _, group := range []struct {
 		roots   []string

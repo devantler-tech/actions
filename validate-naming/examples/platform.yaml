@@ -1,6 +1,6 @@
 version: 1
 resource-roots: [k8s]
-patch-roots: [talos, talos-local]
+patch-roots: ["talos*"]
 multi-resource-files:
   - k8s/bases/infrastructure/controllers/cdi/cdi-operator.yaml
   - k8s/bases/infrastructure/controllers/kubevirt/kubevirt-operator.yaml
