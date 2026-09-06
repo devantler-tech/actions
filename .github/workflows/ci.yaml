@@ -125,6 +125,19 @@ jobs:
           test "$VIOLATION" = failure
           test "$INVALID" = failure
           test -z "$VALIDATED"
+      - name: Assert the seeded fixture reports its naming rule
+        shell: bash
+        env:
+          GOWORK: "off"
+          GOFLAGS: ""
+          GOTOOLCHAIN: local
+        run: |
+          go -C validate-naming build -mod=readonly -o "$RUNNER_TEMP/validate-naming" .
+          result=0
+          "$RUNNER_TEMP/validate-naming" --root .github/fixtures/validate-naming --config invalid.yaml > "$RUNNER_TEMP/naming-failure.log" 2>&1 || result=$?
+          cat "$RUNNER_TEMP/naming-failure.log"
+          test "$result" -eq 1
+          grep -F '"bad/wrong-name.yaml" [kind-prefix]:' "$RUNNER_TEMP/naming-failure.log"
 
   # Every test job below is ineligible for merge_group through a leading event
   # predicate: an explicit exclusion, or the push-only Zizmor self-test. Merge refs contain
