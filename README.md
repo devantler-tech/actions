@@ -836,6 +836,14 @@ jobs:
 | `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
 | `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 | `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |
+| `maintenance-default-branch` | Input (boolean) | `false` | No | Also run tidy and dead-code analysis on default-branch pushes that change Go files. Findings fail validation without committing fixes to the default branch. Uses the repository's configured default branch name. |
+
+To enable default-branch maintenance validation, pass `maintenance-default-branch: true`
+in a caller that runs on pushes to its default branch. Pull-request checks remain
+enabled without this input. Tidy also preserves checks on other branches; its
+default-branch exclusion uses the repository's configured name rather than
+assuming `main` or `master`. Go path filtering and merge-queue exclusions still apply.
+Rollout and flag retirement are tracked in [#1170](https://github.com/devantler-tech/actions/issues/1170).
 
 </details>
 
