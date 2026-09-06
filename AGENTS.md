@@ -141,6 +141,18 @@ A new job/step/behaviour must not go live for every consumer the moment it merge
 - You **cannot** wrap `if:` around an individual `with:` input — gate the whole **step** (or **job**), or select the value with a ternary in the `with:` value (`${{ inputs.<enable-x> && 'a' || 'b' }}`).
 - **Test both states.** Per the feature-flag-first "test both states" rule, cover the flag **off** (default) and **on** with `[Test]` jobs (see *Test jobs* above) — a flag whose off-path is untested can regress silently.
 
+**Workflow-file fixes:** `manual-workflow-fixes` defaults to false in both lint workflows. Opted-in
+runs export the full patch but withhold automatic signing when any changed path is under the
+repository-root `.github/workflows/`. Keep mixed edits and renames
+in one downloadable artifact, with a warning explaining local application. Do not widen the signer's
+token permissions to apply them. `test-lint-workflow-fixes.sh` exercises both exporters against real
+Git fixtures in both flag states, including binary edits, mode changes, additions, deletions, renames,
+and ordinary paths. Eligible opted-in runs recover patches after lint errors without making the
+failed job successful; cancelled runs do not force recovery. `test-lint-recovery-gates.sh` exercises
+the status and eligibility boundaries. Omitted/false inputs preserve prior routing. Both flag states
+must remain instantiated in CI, and the read-only failure and credential-boundary tests remain green.
+Consumer rollout and flag removal are tracked in #1186.
+
 ## Authentication Patterns
 
 GitHub App tokens (not `GITHUB_TOKEN`) are used for operations that must trigger other workflows or bypass branch protection:

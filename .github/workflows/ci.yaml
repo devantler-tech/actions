@@ -2720,6 +2720,20 @@ jobs:
       issues: write
       code-quality: write # callers must grant this for the coverage upload (GitHub Code Quality)
 
+  test-validate-go-project-manual-fixes:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Go Project - Manual Workflow Fixes Opted In"
+    uses: ./.github/workflows/validate-go-project.yaml
+    with:
+      working-directory: .github/tests/go-valid-fixture
+      apply-signed-fixes: false
+      manual-workflow-fixes: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      code-quality: write
+
   # ── Flag-ON counterpart for signed auto-fixes ──
   # The opted-out job above proves the read-only path. This call opts in against the same
   # known-clean fixture, so GitHub instantiates the privileged path without producing an
@@ -3953,6 +3967,17 @@ jobs:
       working-directory: .github/tests/megalinter-clean-fixture
       apply-fixes: false
 
+  test-lint-workflow-manual-fixes:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Lint - Manual Workflow Fixes Opted In"
+    permissions:
+      contents: read
+    uses: ./.github/workflows/lint.yaml
+    with:
+      working-directory: .github/tests/megalinter-clean-fixture
+      apply-fixes: false
+      manual-workflow-fixes: true
+
   test-lint-blocks:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Lint - Blocks On Invalid Fixture"
@@ -4025,6 +4050,13 @@ jobs:
       - name: 🔐 Assert the lint credential boundary
         shell: bash
         run: bash .github/tests/test-lint-credential-boundary.sh
+
+      - name: 📦 Exercise workflow-fix patch recovery
+        shell: bash
+        run: bash .github/tests/test-lint-workflow-fixes.sh
+
+      - name: 📋 Verify lint recovery after failures and both flag states
+        run: bash .github/tests/test-lint-recovery-gates.sh
 
       # validate-go-project.yaml is the ORG-REQUIRED workflow, so its three fixer lanes run
       # PR-authored tooling on essentially every Go pull request in the organisation. The
@@ -4220,6 +4252,7 @@ jobs:
       - test-delete-workflow-runs-specific
       - test-delete-workflow-runs-minimal
       - test-validate-go-project
+      - test-validate-go-project-manual-fixes
       - test-validate-go-project-apply-signed-fixes
       - test-validate-go-project-scan-default-branch
       - test-validate-go-project-test-default-branch
@@ -4264,6 +4297,7 @@ jobs:
       - test-validate-go-gate-lockstep
       - test-validate-go-project-concurrency-key
       - test-lint-workflow
+      - test-lint-workflow-manual-fixes
       - test-lint-blocks
       - test-lint-gate-lockstep
       - test-apply-signed-fixes-suppresses-bots
@@ -4328,6 +4362,7 @@ jobs:
             ${{ needs.test-delete-workflow-runs-specific.result }}
             ${{ needs.test-delete-workflow-runs-minimal.result }}
             ${{ needs.test-validate-go-project.result }}
+            ${{ needs.test-validate-go-project-manual-fixes.result }}
             ${{ needs.test-validate-go-project-apply-signed-fixes.result }}
             ${{ needs.test-validate-go-project-scan-default-branch.result }}
             ${{ needs.test-validate-go-project-test-default-branch.result }}
@@ -4372,6 +4407,7 @@ jobs:
             ${{ needs.test-validate-go-gate-lockstep.result }}
             ${{ needs.test-validate-go-project-concurrency-key.result }}
             ${{ needs.test-lint-workflow.result }}
+            ${{ needs.test-lint-workflow-manual-fixes.result }}
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
             ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
