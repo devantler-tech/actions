@@ -81,6 +81,16 @@ COMMAND=$'# Regression gate\nbash .github/tests/test-sentinel.sh\n' yq '.jobs.te
 run_guard || fail 'comments and blank lines around an invocation were rejected'
 echo 'PASS: comments around a dedicated invocation'
 
+# Running a test is not sufficient if the required summary ignores its job.
+# Keep needs/result parity valid while removing only the test job from the gate.
+# shellcheck disable=SC2016 -- Preserve the literal GitHub expression in YAML.
+yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}] |
+  .jobs.unrelated.steps = [{"run": "echo unrelated"}] |
+  .jobs.ci-required-checks.needs = ["unrelated"] |
+  .jobs.ci-required-checks.steps[0].env.JOB_RESULTS = "${{ needs.unrelated.result }}"' \
+  "$work/base.yaml" >"$ci"
+blocked 'test job omitted from required summary'
+
 # These are literal GitHub expressions, not shell interpolation.
 # shellcheck disable=SC2016
 for condition in 'false' '${{ false }}' '${{ github.event_name == "never" }}'; do

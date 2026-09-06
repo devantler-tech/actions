@@ -124,7 +124,8 @@ dedicated step without a step-level `if`; quoting, arguments, and surrounding co
 are supported. Use portable filenames containing letters, digits, dots, underscores, and hyphens.
 The containing job may omit `if` or use CI's exact merge-group/release scheduling
 exclusion; arbitrary job conditions do not count because they could silently disable the test. The
-containing job has no prerequisites, and neither the job nor the step may use `continue-on-error`
+containing job has no prerequisites and appears in `ci-required-checks.needs` and `JOB_RESULTS`,
+so its failure reaches the required check. Neither the job nor the step may use `continue-on-error`
 except literal `false`. Keep shell control operators (`;`, `&`, `|`) out of invocation lines so test
 failures reach CI. The wiring
 guard rejects missing invocations and ignores step names, printed commands, heredocs, and uncalled

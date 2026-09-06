@@ -2627,12 +2627,17 @@ jobs:
           # Containing jobs may use only the existing merge-group/release scheduling
           # exclusion, with no prerequisites that could skip the whole job. Neither
           # job nor step may tolerate failures, and the invocation may not mask its
-          # status with shell control operators.
+          # status with shell control operators. The required summary must include
+          # the containing job so its failure actually blocks the required check.
           # Build the literal expression without letting GitHub interpolate it here.
           export TESTED_JOB_CONDITION='$'"{{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
           invoked_tests="$(
             yq -r '
-              .jobs[]
+              .jobs.ci-required-checks.needs as $required_jobs
+              | .jobs | to_entries[]
+              | .key as $job
+              | select($required_jobs | contains([$job]))
+              | .value
               | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION))
               | select((has("needs") | not) or ((.needs | type) == "!!seq" and (.needs | length) == 0))
               | select((has("continue-on-error") | not) or .continue-on-error == false)
