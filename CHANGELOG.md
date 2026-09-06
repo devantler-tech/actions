@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.5.0](https://github.com/devantler-tech/actions/compare/v13.4.1...v13.5.0) (2026-09-06)
+
+
+### Features
+
+* **validate-naming:** add configurable manifest naming gate ([#1201](https://github.com/devantler-tech/actions/issues/1201)) ([d82f6c1](https://github.com/devantler-tech/actions/commit/d82f6c1650f7d63af5bce96f58647a18d0304787))
+
 ## [13.4.1](https://github.com/devantler-tech/actions/compare/v13.4.0...v13.4.1) (2026-09-06)
 
 
