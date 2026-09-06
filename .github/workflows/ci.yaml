@@ -2643,7 +2643,7 @@ jobs:
               | select((split("\n") | map(select(test("^[[:space:]]*(#.*)?$") | not)) | length) == 1)
             ' "$ci" \
               | sed '/[;&|]/d' \
-              | sed -nE "s@^[[:space:]]*(bash[[:space:]]+)?[\"']?(\\./)?(\\.github/tests/test-[[:alnum:]_-]+\\.sh)[\"']?([[:space:]].*)?\$@\\3@p" \
+              | sed -nE "s@^[[:space:]]*(bash[[:space:]]+)?[\"']?(\\./)?(\\.github/tests/test-[[:alnum:]_.-]*\\.sh)[\"']?([[:space:]].*)?\$@\\3@p" \
               | sort -u
           )"
           for test_script in .github/tests/test-*.sh; do

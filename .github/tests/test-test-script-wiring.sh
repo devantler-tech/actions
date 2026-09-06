@@ -62,6 +62,21 @@ for command in 'bash .github/tests/test-sentinel.sh' 'bash "./.github/tests/test
 done
 echo 'PASS: direct and bash invocations with quoting and arguments'
 
+# The entrypoint glob also includes dotted names and an empty suffix. Match the
+# complete portable filename instead of silently narrowing test-*.sh to words.
+for filename in test-sentinel.v2.sh test-.sh; do
+  mv "$work/repo/.github/tests/test-sentinel.sh" "$work/repo/.github/tests/$filename"
+  for command in "bash .github/tests/$filename" "bash \"./.github/tests/$filename\" fixture.yaml" "./.github/tests/$filename"; do
+    COMMAND="$command" yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
+    run_guard || fail "valid filename rejected: $command"
+  done
+  COMMAND="bash .github/tests/$filename.backup" yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
+  if run_guard; then fail "filename prefix accepted: $filename.backup"; fi
+  grep -qF ".github/tests/$filename" "$work/result" || fail 'missing filename diagnostic'
+  mv "$work/repo/.github/tests/$filename" "$work/repo/.github/tests/test-sentinel.sh"
+done
+echo 'PASS: dotted and empty-suffix filenames require their exact invocation'
+
 COMMAND=$'# Regression gate\nbash .github/tests/test-sentinel.sh\n' yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
 run_guard || fail 'comments and blank lines around an invocation were rejected'
 echo 'PASS: comments around a dedicated invocation'

@@ -121,7 +121,8 @@ Actions and reusable workflows are exercised as jobs inside [`ci.yaml`](.github/
 Every `.github/tests/test-*.sh` is a test entrypoint and must have an explicit invocation in a
 `ci.yaml` step's `run:` block. Put `bash .github/tests/test-name.sh` (or the executable path) in a
 dedicated step without a step-level `if`; quoting, arguments, and surrounding comments or blank lines
-are supported. The containing job may omit `if` or use CI's exact merge-group/release scheduling
+are supported. Use portable filenames containing letters, digits, dots, underscores, and hyphens.
+The containing job may omit `if` or use CI's exact merge-group/release scheduling
 exclusion; arbitrary job conditions do not count because they could silently disable the test. The
 containing job has no prerequisites, and neither the job nor the step may use `continue-on-error`
 except literal `false`. Keep shell control operators (`;`, `&`, `|`) out of invocation lines so test
