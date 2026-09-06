@@ -13,6 +13,119 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-validate-naming:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Naming - Enabled (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate manifests with the default configuration path
+        id: validate
+        uses: ./validate-naming
+        with:
+          enabled: "true"
+          working-directory: .github/fixtures/validate-naming
+      - name: Assert validation ran
+        shell: bash
+        env:
+          VALIDATED: ${{ steps.validate.outputs.validated }}
+        run: test "$VALIDATED" = true
+      - name: Test naming rules, configuration, and CLI
+        shell: bash
+        env:
+          GOWORK: "off"
+        run: |
+          go -C validate-naming test -race -cover ./...
+          go -C validate-naming vet ./...
+
+  test-validate-naming-disabled:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Naming - Disabled"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Omitted opt-in skips even a missing repository
+        id: omitted
+        uses: ./validate-naming
+        with:
+          working-directory: missing-directory
+      - name: Explicit false skips a seeded naming violation
+        id: disabled
+        uses: ./validate-naming
+        with:
+          enabled: "false"
+          config-file: invalid.yaml
+          working-directory: .github/fixtures/validate-naming
+      - name: Assert neither disabled call validated
+        shell: bash
+        env:
+          OMITTED: ${{ steps.omitted.outputs.validated }}
+          DISABLED: ${{ steps.disabled.outputs.validated }}
+        run: |
+          test -z "$OMITTED"
+          test -z "$DISABLED"
+
+  test-validate-naming-rejects:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Naming - Rejects Violations"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject a resource whose filename does not lead with its kind
+        id: violation
+        continue-on-error: true
+        uses: ./validate-naming
+        with:
+          enabled: "true"
+          working-directory: .github/fixtures/validate-naming
+          config-file: invalid.yaml
+      - name: Reject invalid opt-in spelling
+        id: invalid
+        continue-on-error: true
+        uses: ./validate-naming
+        with:
+          enabled: "yes"
+      - name: Assert both action failures propagate
+        shell: bash
+        env:
+          VIOLATION: ${{ steps.violation.outcome }}
+          INVALID: ${{ steps.invalid.outcome }}
+          VALIDATED: ${{ steps.violation.outputs.validated }}
+        run: |
+          test "$VIOLATION" = failure
+          test "$INVALID" = failure
+          test -z "$VALIDATED"
+
   # Every test job below is ineligible for merge_group through a leading event
   # predicate: an explicit exclusion, or the push-only Zizmor self-test. Merge refs contain
   # PR-controlled local actions and fixtures, so test jobs must never run them with
@@ -4230,6 +4343,9 @@ jobs:
     name: CI - Required Checks
     if: ${{ always() }}
     needs:
+      - test-validate-naming
+      - test-validate-naming-disabled
+      - test-validate-naming-rejects
       - test-approve-pr
       - test-approve-pr-credential-boundary
       - test-cleanup-ghcr-packages
@@ -4340,6 +4456,9 @@ jobs:
         shell: bash
         env:
           JOB_RESULTS: >-
+            ${{ needs.test-validate-naming.result }}
+            ${{ needs.test-validate-naming-disabled.result }}
+            ${{ needs.test-validate-naming-rejects.result }}
             ${{ needs.test-approve-pr.result }}
             ${{ needs.test-approve-pr-credential-boundary.result }}
             ${{ needs.test-cleanup-ghcr-packages.result }}

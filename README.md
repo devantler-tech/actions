@@ -64,6 +64,7 @@ flowchart TD
 | [update-agent-skills](update-agent-skills/README.md) | Run `gh skill update --all` against installed skills and report changes |
 | [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
+| [validate-naming](validate-naming/README.md) | Opt-in, configurable Kubernetes manifest and machine patch naming validation |
 
 ### Distribution
 
