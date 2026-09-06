@@ -585,7 +585,7 @@ jobs:
     if: |
       (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
     outputs:
-      fixes-created: ${{ steps.fixes.outputs.changed }}
+      fixes-created: ${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.manual-required == 'false' }}
       fixes-artifact: ${{ steps.fixes.outputs.artifact-name }}
     permissions:
       # Deliberately NOT `contents: write`. MegaLinter's configuration comes from the pull
@@ -645,14 +645,25 @@ jobs:
         env:
           FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
         run: |
+          set -euo pipefail
           echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
           git add --intent-to-add .
-          if git diff --quiet HEAD; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
+          git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
+          if [ -s "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+          # The signer has contents permission only. Preserve the complete patch when
+          # workflow edits need manual application; splitting a rename or related changes
+          # could leave the branch with only part of the formatter's result.
+          manual_required=false
+          workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
+          if [ -n "$workflow_changes" ]; then
+            manual_required=true
+            echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
+          fi
+          echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload applied fixes
         if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}

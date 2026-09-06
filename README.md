@@ -119,13 +119,22 @@ arbitrary commands, so it never runs in a job holding a write-scoped token. Call
 auto-fixing is enabled; everything visible from the pull request itself — event type, forks, and
 dependency-bot branches — is gated here, so a caller cannot omit it.
 
-Whether the fixer actually changed anything is passed in as `fixes-created` (boolean, default `true`)
-rather than used by the caller to skip the call. Committing raises `synchronize`, which can start a
-replacement run and cancel the committing one before it verifies its own commit; the replacement
+Whether a patch is eligible for automatic commitment is passed in as `fixes-created` (boolean,
+default `true`) rather than used by the caller to skip the call. Committing raises `synchronize`,
+which can start a replacement run and cancel the committing one before it verifies its own commit; the replacement
 run's fixer then finds the work already done and reports no patch. The branch-tip signature check
 therefore runs on every call, before the App token is minted and independently of `fixes-created`,
 while every step that needs write access is skipped when it is `false`. A caller that omits the input
 keeps its previous behaviour.
+
+Both MegaLinter workflows keep the signer's token limited to file contents. If a formatter changes
+anything under the repository's `.github/workflows/` directory, they warn instead of attempting a
+commit. Runs eligible to upload fixes retain the **complete** patch as `megalinter-fixes-<check-run-id>`.
+Related edits and renames stay together; ordinary patches without workflow edits still receive
+automatic signed commits.
+Download and extract the artifact from the run, then apply its `.patch` file from the repository root
+with `git apply <file>.patch`, review, and push. The branch-tip signature check still runs. Actual lint
+errors still fail, and `validate-go-project`'s read-only mode still fails on uncommitted fixes.
 
 ### 🎉 Create Release
 

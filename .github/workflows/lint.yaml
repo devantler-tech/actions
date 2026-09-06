@@ -37,7 +37,7 @@ on:
         required: false
         type: boolean
         default: true
-        description: "Auto-fix what the linters can fix and commit the result back to the PR branch. Set false for a read-only gate (and in the self-test, which must never commit to the branch under test)."
+        description: "Auto-fix and commit the result back to the PR branch. A patch touching .github/workflows is uploaded for manual application instead. Set false for a read-only gate."
       pr-owner:
         required: false
         type: string
@@ -62,7 +62,7 @@ jobs:
     name: 🧹 Lint - mega-linter
     runs-on: ubuntu-latest
     outputs:
-      fixes-created: ${{ steps.fixes.outputs.changed }}
+      fixes-created: ${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.manual-required == 'false' }}
       fixes-artifact: ${{ steps.fixes.outputs.artifact-name }}
     permissions:
       contents: read
@@ -120,14 +120,25 @@ jobs:
         env:
           FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
         run: |
+          set -euo pipefail
           echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
           git add --intent-to-add .
-          if git diff --quiet HEAD; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
+          git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
+          if [ -s "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+          # The signer has contents permission only. Preserve the complete patch when
+          # workflow edits need manual application; splitting a rename or related changes
+          # could leave the branch with only part of the formatter's result.
+          manual_required=false
+          workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
+          if [ -n "$workflow_changes" ]; then
+            manual_required=true
+            echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
+          fi
+          echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload applied fixes
         if: ${{ steps.fixes.outputs.changed == 'true' }}

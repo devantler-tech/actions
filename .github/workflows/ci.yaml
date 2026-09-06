@@ -3960,6 +3960,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-credential-boundary.sh
 
+      - name: 📦 Exercise workflow-fix patch recovery
+        shell: bash
+        run: bash .github/tests/test-lint-workflow-fixes.sh
+
       # validate-go-project.yaml is the ORG-REQUIRED workflow, so its three fixer lanes run
       # PR-authored tooling on essentially every Go pull request in the organisation. The
       # boundary that keeps a write credential out of those lanes is asserted here so that a
