@@ -90,6 +90,38 @@ CONDITION="\${{ github.event_name != 'merge_group' && !startsWith(github.head_re
 run_guard || fail 'supported CI event scheduling gate rejected'
 echo 'PASS: supported merge-group and release scheduling exclusions'
 
+# shellcheck disable=SC2016
+for scope in step job; do
+  for tolerate in true '"true"' '"${{ true }}"'; do
+    TOLERATE="$tolerate" yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+    if [[ "$scope" == step ]]; then
+      TOLERATE="$tolerate" yq -i '.jobs.tests.steps[-1].continue-on-error = env(TOLERATE)' "$ci"
+    else
+      TOLERATE="$tolerate" yq -i '.jobs.tests.continue-on-error = env(TOLERATE)' "$ci"
+    fi
+    blocked "$scope suppresses failure: $tolerate"
+  done
+done
+yq '.jobs.tests.continue-on-error = false | .jobs.tests.needs = [] | .jobs.tests.steps += [{"continue-on-error": false, "run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+run_guard || { cat "$work/result"; fail 'explicit false failure tolerance or empty dependencies rejected'; }
+echo 'PASS: explicit false failure tolerance and empty dependencies'
+
+for dependency in '"prerequisite"' '["prerequisite"]'; do
+  DEPENDENCY="$dependency" yq '.jobs.prerequisite = {"if": false, "steps": [{"run": "echo skipped"}]} | .jobs.tests.needs = env(DEPENDENCY) | .jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}]' "$work/base.yaml" >"$ci"
+  blocked "test depends on skipped prerequisite: $dependency"
+done
+# Removing only the prerequisite filter must restore this precise silent gap.
+sed '/has("needs")/d' "$work/guard.sh" >"$work/no-prerequisite-check.sh"
+if ! (cd "$work/repo" && bash -euo pipefail "$work/no-prerequisite-check.sh") >"$work/result" 2>&1; then
+  fail 'prerequisite-filter ablation did not restore the skipped-job gap'
+fi
+echo 'PASS: removing prerequisite detection restores the skipped-job gap'
+
+for command in 'bash .github/tests/test-sentinel.sh || true' 'bash .github/tests/test-sentinel.sh; true' 'bash .github/tests/test-sentinel.sh | cat' 'bash .github/tests/test-sentinel.sh &'; do
+  COMMAND="$command" yq '.jobs.tests.steps += [{"run": strenv(COMMAND)}]' "$work/base.yaml" >"$ci"
+  blocked "shell control operator: $command"
+done
+
 cp "$work/base.yaml" "$ci"
 blocked 'deleted CI step'
 for command in '# bash .github/tests/test-sentinel.sh' 'echo bash .github/tests/test-sentinel.sh' 'bash .github/tests/test-sentinel.sh.backup'; do
