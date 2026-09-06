@@ -55,6 +55,7 @@ grep -Eq '^\| `apply-signed-fixes`[[:space:]]+\| Input \(boolean\)[[:space:]]+\|
   fail "README Validate Go Project inputs must document apply-signed-fixes default true"
 
 dependency_bots='["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'
+recovery="!cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true')"
 
 for job in tidy golangci-lint lint; do
   case "$job" in
@@ -63,7 +64,9 @@ for job in tidy golangci-lint lint; do
     lint) artifact_prefix=megalinter-fixes ;;
   esac
   prepare="$(yq -r ".jobs.\"${job}\".steps[] | select(.id == \"fixes\")" "$workflow")"
-  [[ "$(yq -r '.if // ""' <<<"$prepare")" == "" ]] ||
+  expected_prepare_if=""
+  [[ "$job" != lint ]] || expected_prepare_if="\${{ ${recovery} }}"
+  [[ "$(yq -r '.if // ""' <<<"$prepare")" == "$expected_prepare_if" ]] ||
     fail "${job}'s fix detector must run in read-only mode too"
 
   [[ "$(yq -r '.env.FIXES_ARTIFACT // ""' <<<"$prepare")" == "${artifact_prefix}-\${{ job.check_run_id }}" ]] ||
@@ -85,6 +88,9 @@ for job in tidy golangci-lint lint; do
     fail "${job}'s patch filename must match its invocation-unique artifact name"
   upload_if="$(yq -r '.if // ""' <<<"$upload")"
   expected_upload_if="\${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}"
+  if [[ "$job" == lint ]]; then
+    expected_upload_if="\${{ ${recovery} && ${expected_upload_if#\$\{\{ }"
+  fi
   [[ "$upload_if" == "$expected_upload_if" ]] ||
     fail "${job}'s artifact export must use the audited opt-in, same-repository PR gate"
 

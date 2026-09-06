@@ -37,7 +37,12 @@ on:
         required: false
         type: boolean
         default: true
-        description: "Auto-fix and commit the result back to the PR branch. A patch touching .github/workflows is uploaded for manual application instead. Set false for a read-only gate."
+        description: "Auto-fix and commit the result back to the PR branch. Set false for a read-only gate. Opt in to manual-workflow-fixes to recover patches that touch workflow files."
+      manual-workflow-fixes:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to retaining complete workflow-file fixes for manual application, including after a lint error. Existing fix and artifact eligibility rules still apply; lint errors still fail the job."
       pr-owner:
         required: false
         type: string
@@ -52,7 +57,7 @@ on:
 # separate invocations in separate groups while runs of the same invocation supersede
 # (devantler-tech/actions#587).
 concurrency:
-  group: "lint-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}"
+  group: "lint-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.manual-workflow-fixes }}"
   cancel-in-progress: true
 
 permissions: {}
@@ -114,11 +119,12 @@ jobs:
       # PR-controlled MegaLinter configuration may execute commands. Export only its
       # resulting patch here; write credentials are minted later on a fresh runner.
       - name: 📦 Prepare applied fixes
-        if: ${{ inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
+        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') && inputs.apply-fixes && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true }}
         id: fixes
         shell: bash
         env:
           FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
+          MANUAL_WORKFLOW_FIXES: ${{ inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true' }}
         run: |
           set -euo pipefail
           echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
@@ -134,14 +140,14 @@ jobs:
           # could leave the branch with only part of the formatter's result.
           manual_required=false
           workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
-          if [ -n "$workflow_changes" ]; then
+          if [ "${MANUAL_WORKFLOW_FIXES:-false}" = true ] && [ -n "$workflow_changes" ]; then
             manual_required=true
             echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
           fi
           echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload applied fixes
-        if: ${{ steps.fixes.outputs.changed == 'true' }}
+        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}

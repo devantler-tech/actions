@@ -7,6 +7,11 @@ on:
         required: false
         type: string
         description: "Pull request author login (used to disable auto-commit for bot PRs)"
+      manual-workflow-fixes:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to retaining complete workflow-file fixes for manual application, including after a lint error. Existing fix and artifact eligibility rules still apply; lint errors still fail the job."
       apply-signed-fixes:
         required: false
         type: boolean
@@ -59,7 +64,7 @@ on:
 # Adding a discriminator only ever splits groups further; it cannot merge two that were
 # separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}-${{ inputs.manual-workflow-fixes }}"
   cancel-in-progress: true
 
 permissions: {}
@@ -657,11 +662,13 @@ jobs:
       # untracked fix outside it. `git diff` emits root-relative paths regardless, which is what
       # apply-signed-fixes.yaml applies against.
       - name: 📦 Prepare applied fixes
+        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') }}
         id: fixes
         working-directory: ${{ github.workspace }}
         shell: bash
         env:
           FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
+          MANUAL_WORKFLOW_FIXES: ${{ inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true' }}
         run: |
           set -euo pipefail
           echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
@@ -677,14 +684,14 @@ jobs:
           # could leave the branch with only part of the formatter's result.
           manual_required=false
           workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
-          if [ -n "$workflow_changes" ]; then
+          if [ "${MANUAL_WORKFLOW_FIXES:-false}" = true ] && [ -n "$workflow_changes" ]; then
             manual_required=true
             echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
           fi
           echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload applied fixes
-        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
+        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') && needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.fixes.outputs.artifact-name }}

@@ -14,9 +14,10 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 for workflow in lint validate-go-project; do
   file="$root/.github/workflows/$workflow.yaml"
   yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .run' "$file" >"$work/export.sh"
+  for enabled in false true; do
   for scenario in workflow clean ordinary new-workflow deleted-workflow mixed rename-in rename-out similar-directory nested-workflow binary-only binary-mixed mode-only mode-mixed; do
-    fixture="$work/$workflow-$scenario"
-    mkdir -p "$fixture/.github/workflows" "$fixture/.github/workflows-extra" "$fixture/nested/.github/workflows" "$fixture/nested/module" "$fixture/../artifacts-$workflow-$scenario"
+    fixture="$work/$workflow-$enabled-$scenario"
+    mkdir -p "$fixture/.github/workflows" "$fixture/.github/workflows-extra" "$fixture/nested/.github/workflows" "$fixture/nested/module" "$fixture/../artifacts-$workflow-$enabled-$scenario"
     git -C "$fixture" init -q
     git -C "$fixture" config user.name test
     git -C "$fixture" config user.email test@example.invalid
@@ -59,11 +60,13 @@ for workflow in lint validate-go-project; do
         printf 'formatted\n' >"$fixture/.github/workflows/ci.yaml"
         ;;
     esac
+    [[ "$enabled" == true ]] || manual=false
 
-    artifacts="$fixture/../artifacts-$workflow-$scenario"
+    artifacts="$fixture/../artifacts-$workflow-$enabled-$scenario"
     (
       cd "$fixture"
       export FIXES_ARTIFACT=megalinter-fixes-123 RUNNER_TEMP="$artifacts" GITHUB_OUTPUT="$artifacts/outputs"
+      export MANUAL_WORKFLOW_FIXES="$enabled"
       bash -euo pipefail "$work/export.sh"
     ) >"$artifacts/log" 2>&1 || fail "$workflow/$scenario exporter failed"
     grep -qxF "changed=$changed" "$artifacts/outputs" || fail "$workflow/$scenario changed output"
@@ -72,6 +75,8 @@ for workflow in lint validate-go-project; do
     if [[ "$manual" == true ]]; then
       grep -qF '::warning::' "$artifacts/log" || fail "$workflow/$scenario needs an actionable warning"
       grep -qF 'git apply' "$artifacts/log" || fail "$workflow/$scenario warning must explain recovery"
+    elif grep -qF '::warning::' "$artifacts/log"; then
+      fail "$workflow/$enabled/$scenario emitted an unsolicited manual-routing warning"
     fi
     patch="$artifacts/megalinter-fixes-123.patch"
     if [[ "$changed" == true ]]; then
@@ -91,7 +96,8 @@ for workflow in lint validate-go-project; do
     else
       [[ ! -s "$patch" ]] || fail "$workflow/$scenario created a patch for a clean tree"
     fi
-    echo "PASS: $workflow/$scenario"
+    echo "PASS: $workflow/$enabled/$scenario"
+  done
   done
 
   # The job output is the authorization handed to the existing signer. Require an
