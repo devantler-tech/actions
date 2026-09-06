@@ -1,0 +1,61 @@
+name: Validate manifest naming
+description: Validate configurable Kubernetes manifest and machine patch naming conventions.
+author: devantler-tech
+inputs:
+  enabled:
+    description: Opt in to the shared naming gate. Temporary rollout input tracked in actions issue 1200.
+    required: false
+    default: "false"
+  config-file:
+    description: Configuration file, relative to working-directory or absolute.
+    required: false
+    default: .github/manifest-naming.yaml
+  working-directory:
+    description: Repository directory to validate, relative to GITHUB_WORKSPACE or absolute.
+    required: false
+    default: .
+outputs:
+  validated:
+    description: The string true after successful validation; empty when disabled or unsuccessful.
+    value: ${{ steps.validate.outputs.validated }}
+runs:
+  using: composite
+  steps:
+    - name: Check opt-in input
+      shell: bash
+      env:
+        ENABLED: ${{ inputs.enabled }}
+      run: |
+        case "$ENABLED" in
+          true) ;;
+          false) echo "Manifest naming validation is disabled; set enabled to true to opt in." ;;
+          *) echo "::error::enabled must be exactly true or false"; exit 1 ;;
+        esac
+
+    - name: Set up Go for the validator
+      if: ${{ inputs.enabled == 'true' }}
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    - name: Validate naming conventions
+      if: ${{ inputs.enabled == 'true' }}
+      id: validate
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        GOWORK: "off"
+        GOFLAGS: ""
+        GOTOOLCHAIN: local
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        temporary=$(mktemp -d "$RUNNER_TEMP/validate-naming.XXXXXX")
+        trap 'rm -rf "$temporary"' EXIT
+        bash "$ACTION_PATH/../.scripts/retry.sh" go -C "$ACTION_PATH" mod download
+        go -C "$ACTION_PATH" build -mod=readonly -trimpath -o "$temporary/validate-naming" .
+        "$temporary/validate-naming" --root "$WORKING_DIRECTORY" --config "$CONFIG_FILE"
+        echo "validated=true" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,27 @@
+version: 1
+resource-roots: [k8s]
+patch-roots: ["talos*"]
+multi-resource-files:
+  - k8s/bases/infrastructure/controllers/cdi/cdi-operator.yaml
+  - k8s/bases/infrastructure/controllers/kubevirt/kubevirt-operator.yaml
+kind-prefix-exempt-files:
+  - k8s/bases/bootstrap/variables-base-config-map.yaml
+  - k8s/bases/bootstrap/variables-base-secret.enc.yaml
+  - k8s/clusters/*/bootstrap/variables-cluster-config-map.yaml
+  - k8s/clusters/*/bootstrap/variables-cluster-secret.enc.yaml
+filename-exempt-directories:
+  - k8s/bases/infrastructure/controllers/testkube/custom-resource-definitions
+cr-directories:
+  - k8s/bases/bootstrap/priority-classes
+  - k8s/bases/infrastructure/alerts
+  - k8s/bases/infrastructure/cluster-policies
+  - k8s/bases/infrastructure/cluster-role-bindings
+  - k8s/bases/infrastructure/cluster-roles
+  - k8s/bases/infrastructure/cluster-secret-stores
+  - k8s/bases/infrastructure/cluster-security-exceptions
+  - k8s/bases/infrastructure/controllers/testkube/custom-resource-definitions
+  - k8s/bases/infrastructure/external-secrets
+  - k8s/bases/infrastructure/http-scaled-objects
+  - k8s/bases/infrastructure/tracing-policies
+  - k8s/providers/docker/infrastructure/cluster-issuers
+  - k8s/providers/hetzner/infrastructure/cluster-issuers
