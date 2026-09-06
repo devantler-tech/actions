@@ -30,10 +30,11 @@ set -euo pipefail
 workflow="${1:?usage: $0 <workflow> [<job> ...]}"
 shift
 
-# Derive the lanes from the workflow so a new fixer is covered automatically.
+# Derive the lanes by output-key presence, including false, null, and empty values.
+# The output's runtime result cannot remove the lane's credential boundary.
 # Capture yq separately so a parse/read error cannot become an empty successful check.
 if [[ $# -eq 0 ]]; then
-  lane_names="$(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' "$workflow")"
+  lane_names="$(yq -r '.jobs | to_entries[] | select(.value.outputs | has("fixes-created")) | .key' "$workflow")"
   lanes=()
   while IFS= read -r lane; do [[ -n "$lane" ]] && lanes+=("$lane"); done <<<"$lane_names"
   [[ ${#lanes[@]} -ge 1 ]] || { echo 'FAIL: no fixer lane exports fixes-created' >&2; exit 1; }

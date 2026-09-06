@@ -13,9 +13,10 @@ workflow="$repo_root/.github/workflows/validate-go-project.yaml"
 # The fixer lanes are the jobs that export a patch for apply-signed-fixes.yaml. Deriving them
 # means a fourth fixer lane is covered by construction instead of by someone remembering.
 lanes=()
+lane_names="$(yq -r '.jobs | to_entries[] | select(.value.outputs | has("fixes-created")) | .key' "$workflow")"
 while IFS= read -r lane; do
   [[ -n "$lane" ]] && lanes+=("$lane")
-done < <(yq -r '.jobs | to_entries[] | select(.value.outputs."fixes-created") | .key' "$workflow")
+done <<<"$lane_names"
 [[ ${#lanes[@]} -ge 1 ]] || { echo "FAIL: no fixer lane exports fixes-created; the assertion would run over nothing" >&2; exit 1; }
 
 fail() {
@@ -35,19 +36,27 @@ bash "$assertion" "$workflow" >/dev/null ||
 # The dedicated CI invocation discovers lanes itself. It must include new lanes
 # and fail closed if discovery has no subject or cannot parse the workflow.
 yq '.jobs.fourth = .jobs.tidy | .jobs.fourth.permissions.contents = "write"' "$workflow" >"$work/extra-lane.yaml"
+yq '.jobs.fourth.outputs."fixes-created" = false' "$work/extra-lane.yaml" >"$work/false-output.yaml"
+yq '.jobs.fourth.outputs."fixes-created" = null' "$work/extra-lane.yaml" >"$work/null-output.yaml"
+yq '.jobs.fourth.outputs."fixes-created" = ""' "$work/extra-lane.yaml" >"$work/empty-output.yaml"
 yq 'del(.jobs[].outputs."fixes-created")' "$workflow" >"$work/no-lanes.yaml"
 printf 'jobs: [invalid\n' >"$work/malformed.yaml"
-for fixture in extra-lane no-lanes malformed; do
+for fixture in extra-lane false-output null-output empty-output no-lanes malformed; do
   if bash "$assertion" "$work/$fixture.yaml" >"$work/discovery.log" 2>&1; then
     fail "automatic lane discovery accepted $fixture"
   fi
   case "$fixture" in
-    extra-lane) grep -qF "fixer lane 'fourth' must grant contents: read" "$work/discovery.log" ;;
+    extra-lane|false-output|null-output|empty-output) grep -qF "fixer lane 'fourth' must grant contents: read" "$work/discovery.log" ;;
     no-lanes) grep -qF 'no fixer lane exports fixes-created' "$work/discovery.log" ;;
     malformed) grep -qiF 'yaml' "$work/discovery.log" ;;
   esac || fail "automatic lane discovery rejected $fixture for an unrelated reason"
   echo "ok: automatic lane discovery rejects $fixture"
 done
+for fixture in false-output null-output empty-output; do
+  yq '.jobs.fourth.permissions.contents = "read"' "$work/$fixture.yaml" >"$work/safe-lane.yaml"
+  bash "$assertion" "$work/safe-lane.yaml" >/dev/null || fail "safe $fixture lane was rejected"
+done
+echo 'ok: safe lanes with false, null, and empty outputs remain valid'
 
 expect_rejected() { # <description> <yq-mutation> <required-message-fragment>
   local description="$1" mutation="$2" fragment="$3" out
