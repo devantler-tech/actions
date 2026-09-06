@@ -10,6 +10,10 @@ runs:
       # or releases (main-tracked only), so the comment names the branch + why
       # rather than a `# v<version>` — see CONTRIBUTING.md "External action pinning".
       uses: Homebrew/actions/setup-homebrew@ac399ee818eb2bb93b838aeccd2cbaa6272e2403 # main (no upstream releases)
+      with:
+        # Install with released Homebrew, rather than checking out its moving
+        # development branch on every consumer run.
+        stable: true
 
     - name: ⤵️ Install KSail
       shell: bash
@@ -22,11 +26,11 @@ runs:
         # roadmap (devantler-tech/actions#247).
         retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
 
-        retry brew tap devantler-tech/formulas
+        retry brew tap devantler-tech/tap
         # KSail ships as a Cask. Homebrew refuses to load Casks from a non-official
         # tap when HOMEBREW_REQUIRE_TAP_TRUST is set (now enforced on the CI runners),
         # failing with "Refusing to load cask … from untrusted tap". Explicitly trust
         # our own first-party tap so `brew install` can load it non-interactively.
         # (Local operation — no network — so it is not wrapped in retry.)
-        brew trust --tap devantler-tech/formulas
-        retry brew install ksail
+        brew trust --tap devantler-tech/tap
+        retry brew install --cask devantler-tech/tap/ksail
