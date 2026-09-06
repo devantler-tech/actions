@@ -91,6 +91,11 @@ yq '.jobs.tests.steps += [{"run": "bash .github/tests/test-sentinel.sh"}] |
   .jobs.ci-required-checks.steps[0].env.JOB_RESULTS = "${{ needs.unrelated.result }}"' \
   "$work/base.yaml" >"$ci"
 blocked 'test job omitted from required summary'
+# shellcheck disable=SC2016
+yq -i '.jobs.tests-extra = .jobs.unrelated | del(.jobs.unrelated) |
+  .jobs.ci-required-checks.needs = ["tests-extra"] |
+  .jobs.ci-required-checks.steps[0].env.JOB_RESULTS = "${{ needs.tests-extra.result }}"' "$ci"
+blocked 'required summary contains only a similarly named job'
 
 # A custom shell can return success without executing the generated script.
 # Check inherited defaults as well as the step's explicit shell selection.

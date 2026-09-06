@@ -2639,7 +2639,7 @@ jobs:
               | .jobs.ci-required-checks.needs as $required_jobs
               | .jobs | to_entries[]
               | .key as $job
-              | select($required_jobs | contains([$job]))
+              | select($required_jobs[] == $job)
               | .value
               | select(.defaults.run.shell == null or .defaults.run.shell == "bash")
               | select((has("if") | not) or .if == strenv(TESTED_JOB_CONDITION))
