@@ -119,13 +119,27 @@ arbitrary commands, so it never runs in a job holding a write-scoped token. Call
 auto-fixing is enabled; everything visible from the pull request itself — event type, forks, and
 dependency-bot branches — is gated here, so a caller cannot omit it.
 
-Whether the fixer actually changed anything is passed in as `fixes-created` (boolean, default `true`)
-rather than used by the caller to skip the call. Committing raises `synchronize`, which can start a
-replacement run and cancel the committing one before it verifies its own commit; the replacement
+Whether a patch is eligible for automatic commitment is passed in as `fixes-created` (boolean,
+default `true`) rather than used by the caller to skip the call. Committing raises `synchronize`,
+which can start a replacement run and cancel the committing one before it verifies its own commit; the replacement
 run's fixer then finds the work already done and reports no patch. The branch-tip signature check
 therefore runs on every call, before the App token is minted and independently of `fixes-created`,
 while every step that needs write access is skipped when it is `false`. A caller that omits the input
 keeps its previous behaviour.
+
+Both MegaLinter workflows keep the signer's token limited to file contents. Opt in with
+`manual-workflow-fixes: true` to recover workflow-file edits manually. The option defaults to `false`,
+preserving existing routing for callers that omit it. When enabled, a formatter change under the
+repository's `.github/workflows/` directory produces a warning instead of an automatic commit.
+Runs eligible to upload fixes retain the **complete** patch as `megalinter-fixes-<check-run-id>`,
+including when linting also reports an unfixable error. Cancelled runs do not force recovery.
+Related edits and renames stay together; ordinary patches without workflow edits still receive
+automatic signed commits.
+Download and extract the artifact from the run, then apply its `.patch` file from the repository root
+with `git apply <file>.patch`, review, and push. Successful lint runs still check the branch-tip
+signature. Actual lint errors still fail the job and prevent signer writes;
+`validate-go-project`'s read-only mode still fails on uncommitted fixes.
+Consumer rollout and flag removal are tracked in [#1186](https://github.com/devantler-tech/actions/issues/1186).
 
 ### 🎉 Create Release
 
@@ -437,6 +451,7 @@ patch-application job can access it.
 | `working-directory` | Input           | `""`    | No       | Directory to lint. Empty lints the whole repository                                                                   |
 | `go-version-file`   | Input           | `""`    | No       | Path to a `go.mod`. When set, Go is installed first so the Go linters use the module's toolchain, not the container's |
 | `apply-fixes`       | Input (boolean) | `true`  | No       | Auto-fix and commit back to the pull request. Set `false` for a read-only gate                                        |
+| `manual-workflow-fixes` | Input (boolean) | `false` | No | Opt in to complete workflow-file patches for manual application, including after lint errors; existing upload eligibility still applies |
 | `pr-owner`          | Input           | `""`    | No       | Pull request author login. Auto-fix commits are suppressed for dependency-bot pull requests                           |
 
 </details>
@@ -825,6 +840,7 @@ jobs:
 | `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
 | `apply-signed-fixes`  | Input (boolean) | `true`  | No       | Commit each fixer lane's auto-fixes back to the pull request branch as a signed commit (on by default; the org-required direct run is opted in by its workflow ref). Pass false to keep a caller read-only. Forks, Dependabot/Renovate branches and non-PR events are always read-only and fail with their diff if changes remain; other same-repository automation branches (release, bot-authored) do receive fixer commits like any contributor branch                                                                                                               |
 | `working-directory`   | Input (string)  | `""`    | No       | Go module directory to validate. Empty means the repository root                                                                                                                                                                |
+| `manual-workflow-fixes` | Input (boolean) | `false` | No | Opt in to complete workflow-file patches for manual application, including after lint errors; existing upload eligibility still applies |
 | `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 | `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |
 | `maintenance-default-branch` | Input (boolean) | `false` | No | Also run tidy and dead-code analysis on default-branch pushes that change Go files. Findings fail validation without committing fixes to the default branch. Uses the repository's configured default branch name. |
