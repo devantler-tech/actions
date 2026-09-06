@@ -65,6 +65,7 @@ function verify(job, gate) {
 }
 for (const job of ['tidy', 'deadcode']) {
   verify(job, workflow.jobs[job].if);
+  verify(job, workflow.jobs[job].if.replace(/\s+/g, ' '));
   console.log(`PASS: ${job}, ${fixtures.length} event/branch/input combinations`);
 }
 assert.equal(workflow.on.workflow_call.inputs[flag].type, 'boolean');
@@ -87,7 +88,9 @@ for (const job of ['tidy', 'deadcode']) {
 }
 for (const [job, name, gate] of mutations) {
   assert.notEqual(gate, workflow.jobs[job].if, `${name}: mutation did not apply`);
-  assert.throws(() => verify(job, gate), {name: 'AssertionError'}, `${job}: accepted ${name}`);
+  assert.throws(() => verify(job, gate), error =>
+    error.code === 'ERR_ASSERTION' && error.message.startsWith(`${job}:`),
+  `${job}: accepted ${name} or rejected it for an unrelated parsing error`);
   console.log(`PASS: ${job} rejects ${name}`);
 }
 JS
