@@ -105,7 +105,7 @@ else
 		fail "target-specific required workflow is incorrectly exposed as a reusable workflow"
 	fi
 	if [ "$(yq -r '.jobs.eligibility.steps[0].uses' "${workflow}")" != \
-		"step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c" ]; then
+		"step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1" ]; then
 		fail "Harden Runner is not the first eligibility step at the reviewed pin"
 	fi
 	if [ "$(yq -r '.jobs.eligibility.timeout-minutes' "${workflow}")" != "5" ]; then

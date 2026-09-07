@@ -32,7 +32,7 @@ eligibility_permissions="$(yq -r '(.jobs.eligibility.permissions // {}) | keys |
 
 eligibility_first_uses="$(yq -r '.jobs.eligibility.steps[0].uses // ""' "$standalone")"
 eligibility_first_egress="$(yq -r '.jobs.eligibility.steps[0].with."egress-policy" // ""' "$standalone")"
-[[ "$eligibility_first_uses" == "step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c" &&
+[[ "$eligibility_first_uses" == "step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1" &&
   "$eligibility_first_egress" == "audit" ]] ||
   fail "standalone eligibility job must begin with the pinned harden-runner action in audit mode"
 
