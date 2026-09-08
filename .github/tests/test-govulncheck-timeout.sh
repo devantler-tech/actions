@@ -29,8 +29,11 @@ set -euo pipefail
 workflow="${1:-.github/workflows/validate-go-project.yaml}"
 min_timeout="${2:-25}"
 # Max GiB any job in this workflow may hand the Go runtime. `runs-on:
-# ubuntu-latest` provides 16 GiB, so this leaves half the host for everything
-# GOMEMLIMIT does not govern. Raise it only alongside a runner with more RAM.
+# ubuntu-latest` provides 16 GiB to a public repository, so this leaves half the
+# host for everything GOMEMLIMIT does not govern. A private repository's
+# ubuntu-latest has 7 GB, where this ceiling exceeds the whole host, so such a
+# consumer needs a larger runner and a caller-side cap below it. Raise it only
+# alongside a runner with more RAM.
 max_gomemlimit_gib="${3:-8}"
 
 status=0
