@@ -93,6 +93,16 @@ while IFS=' ' read -r job value; do
   value_bytes=""
   if [[ "$value" =~ ^([0-9]+)(B|KiB|MiB|GiB|TiB)?$ ]]; then
     digits="${BASH_REMATCH[1]}"
+    # Go parses the digit string decimally, so leading zeros carry no magnitude:
+    # `000000000000000000008GiB` is exactly 8 GiB (measured — debug.SetMemoryLimit
+    # reports 8589934592 for that spelling and for a plain `8GiB`). The per-unit
+    # bound below exists to keep `digits * multiplier` clear of the 64-bit wrap,
+    # which is a property of the VALUE and not of its padding, so normalise the
+    # padding away before counting. Without this the guard fails a build over a
+    # limit that is both valid Go and under the ceiling — the same runtime-vs-guard
+    # divergence the `10#` prefix removes, one level down.
+    digits="${digits#"${digits%%[!0]*}"}"
+    digits="${digits:-0}"
     unit="${BASH_REMATCH[2]:-B}"
 
     # Bound the digit count BEFORE any arithmetic, PER UNIT. Bash integers are

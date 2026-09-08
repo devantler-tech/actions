@@ -3823,6 +3823,50 @@ jobs:
           done
           echo "GOMEMLIMIT guard accepted every Go spelling of 8 GiB ✅"
 
+      - name: 🛡️ Assert leading-zero padding is judged on magnitude, not on length
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Go parses the digit string decimally, so padding carries no magnitude:
+          # measured, debug.SetMemoryLimit reports 8589934592 for BOTH
+          # 000000000000000000008GiB and a plain 8GiB. The per-unit digit bound
+          # exists to keep the conversion clear of the 64-bit wrap, which is a
+          # property of the value rather than of its padding — so a padded value
+          # under the ceiling must be accepted.
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "000000000000000000008GiB"' "$fixture"
+
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+
+          if [[ "$output" != *"GOMEMLIMIT ceiling 8GiB satisfied"* ]]; then
+            echo "::error::000000000000000000008GiB is 8 GiB to Go and within the ceiling, but the guard did not cleanly accept it: $output"
+            exit 1
+          fi
+
+          # Negative control for the assertion above. Normalising the padding must
+          # not turn padding into a way PAST the wrap guard: this value still has
+          # ten significant GiB digits once the zeros are stripped, so it has to be
+          # refused for being implausibly large. Without this control, deleting the
+          # digit bound entirely would still pass the positive case.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "0000001000000000GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::Stripping leading zeros let a padded, over-wide value past the GOMEMLIMIT digit bound"
+            exit 1
+          fi
+          if [[ "$output" != *"implausibly large"* ]]; then
+            echo "::error::The padded over-wide fixture was rejected for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard judged leading-zero padding on magnitude, not length ✅"
+
       - name: 🛡️ Assert a wider unit is judged on size, not on spelling
         shell: bash
         run: |
