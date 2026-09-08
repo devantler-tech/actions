@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.5.1](https://github.com/devantler-tech/actions/compare/v13.5.0...v13.5.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **validate-go-project:** keep GOMEMLIMIT under the host RAM ceiling ([#1218](https://github.com/devantler-tech/actions/issues/1218)) ([e884dd6](https://github.com/devantler-tech/actions/commit/e884dd62674134da67644ef983222e0e4821b9a3))
+
 ## [13.5.0](https://github.com/devantler-tech/actions/compare/v13.4.1...v13.5.0) (2026-09-06)
 
 
