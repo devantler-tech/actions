@@ -3668,6 +3668,56 @@ jobs:
           fi
           echo "Timeout guard correctly rejected 24 minutes with the expected finding ✅"
 
+      - name: 🛡️ Assert the GOMEMLIMIT ceiling blocks bad input
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "12GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard accepted a deliberately over-ceiling 12GiB fixture"
+            exit 1
+          fi
+          if [[ "$output" != *"GOMEMLIMIT must be <= 8GiB"* || "$output" != *"got 12GiB"* ]]; then
+            echo "::error::The GOMEMLIMIT guard rejected the fixture for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT ceiling correctly rejected 12GiB with the expected finding ✅"
+
+      - name: 🛡️ Assert an uncomparable GOMEMLIMIT unit fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # A raw byte count carries no unit this guard can compare against a GiB ceiling.
+          # It must be refused outright rather than silently skipping the comparison.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "12000000000"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard accepted a value it cannot compare to the ceiling"
+            exit 1
+          fi
+          if [[ "$output" != *"must be an integer with a GiB or MiB suffix"* ]]; then
+            echo "::error::The GOMEMLIMIT guard rejected the unparseable fixture for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly failed closed on an uncomparable unit ✅"
+
   test-govulncheck-main-coverage:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"
