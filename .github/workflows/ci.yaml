@@ -3668,6 +3668,261 @@ jobs:
           fi
           echo "Timeout guard correctly rejected 24 minutes with the expected finding ✅"
 
+      - name: 🛡️ Assert the GOMEMLIMIT ceiling blocks bad input
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "12GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard accepted a deliberately over-ceiling 12GiB fixture"
+            exit 1
+          fi
+          if [[ "$output" != *"GOMEMLIMIT must be <= 8GiB"* || "$output" != *"got 12GiB"* ]]; then
+            echo "::error::The GOMEMLIMIT guard rejected the fixture for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT ceiling correctly rejected 12GiB with the expected finding ✅"
+
+      - name: 🛡️ Assert an uncomparable GOMEMLIMIT unit fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Go accepts no "GB" suffix — only B/KiB/MiB/GiB/TiB — so a value spelled
+          # that way is genuinely uncomparable and must be refused outright rather
+          # than silently skipping the comparison. (A bare byte count is NOT this
+          # case: it is a unit Go accepts, and the steps below assert it is parsed
+          # and judged on size.)
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "12GB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard accepted a value it cannot compare to the ceiling"
+            exit 1
+          fi
+          if [[ "$output" != *"must be an integer optionally suffixed B, KiB, MiB, GiB or TiB"* ]]; then
+            echo "::error::The GOMEMLIMIT guard rejected the unparseable fixture for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly failed closed on an uncomparable unit ✅"
+
+      - name: 🛡️ Assert a leading zero is read decimally, as Go reads it
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Bash arithmetic treats a leading zero as octal, so a naive
+          # $((gib * 1024)) reads this as 8192 MiB and waves it through the
+          # ceiling. The Go runtime reads the same string as 10 GiB
+          # (debug.SetMemoryLimit reports 10737418240), so the guard must too —
+          # and must therefore reject it as over the 8 GiB ceiling.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "010GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard read 010GiB as octal 8GiB and accepted it; Go reads it as 10GiB"
+            exit 1
+          fi
+          if [[ "$output" != *"GOMEMLIMIT must be <= 8GiB"* || "$output" != *"got 010GiB"* ]]; then
+            echo "::error::010GiB was rejected, but not as an over-ceiling value: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly read 010GiB as decimal 10GiB and rejected it ✅"
+
+      - name: 🛡️ Assert a leading zero UNDER the ceiling still passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Positive control for the step above. Go accepts 08GiB as 8 GiB, which
+          # is within the ceiling, so the guard must accept it too. Before the
+          # decimal fix this aborted the arithmetic with "value too great for
+          # base" and — because set -e does not abort there — still exited 0 with
+          # the comparison never run. This step fails if anyone "fixes" the octal
+          # hazard by banning leading zeros outright, which would diverge from Go
+          # in the opposite direction.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "08GiB"' "$fixture"
+
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+
+          if [[ "$output" != *"GOMEMLIMIT ceiling 8GiB satisfied"* ]]; then
+            echo "::error::08GiB is 8GiB to Go and within the ceiling, but the guard did not cleanly accept it: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly accepted 08GiB as decimal 8GiB ✅"
+
+      - name: 🛡️ Assert an overflowing GOMEMLIMIT fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Bash integers are 64-bit and wrap silently: 18014398509481985 * 1024
+          # evaluates to 1024, sailing under the ceiling. The guard must refuse to
+          # convert a value this large rather than compare a wrapped result.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "18014398509481985GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard compared a wrapped 64-bit product and accepted an absurd value"
+            exit 1
+          fi
+          if [[ "$output" != *"implausibly large"* ]]; then
+            echo "::error::The overflowing fixture was rejected for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly refused to convert an overflowing value ✅"
+
+      - name: 🛡️ Assert every Go GOMEMLIMIT spelling of the same size is accepted
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Go accepts a bare byte count and the B/KiB/MiB/GiB/TiB suffixes. A
+          # guard that recognises a narrower set fails a build over a limit that
+          # was always valid, so each spelling of exactly 8 GiB must pass.
+          for value in 8GiB 8192MiB 8388608KiB 8589934592B 8589934592; do
+            fixture="$(mktemp)"
+            cp .github/workflows/validate-go-project.yaml "$fixture"
+            yq -i ".jobs.govulncheck.env.GOMEMLIMIT = \"$value\"" "$fixture"
+
+            output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+            rm -f "$fixture"
+
+            if [[ "$output" != *"GOMEMLIMIT ceiling 8GiB satisfied"* ]]; then
+              echo "::error::$value is 8 GiB to Go and within the ceiling, but the guard did not cleanly accept it: $output"
+              exit 1
+            fi
+          done
+          echo "GOMEMLIMIT guard accepted every Go spelling of 8 GiB ✅"
+
+      - name: 🛡️ Assert leading-zero padding is judged on magnitude, not on length
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Go parses the digit string decimally, so padding carries no magnitude:
+          # measured, debug.SetMemoryLimit reports 8589934592 for BOTH
+          # 000000000000000000008GiB and a plain 8GiB. The per-unit digit bound
+          # exists to keep the conversion clear of the 64-bit wrap, which is a
+          # property of the value rather than of its padding — so a padded value
+          # under the ceiling must be accepted.
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "000000000000000000008GiB"' "$fixture"
+
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+
+          if [[ "$output" != *"GOMEMLIMIT ceiling 8GiB satisfied"* ]]; then
+            echo "::error::000000000000000000008GiB is 8 GiB to Go and within the ceiling, but the guard did not cleanly accept it: $output"
+            exit 1
+          fi
+
+          # Negative control for the assertion above. Normalising the padding must
+          # not turn padding into a way PAST the wrap guard: this value still has
+          # ten significant GiB digits once the zeros are stripped, so it has to be
+          # refused for being implausibly large. Without this control, deleting the
+          # digit bound entirely would still pass the positive case.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "0000001000000000GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::Stripping leading zeros let a padded, over-wide value past the GOMEMLIMIT digit bound"
+            exit 1
+          fi
+          if [[ "$output" != *"implausibly large"* ]]; then
+            echo "::error::The padded over-wide fixture was rejected for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard judged leading-zero padding on magnitude, not length ✅"
+
+      - name: 🛡️ Assert a wider unit is judged on size, not on spelling
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Counterpart to the step above: widening the accepted units must not
+          # let an over-ceiling value through. 1TiB is a valid Go spelling and
+          # 128x the ceiling, so it has to be rejected for being too large —
+          # never for being unparseable.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "1TiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard accepted 1TiB, which is 128x the ceiling"
+            exit 1
+          fi
+          if [[ "$output" != *"GOMEMLIMIT must be <= 8GiB"* || "$output" != *"got 1TiB"* ]]; then
+            echo "::error::1TiB was rejected, but not as an over-ceiling value: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard rejected 1TiB on size rather than on spelling ✅"
+
+      - name: 🛡️ Assert a bare byte count cannot overflow the comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Accepting a unitless byte count admits far more digits than GiB did,
+          # so the per-unit digit bound is what keeps the multiply clear of the
+          # 64-bit wrap. Nineteen digits must fail closed rather than compare a
+          # wrapped product.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "9999999999999999999"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard compared a wrapped 64-bit product for a bare byte count"
+            exit 1
+          fi
+          if [[ "$output" != *"implausibly large"* ]]; then
+            echo "::error::The overflowing bare-byte fixture was rejected for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard refused to convert an overflowing bare byte count ✅"
+
   test-govulncheck-main-coverage:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"

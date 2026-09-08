@@ -394,11 +394,14 @@ jobs:
     # failure, not a real dead-code finding. GOMEMLIMIT caps the Go runtime's heap so the
     # GC reclaims aggressively and stays under the host ceiling instead of OOM-killing;
     # timeout-minutes bounds the worst case to a clear, fast failure rather than a hung
-    # runner. ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go
-    # toolchain subprocesses and harden-runner.
+    # runner. GOMEMLIMIT is a SOFT limit governing only the Go runtime, so on the 16 GB
+    # ubuntu-latest a public repository gets, it must leave room for what it does not cover
+    # (runner agent, harden-runner, go subprocesses). A private repository's ubuntu-latest
+    # has 8 GB, which this value already exceeds, so such a consumer needs a larger runner
+    # or a lower cap. Guarded by test-govulncheck-timeout.
     timeout-minutes: 15
     env:
-      GOMEMLIMIT: 12GiB
+      GOMEMLIMIT: 8GiB
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -517,9 +520,17 @@ jobs:
     # post-job cleanup. Guarded by test-govulncheck-timeout.
     timeout-minutes: 25
     env:
-      # ubuntu-latest provides 16 GiB RAM; leave headroom for the OS, the Go toolchain
-      # subprocesses and harden-runner.
-      GOMEMLIMIT: 12GiB
+      # ubuntu-latest provides 16 GB RAM to a public repository and 8 GB to a private one;
+      # this value is sized for the public ceiling and already exceeds the private one, so
+      # such a consumer needs a larger runner or a caller-side cap below it. Documented at
+      # docs.github.com/en/actions/reference/runners/github-hosted-runners, whose standard
+      # runner tables differ by repository visibility.
+      # GOMEMLIMIT is a SOFT limit that governs only
+      # the Go runtime, so the value must leave room for everything it does not cover (the
+      # runner agent, harden-runner, and the go subprocesses this job spawns); above ~half
+      # the host the process grows until total RSS crosses the ceiling and the HOST kills
+      # the runner mid-scan with an opaque exit 143. Guarded by test-govulncheck-timeout.
+      GOMEMLIMIT: 8GiB
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
