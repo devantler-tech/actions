@@ -29,12 +29,29 @@ set -euo pipefail
 workflow="${1:-.github/workflows/validate-go-project.yaml}"
 min_timeout="${2:-25}"
 # Max GiB any job in this workflow may hand the Go runtime. `runs-on:
-# ubuntu-latest` provides 16 GiB to a public repository, so this leaves half the
+# ubuntu-latest` provides 16 GB to a public repository, so this leaves half the
 # host for everything GOMEMLIMIT does not govern. A private repository's
-# ubuntu-latest has 7 GB, where this ceiling exceeds the whole host, so such a
-# consumer needs a larger runner and a caller-side cap below it. Raise it only
-# alongside a runner with more RAM.
+# ubuntu-latest has 8 GB, which this ceiling already exceeds, so such a consumer
+# needs a larger runner and a caller-side cap below it. Raise it only alongside a
+# runner with more RAM.
 max_gomemlimit_gib="${3:-8}"
+
+# The ceiling is a caller-supplied parameter that reaches an arithmetic context in
+# `((value_mib > max_gomemlimit_gib * 1024))`, so it is validated the same way the
+# GOMEMLIMIT values are. Without this, `8/0` raises a division-by-zero error that
+# `set -e` does not abort on here: the comparison is skipped, `status` stays 0, and
+# the script reports the ceiling satisfied without ever testing it. Bounding to nine
+# digits also keeps `* 1024` clear of the 64-bit wrap that turns a huge ceiling into
+# a tiny one, and `10#` reads a leading zero decimally rather than as octal.
+if [[ ! "$max_gomemlimit_gib" =~ ^[0-9]{1,9}$ ]]; then
+  echo "::error::GOMEMLIMIT ceiling must be 1-9 decimal digits so it cannot reach an arithmetic context unchecked; got '$max_gomemlimit_gib'"
+  exit 1
+fi
+max_gomemlimit_gib=$((10#$max_gomemlimit_gib))
+if ((max_gomemlimit_gib == 0)); then
+  echo "::error::GOMEMLIMIT ceiling must be greater than zero; got '0'"
+  exit 1
+fi
 
 status=0
 
