@@ -58,12 +58,31 @@ while IFS=' ' read -r job value; do
   [[ -n "$job" ]] || continue
   checked=$((checked + 1))
 
+  # Parse the SAME WAY GO DOES: decimally, always. Bash arithmetic treats a
+  # leading zero as octal, so a bare $((gib * 1024)) reads `010GiB` as 8192 MiB
+  # and waves it through the ceiling — while the Go runtime reads that exact
+  # string as 10 GiB (measured: debug.SetMemoryLimit reports 10737418240). The
+  # `10#` prefix removes the divergence, and it also stops `08GiB` — a value Go
+  # accepts as 8 GiB — from aborting the arithmetic with "value too great for
+  # base" and leaving the comparison unrun.
   value_mib=""
-  if [[ "$value" =~ ^([0-9]+)GiB$ ]]; then
-    gib="${BASH_REMATCH[1]}"
-    value_mib=$((gib * 1024))
-  elif [[ "$value" =~ ^([0-9]+)MiB$ ]]; then
-    value_mib="${BASH_REMATCH[1]}"
+  if [[ "$value" =~ ^([0-9]+)(GiB|MiB)$ ]]; then
+    digits="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+
+    # Bound the digit count BEFORE any arithmetic. Bash integers are 64-bit and
+    # wrap silently: 18014398509481985 * 1024 evaluates to 1024, and
+    # 9223372036854775807 * 1024 to -1024 — both sail under the ceiling. Nine
+    # digits is already a billion GiB, far beyond any real runner and far inside
+    # the range where the multiply below cannot overflow.
+    if ((${#digits} > 9)); then
+      echo "::error file=$workflow::job '$job' GOMEMLIMIT '$value' is implausibly large; refusing to convert it, because fixed-width arithmetic on a value this size wraps and would report the headroom check as passed"
+      status=1
+    elif [[ "$unit" == "GiB" ]]; then
+      value_mib=$((10#$digits * 1024))
+    else
+      value_mib=$((10#$digits))
+    fi
   else
     echo "::error file=$workflow::job '$job' GOMEMLIMIT must be an integer with a GiB or MiB suffix so its headroom can be checked; got '$value'"
     status=1

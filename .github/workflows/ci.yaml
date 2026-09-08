@@ -3718,6 +3718,86 @@ jobs:
           fi
           echo "GOMEMLIMIT guard correctly failed closed on an uncomparable unit ✅"
 
+      - name: 🛡️ Assert a leading zero is read decimally, as Go reads it
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Bash arithmetic treats a leading zero as octal, so a naive
+          # $((gib * 1024)) reads this as 8192 MiB and waves it through the
+          # ceiling. The Go runtime reads the same string as 10 GiB
+          # (debug.SetMemoryLimit reports 10737418240), so the guard must too —
+          # and must therefore reject it as over the 8 GiB ceiling.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "010GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard read 010GiB as octal 8GiB and accepted it; Go reads it as 10GiB"
+            exit 1
+          fi
+          if [[ "$output" != *"GOMEMLIMIT must be <= 8GiB"* || "$output" != *"got 010GiB"* ]]; then
+            echo "::error::010GiB was rejected, but not as an over-ceiling value: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly read 010GiB as decimal 10GiB and rejected it ✅"
+
+      - name: 🛡️ Assert a leading zero UNDER the ceiling still passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Positive control for the step above. Go accepts 08GiB as 8 GiB, which
+          # is within the ceiling, so the guard must accept it too. Before the
+          # decimal fix this aborted the arithmetic with "value too great for
+          # base" and — because set -e does not abort there — still exited 0 with
+          # the comparison never run. This step fails if anyone "fixes" the octal
+          # hazard by banning leading zeros outright, which would diverge from Go
+          # in the opposite direction.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "08GiB"' "$fixture"
+
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+
+          if [[ "$output" != *"GOMEMLIMIT ceiling 8GiB satisfied"* ]]; then
+            echo "::error::08GiB is 8GiB to Go and within the ceiling, but the guard did not cleanly accept it: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly accepted 08GiB as decimal 8GiB ✅"
+
+      - name: 🛡️ Assert an overflowing GOMEMLIMIT fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp)"
+          trap 'rm -f "$fixture"' EXIT
+          cp .github/workflows/validate-go-project.yaml "$fixture"
+          # Bash integers are 64-bit and wrap silently: 18014398509481985 * 1024
+          # evaluates to 1024, sailing under the ceiling. The guard must refuse to
+          # convert a value this large rather than compare a wrapped result.
+          yq -i '.jobs.govulncheck.env.GOMEMLIMIT = "18014398509481985GiB"' "$fixture"
+
+          set +e
+          output="$(bash .github/tests/test-govulncheck-timeout.sh "$fixture" 2>&1)"
+          outcome=$?
+          set -e
+
+          if (( outcome == 0 )); then
+            echo "::error::The GOMEMLIMIT guard compared a wrapped 64-bit product and accepted an absurd value"
+            exit 1
+          fi
+          if [[ "$output" != *"implausibly large"* ]]; then
+            echo "::error::The overflowing fixture was rejected for an unexpected reason: $output"
+            exit 1
+          fi
+          echo "GOMEMLIMIT guard correctly refused to convert an overflowing value ✅"
+
   test-govulncheck-main-coverage:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck - Default-Branch & Allowlist Trigger Coverage"
