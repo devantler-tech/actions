@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.0](https://github.com/devantler-tech/actions/compare/v13.5.1...v13.6.0) (2026-09-13)
+
+
+### Features
+
+* **update-agent-skills:** add mark-internal to hide vendored skills from discovery ([#1232](https://github.com/devantler-tech/actions/issues/1232)) ([76d7ad9](https://github.com/devantler-tech/actions/commit/76d7ad94a4a87516abc33157d77ea875055d73d3))
+
 ## [13.5.1](https://github.com/devantler-tech/actions/compare/v13.5.0...v13.5.1) (2026-09-08)
 
 
