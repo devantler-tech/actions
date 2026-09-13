@@ -13,6 +13,13 @@ on:
         required: false
         type: boolean
         default: false
+      mark-internal:
+        description: >-
+          When `true`, set `metadata.internal: true` on every SKILL.md under `dir` after updating, so
+          discovery tools such as `npx skills` do not offer vendored skills as the repository's own.
+        required: false
+        type: boolean
+        default: false
       gh-version:
         description: Minimum required `gh` version (must support `gh skill`)
         required: false
@@ -113,6 +120,7 @@ jobs:
         with:
           dir: ${{ inputs.dir }}
           unpin: ${{ inputs.unpin }}
+          mark-internal: ${{ inputs.mark-internal }}
           gh-version: ${{ inputs.gh-version }}
 
       # create-pull-request commits every workspace change, so drop the self-checkout first —

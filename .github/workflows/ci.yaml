@@ -1908,6 +1908,12 @@ jobs:
             cat .agents/skills/self-improvement/SKILL.md
             exit 1
           fi
+          # mark-internal defaults to false, so an existing caller's skills stay discoverable.
+          if grep -q 'internal:' .agents/skills/self-improvement/SKILL.md; then
+            echo "::error::metadata.internal was added although mark-internal was not enabled"
+            cat .agents/skills/self-improvement/SKILL.md
+            exit 1
+          fi
 
   test-update-agent-skills-dry-run:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -1993,6 +1999,91 @@ jobs:
         run: |
           if [[ "$OUTCOME" != "failure" ]]; then
             echo "::error::Expected the action to fail on a missing directory, got: $OUTCOME"
+            exit 1
+          fi
+
+  test-update-agent-skills-mark-internal:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Test mark-internal script contract
+        shell: bash
+        run: bash .github/tests/test-update-agent-skills-mark-internal.sh
+
+      - name: 📦 Seed pinned agent-skill fixture
+        shell: bash
+        run: |
+          mkdir -p .agents/skills/self-improvement
+          cp -R .github/tests/agent-skills-fixtures/pinned-self-improvement/. \
+            .agents/skills/self-improvement/
+
+      - name: 🔄 Run update-agent-skills with mark-internal
+        id: update
+        uses: ./update-agent-skills
+        with:
+          dir: .agents/skills
+          mark-internal: "true"
+
+      - name: ✅ Verify the skill was marked internal
+        shell: bash
+        env:
+          CHANGED: ${{ steps.update.outputs.changed }}
+          UPDATED: ${{ steps.update.outputs.updated-skills }}
+        run: |
+          set -euo pipefail
+          skill=.agents/skills/self-improvement/SKILL.md
+          fixture=.github/tests/agent-skills-fixtures/pinned-self-improvement/SKILL.md
+          if [[ "$CHANGED" != "true" ]]; then
+            echo "::error::Expected changed=true when mark-internal tagged a skill, got: $CHANGED"
+            exit 1
+          fi
+          if [[ "$(yq --front-matter=extract '.metadata.internal' "$skill")" != "true" ]]; then
+            echo "::error::Expected metadata.internal=true after mark-internal"
+            cat "$skill"
+            exit 1
+          fi
+          if [[ "$UPDATED" != *"Marked internal: .agents/skills/self-improvement/SKILL.md"* ]]; then
+            echo "::error::Expected the tagged skill to be reported in updated-skills"
+            echo "updated-skills output: $UPDATED"
+            exit 1
+          fi
+          expected=$(grep -v '^    internal: true$' "$skill")
+          if [[ "$expected" != "$(cat "$fixture")" ]]; then
+            echo "::error::mark-internal changed more than the added metadata.internal line"
+            /usr/bin/diff "$fixture" "$skill" || true
+            exit 1
+          fi
+
+      - name: 🔄 Run update-agent-skills with mark-internal again
+        id: again
+        uses: ./update-agent-skills
+        with:
+          dir: .agents/skills
+          mark-internal: "true"
+
+      - name: ✅ Verify the second run is a no-op
+        shell: bash
+        env:
+          CHANGED: ${{ steps.again.outputs.changed }}
+        run: |
+          if [[ "$CHANGED" != "false" ]]; then
+            echo "::error::Expected changed=false once every skill is already internal, got: $CHANGED"
             exit 1
           fi
 
@@ -4647,6 +4738,7 @@ jobs:
       - test-update-agent-skills-noop
       - test-update-agent-skills-dry-run
       - test-update-agent-skills-missing-dir
+      - test-update-agent-skills-mark-internal
       - test-upload-coverage
       - test-upsert-issue-create
       - test-upsert-issue-close
@@ -4760,6 +4852,7 @@ jobs:
             ${{ needs.test-update-agent-skills-noop.result }}
             ${{ needs.test-update-agent-skills-dry-run.result }}
             ${{ needs.test-update-agent-skills-missing-dir.result }}
+            ${{ needs.test-update-agent-skills-mark-internal.result }}
             ${{ needs.test-upload-coverage.result }}
             ${{ needs.test-upsert-issue-create.result }}
             ${{ needs.test-upsert-issue-close.result }}

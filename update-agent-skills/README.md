@@ -11,6 +11,7 @@ The `github-*` frontmatter that `gh skill install` injects into each `SKILL.md` 
 | `dir` | Directory to scan for installed skills. The action finds every `SKILL.md` under this path, uses its immediate parent (the directory containing individual skill subdirectories, e.g. `skills/`) as the `--dir` argument, and runs `gh skill update --all --dir <skills-dir>` for each unique `<skills-dir>`. This supports both the standard layout (`.agents/skills/`) and nested layouts like `plugins/<plugin>/skills/<skill>/`. | ❌ | `.` |
 | `dry-run` | When `true`, pass `--dry-run` (report without modifying files) | ❌ | `false` |
 | `unpin` | When `true`, pass `--unpin` (clear pinned versions and include pinned skills) | ❌ | `false` |
+| `mark-internal` | When `true`, set `metadata.internal: true` on every `SKILL.md` under `dir` after updating. Tools that honour the flag, such as `npx skills`, then stop offering vendored development skills as if the repository published them. It runs on every update because an upstream change replaces the whole file, leaves already-marked files untouched, and is skipped with `dry-run`. Requires mikefarah `yq` v4 (preinstalled on GitHub-hosted runners). | ❌ | `false` |
 | `gh-version` | Minimum required `gh` version (must support `gh skill`) | ❌ | `2.90.0` |
 | `github-token` | GitHub token exposed to `gh` as `GH_TOKEN` | ❌ | `${{ github.token }}` |
 
