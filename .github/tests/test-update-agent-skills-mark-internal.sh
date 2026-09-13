@@ -2,6 +2,7 @@
 # Contract test for update-agent-skills/mark-internal.sh: every SKILL.md under a directory ends up
 # with `metadata.internal: true`, the body and the rest of the frontmatter are preserved, an already
 # tagged file is not rewritten, and a malformed frontmatter fails instead of being skipped.
+# shellcheck disable=SC2016 # the wiring assertions compare literal ${{ }} and ${VAR} strings on purpose
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -122,5 +123,26 @@ fi
 if bash "$script" "$work/does-not-exist" >/dev/null 2>&1; then
   fail "a missing directory must fail"
 fi
+
+# ── Wiring: the input reaches the script from both entrypoints ──
+# An enabled reusable-workflow run opens a real update pull request, so CI cannot exercise that path;
+# these assertions pin the forwarding it depends on instead, and the enabled action job covers the rest.
+action="$repo_root/update-agent-skills/action.yaml"
+workflow="$repo_root/.github/workflows/update-agent-skills.yaml"
+
+[[ "$(yq -r '.inputs."mark-internal".default' "$action")" == "false" ]] ||
+  fail "action input mark-internal must default to \"false\""
+[[ "$(yq -r '.runs.steps[] | select(.id == "update") | .env.INPUT_MARK_INTERNAL' "$action")" == '${{ inputs.mark-internal }}' ]] ||
+  fail "action update step must receive mark-internal as INPUT_MARK_INTERNAL"
+yq -r '.runs.steps[] | select(.id == "update") | .run' "$action" | grep -qF '${GITHUB_ACTION_PATH}/mark-internal.sh' ||
+  fail "action update step must invoke mark-internal.sh"
+
+[[ "$(yq -r '.on.workflow_call.inputs."mark-internal".type' "$workflow")" == "boolean" ]] ||
+  fail "reusable workflow input mark-internal must be a boolean"
+[[ "$(yq -r '.on.workflow_call.inputs."mark-internal".default' "$workflow")" == "false" ]] ||
+  fail "reusable workflow input mark-internal must default to false"
+forwarded=$(yq -r '.jobs."update-agent-skills".steps[] | select(.uses == "./.devantler-tech-actions/update-agent-skills") | .with."mark-internal"' "$workflow")
+[[ "$forwarded" == '${{ inputs.mark-internal }}' ]] ||
+  fail "reusable workflow must forward mark-internal to update-agent-skills (got: $forwarded)"
 
 echo "mark-internal contract: all assertions passed"
