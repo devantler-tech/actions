@@ -14,6 +14,13 @@ inputs:
     description: When `true`, pass `--unpin` to `gh skill update` (clear pins and include pinned skills)
     required: false
     default: "false"
+  mark-internal:
+    description: >-
+      When `true`, set `metadata.internal: true` on every SKILL.md under `dir` after updating, so
+      discovery tools such as `npx skills` do not offer vendored skills as the repository's own.
+      Re-applied on every run because an upstream update replaces the whole file. Ignored with `dry-run`.
+    required: false
+    default: "false"
   gh-version:
     description: Minimum required `gh` version (must support `gh skill`)
     required: false
@@ -52,6 +59,7 @@ runs:
         INPUT_DIR: ${{ inputs.dir }}
         INPUT_DRY_RUN: ${{ inputs.dry-run }}
         INPUT_UNPIN: ${{ inputs.unpin }}
+        INPUT_MARK_INTERNAL: ${{ inputs.mark-internal }}
       run: |
         set -euo pipefail
 
@@ -124,6 +132,24 @@ runs:
           fi
           echo "::endgroup::"
         done
+
+        # An upstream update replaces the whole SKILL.md, so re-apply the internal flag after every
+        # update rather than once. Dry-run promises no modification, so it never tags.
+        case "$INPUT_MARK_INTERNAL" in
+          true|1|yes)
+            case "$INPUT_DRY_RUN" in
+              true|1|yes) echo "Skipping mark-internal: dry-run leaves SKILL.md files untouched." ;;
+              *)
+                echo "::group::Marking skills internal in $INPUT_DIR"
+                if ! bash "${GITHUB_ACTION_PATH}/mark-internal.sh" "$INPUT_DIR" 2>&1 | tee -a "$out"; then
+                  echo "::error::Marking skills internal under $INPUT_DIR failed."
+                  status=1
+                fi
+                echo "::endgroup::"
+                ;;
+            esac
+            ;;
+        esac
 
         after=$(mktemp)
         find "$INPUT_DIR" -type f -name SKILL.md -print0 \

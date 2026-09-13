@@ -779,6 +779,8 @@ jobs:
       pull-requests: write
     with:
       dir: .agents/skills
+      # Optional: keep vendored skills out of `npx skills add <owner>/<repo>` listings.
+      mark-internal: true
 ```
 
 The workflow assumes skills were previously installed with [`devantler-tech/actions/setup-agent-skills`](https://github.com/devantler-tech/actions/tree/main/setup-agent-skills) (or `gh skill install` directly) — the committed `SKILL.md` files carry the upstream pointers.
@@ -789,6 +791,7 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 |------------------|-----------------|--------------------------------------|----------|------------------------------------------------------------------------|
 | `dir`            | Input (string)  | `.`                                  | No       | Directory to scan for installed skills (passed to `gh skill update --dir`) |
 | `unpin`          | Input (boolean) | `false`                              | No       | When `true`, pass `--unpin` (clear pinned versions)                    |
+| `mark-internal`  | Input (boolean) | `false`                              | No       | When `true`, set `metadata.internal: true` on every `SKILL.md` under `dir` after updating, so `npx skills` stops offering vendored skills as the repository's own |
 | `gh-version`     | Input (string)  | `2.90.0`                             | No       | Minimum required `gh` version (must support `gh skill`)                |
 | `pr-branch`      | Input (string)  | `deps/agent-skills-update`           | No       | Branch the update PR is opened from                                    |
 | `pr-title`       | Input (string)  | `chore(deps): update agent skills`   | No       | Title of the update PR                                                 |
