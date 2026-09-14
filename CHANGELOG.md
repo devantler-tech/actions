@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.1](https://github.com/devantler-tech/actions/compare/v13.6.0...v13.6.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **setup-ksail-cli:** trust the first-party tap before tapping it ([#1243](https://github.com/devantler-tech/actions/issues/1243)) ([5823eff](https://github.com/devantler-tech/actions/commit/5823effe16a1b6e7c2ff66b2944ac06471ddac6a))
+
 ## [13.6.0](https://github.com/devantler-tech/actions/compare/v13.5.1...v13.6.0) (2026-09-13)
 
 
