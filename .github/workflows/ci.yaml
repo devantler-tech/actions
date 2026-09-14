@@ -4503,7 +4503,7 @@ jobs:
       - name: 🧹 Lint invalid fixture (expected to fail)
         id: ml
         continue-on-error: true
-        uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
+        uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
         env:
           DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
           REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
@@ -4623,16 +4623,16 @@ jobs:
         run: bash .github/tests/test-apply-signed-fixes-mode-guard.sh
 
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
-      # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
-      # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
-      # If any of the three is bumped alone, this goes red and forces them to move together.
+      # SHA. This guard asserts test-lint-blocks, lint.yaml and validate-go-project.yaml (the
+      # org's other MegaLinter consumer) all pin that SAME image. If any of the three is bumped
+      # alone, this goes red and forces them to move together.
       - name: 🔒 Assert both gates pin the self-tested MegaLinter image
         shell: bash
         env:
           # Match the full `uses:` line, not the bare SHA — the SHA also appears in
           # comments, so a bare grep could false-pass if the real `uses:` changed while a
           # comment still named the old one.
-          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c"
+          EXPECTED: "uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2"
         run: |
           set -euo pipefail
           status=0
@@ -4642,10 +4642,20 @@ jobs:
               status=1
             fi
           done
+          # EXPECTED is itself written in ci.yaml, so a whole-file grep would always match.
+          # Read only the test-lint-blocks job: it ends at the next top-level job key.
+          blocks_job="$(awk '/^  test-lint-blocks:$/ { found = 1; next } found && /^  [A-Za-z0-9_-]+:$/ { exit } found' .github/workflows/ci.yaml)"
+          if [ -z "$blocks_job" ]; then
+            echo "::error::Could not find the test-lint-blocks job in .github/workflows/ci.yaml, so its MegaLinter image cannot be checked."
+            status=1
+          elif ! grep -qF "$EXPECTED" <<<"$blocks_job"; then
+            echo "::error::test-lint-blocks no longer pins '$EXPECTED'. If the MegaLinter image was bumped intentionally, update test-lint-blocks, both gates and this EXPECTED value together so the failure-mode self-test keeps exercising the real gate."
+            status=1
+          fi
           if [ "$status" -ne 0 ]; then
             exit 1
           fi
-          echo "Both MegaLinter gates pin the self-tested image ✅"
+          echo "test-lint-blocks and both MegaLinter gates pin the same image ✅"
 
   # ── apply-signed-fixes.yaml self-test ────────────────────────────────────────
   # A passes-on-good-input test is genuinely impractical here: this workflow's only good
