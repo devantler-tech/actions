@@ -4503,7 +4503,7 @@ jobs:
       - name: 🧹 Lint invalid fixture (expected to fail)
         id: ml
         continue-on-error: true
-        uses: oxsecurity/megalinter/flavors/go@15e5b45552097e318c93de385779ce3b1084052c # v10.0.0
+        uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
         env:
           DEFAULT_WORKSPACE: .github/tests/megalinter-bad-fixture
           REPORT_OUTPUT_FOLDER: ${{ github.workspace }}/megalinter-bad-fixture-reports
