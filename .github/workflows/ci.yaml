@@ -4623,9 +4623,9 @@ jobs:
         run: bash .github/tests/test-apply-signed-fixes-mode-guard.sh
 
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
-      # SHA. This guard asserts lint.yaml pins that SAME SHA — and that validate-go-project
-      # .yaml, the org's other MegaLinter consumer, has not drifted onto a different image.
-      # If any of the three is bumped alone, this goes red and forces them to move together.
+      # SHA. This guard asserts test-lint-blocks, lint.yaml and validate-go-project.yaml (the
+      # org's other MegaLinter consumer) all pin that SAME image. If any of the three is bumped
+      # alone, this goes red and forces them to move together.
       - name: 🔒 Assert both gates pin the self-tested MegaLinter image
         shell: bash
         env:
@@ -4642,10 +4642,20 @@ jobs:
               status=1
             fi
           done
+          # EXPECTED is itself written in ci.yaml, so a whole-file grep would always match.
+          # Read only the test-lint-blocks job: it ends at the next top-level job key.
+          blocks_job="$(awk '/^  test-lint-blocks:$/ { found = 1; next } found && /^  [A-Za-z0-9_-]+:$/ { exit } found' .github/workflows/ci.yaml)"
+          if [ -z "$blocks_job" ]; then
+            echo "::error::Could not find the test-lint-blocks job in .github/workflows/ci.yaml, so its MegaLinter image cannot be checked."
+            status=1
+          elif ! grep -qF "$EXPECTED" <<<"$blocks_job"; then
+            echo "::error::test-lint-blocks no longer pins '$EXPECTED'. If the MegaLinter image was bumped intentionally, update test-lint-blocks, both gates and this EXPECTED value together so the failure-mode self-test keeps exercising the real gate."
+            status=1
+          fi
           if [ "$status" -ne 0 ]; then
             exit 1
           fi
-          echo "Both MegaLinter gates pin the self-tested image ✅"
+          echo "test-lint-blocks and both MegaLinter gates pin the same image ✅"
 
   # ── apply-signed-fixes.yaml self-test ────────────────────────────────────────
   # A passes-on-good-input test is genuinely impractical here: this workflow's only good
