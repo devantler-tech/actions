@@ -41,32 +41,34 @@ check() {
 tap='tap devantler-tech/tap'
 trust='trust --tap devantler-tech/tap'
 install='install --cask devantler-tech/tap/ksail'
+# Trust must precede the tap: under Homebrew 6 tap trust, `brew tap` loads the tap's
+# casks and fails ("invalid syntax in tap") while the tap is still untrusted.
 FAIL_COMMAND='' FAIL_COUNT=0
-check 'trust only the canonical tap before explicitly installing its cask' 0 "$tap
-$trust
+check 'trust only the canonical tap before tapping it and installing its cask' 0 "$trust
+$tap
 $install"
 FAIL_COMMAND=tap FAIL_COUNT=2
-check 'transient tap failure recovers before trust' 0 "$tap
+check 'transient tap failure recovers after trust' 0 "$trust
 $tap
 $tap
-$trust
+$tap
 $install"
 FAIL_COMMAND=tap FAIL_COUNT=3
-check 'exhausted tap failure stops before trust and install' 42 "$tap
+check 'exhausted tap failure stops before install' 42 "$trust
+$tap
 $tap
 $tap"
 FAIL_COMMAND=trust FAIL_COUNT=1
-check 'trust failure is fatal and never retried' 42 "$tap
-$trust"
+check 'trust failure is fatal, never retried, and stops before tapping' 42 "$trust"
 FAIL_COMMAND=install FAIL_COUNT=2
-check 'transient cask download failure recovers' 0 "$tap
-$trust
+check 'transient cask download failure recovers' 0 "$trust
+$tap
 $install
 $install
 $install"
 FAIL_COMMAND=install FAIL_COUNT=3
-check 'exhausted installation fails the action' 42 "$tap
-$trust
+check 'exhausted installation fails the action' 42 "$trust
+$tap
 $install
 $install
 $install"
