@@ -26,11 +26,12 @@ runs:
         # roadmap (devantler-tech/actions#247).
         retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
 
-        retry brew tap devantler-tech/tap
-        # KSail ships as a Cask. Homebrew refuses to load Casks from a non-official
-        # tap when HOMEBREW_REQUIRE_TAP_TRUST is set (now enforced on the CI runners),
-        # failing with "Refusing to load cask … from untrusted tap". Explicitly trust
-        # our own first-party tap so `brew install` can load it non-interactively.
+        # KSail ships as a Cask. Homebrew 6 requires non-official taps to be trusted
+        # before their code is loaded, and `brew tap` itself loads every cask in the
+        # tap: tapping an untrusted tap fails with "Refusing to load cask … from
+        # untrusted tap" / "invalid syntax in tap". Trust our own first-party tap
+        # FIRST — trust is recorded by name, so it works before the tap exists.
         # (Local operation — no network — so it is not wrapped in retry.)
         brew trust --tap devantler-tech/tap
+        retry brew tap devantler-tech/tap
         retry brew install --cask devantler-tech/tap/ksail
