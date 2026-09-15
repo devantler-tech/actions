@@ -678,6 +678,60 @@ jobs:
             exit 1
           fi
 
+  # xUnit v3 4.x runs on Microsoft.Testing.Platform, which the .NET 10 SDK only accepts when
+  # global.json opts in — and which rejects the VSTest flags the default path uses. Both
+  # fixtures opt in; one references the code coverage extension and one does not.
+  test-run-dotnet-tests-mtp:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Run .NET Tests - Microsoft.Testing.Platform"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Run run-dotnet-tests with the coverage extension
+        uses: ./run-dotnet-tests
+        with:
+          working-directory: .github/fixtures/run-dotnet-tests-mtp
+
+      - name: ✅ Assert coverage was collected in Cobertura format
+        shell: bash
+        run: |
+          set -euo pipefail
+          reports="$(find .github/fixtures/run-dotnet-tests-mtp -path '*/TestResults/*' -name '*.cobertura.xml' -print)"
+          if [[ -z "$reports" ]]; then
+            echo "::error::run-dotnet-tests did not write a Cobertura report for the Microsoft.Testing.Platform fixture"
+            exit 1
+          fi
+          printf 'Coverage report: %s\n' "$reports"
+
+      - name: 🧪 Run run-dotnet-tests without the coverage extension
+        uses: ./run-dotnet-tests
+        with:
+          working-directory: .github/fixtures/run-dotnet-tests-mtp-no-coverage
+
+      - name: ✅ Assert tests ran without coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find .github/fixtures/run-dotnet-tests-mtp-no-coverage -name '*.cobertura.xml' -print | grep -q .; then
+            echo "::error::run-dotnet-tests produced coverage for a fixture without the coverage extension — the no-extension branch did not run"
+            exit 1
+          fi
+          echo "Tests ran on Microsoft.Testing.Platform without the coverage extension ✅"
+
   test-run-dotnet-tests-preserves-source-mapping:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Run .NET Tests - Preserve Source Mapping"
@@ -4746,6 +4800,7 @@ jobs:
       - test-aggregate-job-checks-failure
       - test-aggregate-job-checks-unknown
       - test-run-dotnet-tests
+      - test-run-dotnet-tests-mtp
       - test-run-dotnet-tests-preserves-source-mapping
       - test-setup-agent-skills-inline
       - test-setup-agent-skills-pinned
@@ -4860,6 +4915,7 @@ jobs:
             ${{ needs.test-aggregate-job-checks-failure.result }}
             ${{ needs.test-aggregate-job-checks-unknown.result }}
             ${{ needs.test-run-dotnet-tests.result }}
+            ${{ needs.test-run-dotnet-tests-mtp.result }}
             ${{ needs.test-run-dotnet-tests-preserves-source-mapping.result }}
             ${{ needs.test-setup-agent-skills-inline.result }}
             ${{ needs.test-setup-agent-skills-pinned.result }}

@@ -31,6 +31,15 @@ steps:
       working-directory: src/MyProject
 ```
 
+### Test runners
+
+The action picks the test command from the runner your project uses:
+
+- **VSTest (the default):** runs `dotnet test` with the Coverlet collector (`--collect:"XPlat Code Coverage"`).
+- **Microsoft.Testing.Platform:** used when the nearest `global.json` sets `"test": { "runner": "Microsoft.Testing.Platform" }`. This is the runner xUnit v3 4.x needs on the .NET 10 SDK.
+  - If a project references `Microsoft.Testing.Extensions.CodeCoverage`, coverage is collected in Cobertura format with `--coverage`.
+  - Otherwise tests still run, and a notice explains that coverage was skipped.
+
 Pass `github-token` only for trusted runs that need to restore private packages from
 GitHub Packages. Authentication is scoped to that restore step, so subsequent tests
 cannot read the credential from their process environment or the user NuGet configuration.

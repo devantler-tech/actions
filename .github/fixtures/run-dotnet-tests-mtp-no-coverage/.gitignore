@@ -1,0 +1,11 @@
+# MacOS
+.DS_Store
+
+# .NET
+bin
+obj
+*.received.*
+**/TestResults/
+
+# Temporary files
+*.tmp*
