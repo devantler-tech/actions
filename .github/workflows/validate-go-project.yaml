@@ -61,10 +61,18 @@ on:
 #     for `scan-default-branch` are exactly that shape: same caller, same ref, differing
 #     only by input, so the second silently cancelled the first.
 #
+#   * the run, on the default branch only — each default-branch run is the verification
+#     record for its commit, so no run there may cancel another. The path filter looks
+#     only at the latest push, so a cancelled run's build, lint and tidy checks would
+#     never cover its commit while the branch still reports green (devantler-tech/ksail#6345).
+#     A reusable workflow inherits the caller's run, so each caller run gets its own group.
+#     Pull-request and merge-queue runs keep a shared group, so a superseded run still
+#     cancels. test-validate-go-default-branch-concurrency.sh guards this.
+#
 # Adding a discriminator only ever splits groups further; it cannot merge two that were
 # separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}-${{ inputs.manual-workflow-fixes }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_id || '' }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}-${{ inputs.manual-workflow-fixes }}"
   cancel-in-progress: true
 
 permissions: {}
