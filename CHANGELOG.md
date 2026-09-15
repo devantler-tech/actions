@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.5](https://github.com/devantler-tech/actions/compare/v13.6.4...v13.6.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* **auto-merge:** let direct and required runs opt in to queued evaluations ([#1269](https://github.com/devantler-tech/actions/issues/1269)) ([323bf87](https://github.com/devantler-tech/actions/commit/323bf8777c63141d6e30085e06dd0e6c851dc746))
+
 ## [13.6.4](https://github.com/devantler-tech/actions/compare/v13.6.3...v13.6.4) (2026-09-15)
 
 
