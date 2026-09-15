@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.2](https://github.com/devantler-tech/actions/compare/v13.6.1...v13.6.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **validate-go-project:** never cancel a default-branch run ([#1252](https://github.com/devantler-tech/actions/issues/1252)) ([ad9e1bb](https://github.com/devantler-tech/actions/commit/ad9e1bb36008b276b742f35c16da163ca726b91c))
+
 ## [13.6.1](https://github.com/devantler-tech/actions/compare/v13.6.0...v13.6.1) (2026-09-14)
 
 
