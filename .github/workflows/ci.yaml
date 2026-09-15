@@ -4087,6 +4087,14 @@ jobs:
       - name: 🧪 Assert the Go test suite runs on the default branch behind its opt-in
         run: bash .github/tests/test-suite-default-branch-coverage.sh
 
+      # A default-branch run must never be cancelled by the next merge, or its build, lint
+      # and tidy checks never cover its commit (devantler-tech/ksail#6345).
+      - name: 🧪 Assert default-branch runs get their own concurrency group
+        run: bash .github/tests/test-validate-go-default-branch-concurrency.sh
+
+      - name: 🧪 Assert the concurrency guard blocks every bad variant
+        run: bash .github/tests/test-validate-go-default-branch-concurrency-blocks.sh
+
       - name: 🧪 Exercise Go maintenance trigger coverage and regressions
         run: bash .github/tests/test-go-maintenance-default-branch.sh
 
