@@ -40,7 +40,9 @@ on:
         description: >-
           Temporary opt-in to retain up to 100 pending evaluations instead of
           replacing the pending evaluation during bursts. Existing callers
-          and direct/required runs retain the single queue. Intentional
+          retain the single queue. Direct/required-workflow runs opt in with
+          the QUEUE_PENDING_EVALUATIONS repository or organization variable,
+          which never overrides this input on a workflow_call run. Intentional
           actor-enforced cancellation remains active when opted in.
       concurrency-key:
         type: string
@@ -168,7 +170,10 @@ concurrency:
   cancel-in-progress: ${{ (inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted'))) }}
   # Opted-in runs retain pending evaluations except where actor enforcement
   # supersedes old state. GitHub forbids queue:max with cancellation enabled.
-  queue: ${{ inputs.queue-pending-evaluations && !((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted')))) && 'max' || 'single' }}
+  # Direct/required runs have an empty inputs context and this file's source in
+  # github.workflow_ref, so only they read QUEUE_PENDING_EVALUATIONS; a
+  # workflow_call run always follows its own (possibly false) input.
+  queue: ${{ (inputs.queue-pending-evaluations || (toJSON(inputs) == '{}' && startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && vars.QUEUE_PENDING_EVALUATIONS == 'true')) && !((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && (github.event_name == 'pull_request' || ((inputs.enforce-review-gates || vars.ENFORCE_MERGE_GATES == 'true') && (github.event.action == 'dismissed' || github.event.action == 'deleted')))) && 'max' || 'single' }}
 
 permissions: {}
 
@@ -356,7 +361,7 @@ jobs:
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
-      queue: ${{ inputs.queue-pending-evaluations && 'max' || 'single' }}
+      queue: ${{ (inputs.queue-pending-evaluations || (toJSON(inputs) == '{}' && startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && vars.QUEUE_PENDING_EVALUATIONS == 'true')) && 'max' || 'single' }}
     runs-on: ubuntu-latest
     steps:
       - name: 🛡️ Harden runner
@@ -419,7 +424,7 @@ jobs:
     concurrency:
       group: enable-auto-merge-mutation-${{ github.repository }}-${{ inputs.concurrency-key || (startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && 'direct') || ((inputs.enforce-actor-trust || vars.ENFORCE_ACTOR_TRUST == 'true') && 'actor-trust-legacy') || github.workflow_ref }}-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
-      queue: ${{ inputs.queue-pending-evaluations && 'max' || 'single' }}
+      queue: ${{ (inputs.queue-pending-evaluations || (toJSON(inputs) == '{}' && startsWith(github.workflow_ref, 'devantler-tech/actions/.github/workflows/enable-auto-merge.yaml@') && vars.QUEUE_PENDING_EVALUATIONS == 'true')) && 'max' || 'single' }}
     runs-on: ubuntu-latest
 
     steps:
