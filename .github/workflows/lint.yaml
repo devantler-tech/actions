@@ -113,8 +113,11 @@ jobs:
           # actionlint (<=1.7.12, bundled in MegaLinter) doesn't yet know the `code-quality`
           # permission scope that GitHub Code Quality coverage requires callers to grant, so
           # it reports a false "unknown permission scope" error. Ignore it until actionlint
-          # catches up.
-          ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality
+          # catches up. It also rejects the documented `concurrency.queue` key as "unexpected
+          # key"; that one message is ignored by a space-free pattern, and any other unexpected
+          # concurrency key is still reported. Keep in lockstep with validate-go-project.yaml
+          # (test-actionlint-arguments-lockstep.sh).
+          ACTION_ACTIONLINT_ARGUMENTS: -ignore code-quality -ignore unexpected.key..queue..for..concurrency..section
 
       # PR-controlled MegaLinter configuration may execute commands. Export only its
       # resulting patch here; write credentials are minted later on a fresh runner.

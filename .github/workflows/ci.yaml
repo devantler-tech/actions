@@ -4630,6 +4630,13 @@ jobs:
         shell: bash
         run: bash .github/tests/test-apply-signed-fixes-mode-guard.sh
 
+      # Both MegaLinter gates must pass the same actionlint arguments, and the concurrency.queue
+      # ignore must match only that message, so `queue: max` lints clean in consumers while a
+      # typo in any other concurrency key is still reported (devantler-tech/ksail#6360).
+      - name: 🔒 Assert both gates pass the same narrow actionlint ignores
+        shell: bash
+        run: bash .github/tests/test-actionlint-arguments-lockstep.sh
+
       # `uses:` cannot be parametrized, so test-lint-blocks hard-codes the MegaLinter image
       # SHA. This guard asserts test-lint-blocks, lint.yaml and validate-go-project.yaml (the
       # org's other MegaLinter consumer) all pin that SAME image. If any of the three is bumped
