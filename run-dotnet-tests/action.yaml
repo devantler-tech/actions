@@ -214,20 +214,56 @@ runs:
       run: dotnet restore
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+    # The .NET 10 SDK refuses the VSTest bridge for a project that opts into
+    # Microsoft.Testing.Platform in global.json, and that platform rejects VSTest's
+    # --collect/--logger flags. Pick the command from the runner the SDK will use: the
+    # nearest global.json, found the way the SDK finds it (walking up from here).
     - name: 🧪 Test
-      run: dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
+      run: |
+        set -euo pipefail
+        runner=vstest
+        dir="$PWD"
+        while :; do
+          if [[ -f "$dir/global.json" ]]; then
+            # Parse it as JSON so formatting cannot hide the setting. The SDK also accepts
+            # comments, which jq rejects; for such a file, match the flattened text instead.
+            if configured="$(jq -r '.test.runner // empty' "$dir/global.json" 2>/dev/null)"; then
+              [[ "$configured" == "Microsoft.Testing.Platform" ]] && runner=microsoft-testing-platform
+            elif tr -d '\r\n' <"$dir/global.json" |
+              grep -Eq '"runner"[[:space:]]*:[[:space:]]*"Microsoft\.Testing\.Platform"'; then
+              runner=microsoft-testing-platform
+            fi
+            break
+          fi
+          parent="$(dirname "$dir")"
+          [[ "$parent" == "$dir" ]] && break
+          dir="$parent"
+        done
+
+        if [[ "$runner" == vstest ]]; then
+          dotnet test --no-restore --collect:"XPlat Code Coverage" --logger "console;verbosity=detailed"
+        elif grep -rqs --include='*.csproj' --include='*.fsproj' --include='*.vbproj' --include='*.props' --include='*.targets' \
+          'Microsoft.Testing.Extensions.CodeCoverage' .; then
+          # Each test project writes its own uniquely named <guid>.cobertura.xml.
+          dotnet test --no-restore --coverage --coverage-output-format cobertura
+        else
+          echo "::notice::Microsoft.Testing.Platform project without Microsoft.Testing.Extensions.CodeCoverage — running tests without coverage. Reference the extension to collect coverage."
+          dotnet test --no-restore
+        fi
       shell: bash
       working-directory: ${{ inputs.working-directory }}
     # GitHub Code Quality accepts a single Cobertura report, so merge the per-project files.
     # Linux only — one upload per repo avoids the matrix triple-reporting the same coverage.
     # best-effort: this is a preview feature, so it must never break .NET CI.
+    # The glob matches both Coverlet's coverage.cobertura.xml and the testing platform's
+    # <guid>.cobertura.xml.
     - name: 🔀 Merge coverage into a single Cobertura report
       if: runner.os == 'Linux'
       continue-on-error: true
       run: |
         dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.10
         export PATH="$PATH:$HOME/.dotnet/tools"
-        reportgenerator -reports:'**/coverage.cobertura.xml' -targetdir:coverage-merged -reporttypes:Cobertura
+        reportgenerator -reports:'**/*.cobertura.xml' -targetdir:coverage-merged -reporttypes:Cobertura
       shell: bash
       working-directory: ${{ inputs.working-directory }}
     # Inlines the sibling upload-coverage wrapper (one pinned step): a composite action cannot
