@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.3](https://github.com/devantler-tech/actions/compare/v13.6.2...v13.6.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **lint:** let actionlint accept concurrency.queue ([#1256](https://github.com/devantler-tech/actions/issues/1256)) ([c14b85f](https://github.com/devantler-tech/actions/commit/c14b85f2ac109c70c42f866cb0b4183b03b19c4b))
+
 ## [13.6.2](https://github.com/devantler-tech/actions/compare/v13.6.1...v13.6.2) (2026-09-15)
 
 
