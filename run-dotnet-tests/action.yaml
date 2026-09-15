@@ -225,7 +225,12 @@ runs:
         dir="$PWD"
         while :; do
           if [[ -f "$dir/global.json" ]]; then
-            if grep -Eq '"runner"[[:space:]]*:[[:space:]]*"Microsoft\.Testing\.Platform"' "$dir/global.json"; then
+            # Parse it as JSON so formatting cannot hide the setting. The SDK also accepts
+            # comments, which jq rejects; for such a file, match the flattened text instead.
+            if configured="$(jq -r '.test.runner // empty' "$dir/global.json" 2>/dev/null)"; then
+              [[ "$configured" == "Microsoft.Testing.Platform" ]] && runner=microsoft-testing-platform
+            elif tr -d '\r\n' <"$dir/global.json" |
+              grep -Eq '"runner"[[:space:]]*:[[:space:]]*"Microsoft\.Testing\.Platform"'; then
               runner=microsoft-testing-platform
             fi
             break
