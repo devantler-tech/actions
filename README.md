@@ -323,8 +323,13 @@ Legacy default-off callers retain their existing authorization behavior.
 
 Set `queue-pending-evaluations: true` on a `workflow_call` invocation to retain up to 100 pending
 evaluations in non-cancelling workflow runs and both approval/revocation jobs. This temporary opt-in
-defaults to `false`: omitted/false inputs and direct/required runs keep the existing single queue,
-which can replace a waiting evaluation. Rollout and flag removal are tracked in
+defaults to `false`: omitted/false inputs keep the existing single queue, which can replace a waiting
+evaluation.
+
+Direct and organization-required runs take no inputs, so they opt in with the
+`QUEUE_PENDING_EVALUATIONS` repository or organization variable set to `true`. Without it they keep
+the single queue. The variable applies only to those runs: a `workflow_call` invocation always follows
+its own input, so an explicit `false` stays honoured. Rollout and flag removal are tracked in
 [#1155](https://github.com/devantler-tech/actions/issues/1155).
 
 When opted in, GitHub processes queued evaluations in the order they begin waiting, which can
@@ -407,6 +412,7 @@ jobs:
 | `enforce-actor-trust`  | Input  | `false` | No       | Opt-in trusted-trigger enforcement with fail-closed revocation            |
 | `enforce-review-gates` | Input  | `false` | No       | Opt-in fail-closed gate before approval; agent arms after live pentad     |
 | `queue-pending-evaluations` | Input | `false` | No | Temporary opt-in to retain pending evaluations during event bursts |
+| `QUEUE_PENDING_EVALUATIONS` | Variable | unset | No | The same temporary opt-in for direct and organization-required runs only |
 | `concurrency-key`      | Input  | `""`    | No       | Recommended with actor trust; omitted calls share a safe fallback lane    |
 
 </details>
