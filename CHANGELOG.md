@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.4](https://github.com/devantler-tech/actions/compare/v13.6.3...v13.6.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **run-dotnet-tests:** run projects opted into Microsoft.Testing.Platform ([#1264](https://github.com/devantler-tech/actions/issues/1264)) ([4e45ca6](https://github.com/devantler-tech/actions/commit/4e45ca60281695eeab8b01fe94b48b7187df2981))
+
 ## [13.6.3](https://github.com/devantler-tech/actions/compare/v13.6.2...v13.6.3) (2026-09-15)
 
 
