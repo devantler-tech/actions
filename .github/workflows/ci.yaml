@@ -4271,22 +4271,31 @@ jobs:
 
       # `uses:` cannot be parametrized, so test-zizmor-blocks hard-codes the zizmor-action
       # SHA. This guard asserts the gate pins that SAME SHA, so the self-test always
-      # exercises the real gate. If the gate's action is bumped without updating the
-      # self-test, this check goes red and forces both to move in lockstep.
+      # exercises the real gate. If either pin moves without the other, this check goes
+      # red and forces both to move in lockstep. Both sides are read from the parsed
+      # `uses:` fields rather than a literal, so a dependency bump that updates both
+      # pins together passes without a hand-edited copy of the SHA.
       - name: 🔒 Assert the gate pins the self-tested zizmor-action SHA
         shell: bash
-        env:
-          # Match the full `uses:` line, not the bare ref — the ref also appears in
-          # comments, so a bare-ref grep could false-pass if the real `uses:` SHA changed
-          # while a comment still mentioned the old ref.
-          EXPECTED: "uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99"
         run: |
           set -euo pipefail
-          if ! grep -qF "$EXPECTED" .github/workflows/scan-for-workflow-vulnerabilities.yaml; then
-            echo "::error::scan-for-workflow-vulnerabilities.yaml no longer pins '$EXPECTED'. If the zizmor action was changed intentionally, update test-zizmor-blocks and this EXPECTED value so the failure-mode self-test keeps exercising the real gate."
+          pins() {
+            yq -r '[.jobs[].steps[]? | select((.uses // "") | test("^zizmorcore/zizmor-action@")) | .uses] | .[]' "$1"
+          }
+          gate="$(pins .github/workflows/scan-for-workflow-vulnerabilities.yaml)"
+          fixture="$(yq -r '.jobs.test-zizmor-blocks.steps[]? | select((.uses // "") | test("^zizmorcore/zizmor-action@")) | .uses' .github/workflows/ci.yaml)"
+          for pin in "$gate" "$fixture"; do
+            # Exactly one full-SHA pin per side; an empty or multi-line read fails closed.
+            if [[ ! "$pin" =~ ^zizmorcore/zizmor-action@[0-9a-f]{40}$ ]]; then
+              echo "::error::expected exactly one full-SHA zizmor-action pin per side; gate='$gate' fixture='$fixture'"
+              exit 1
+            fi
+          done
+          if [[ "$gate" != "$fixture" ]]; then
+            echo "::error::scan-for-workflow-vulnerabilities.yaml pins '$gate' but test-zizmor-blocks self-tests '$fixture'. Move both pins together so the failure-mode self-test keeps exercising the real gate."
             exit 1
           fi
-          echo "scan-for-workflow-vulnerabilities.yaml pins the self-tested zizmor action ✅"
+          echo "scan-for-workflow-vulnerabilities.yaml pins the self-tested zizmor action ($gate) ✅"
 
   # ── validate-go-project quality-gate failure-mode self-tests (#316) ───────────
   # The govulncheck/zizmor guards above prove the security-scan gates fail closed;
