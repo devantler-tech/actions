@@ -127,6 +127,10 @@ jobs:
               - 'go.sum'
               - '.golangci.yml'
               - '.golangci.yaml'
+              - '**/go.mod'
+              - '**/go.sum'
+              - '**/.golangci.yml'
+              - '**/.golangci.yaml'
             # The allowlist decides which advisories the vuln scan accepts, so a change to
             # it changes the gate's verdict on unchanged code: without this filter, editing
             # the allowlist skips the very scan that reads it.
