@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.6](https://github.com/devantler-tech/actions/compare/v13.6.5...v13.6.6) (2026-09-20)
+
+
+### Bug Fixes
+
+* cover nested go.mod in validate-go-project path filter ([#1277](https://github.com/devantler-tech/actions/issues/1277)) ([96cf49d](https://github.com/devantler-tech/actions/commit/96cf49d4149843a7f1d3746ef2ece18ca8a670b7)), closes [#1133](https://github.com/devantler-tech/actions/issues/1133)
+
 ## [13.6.5](https://github.com/devantler-tech/actions/compare/v13.6.4...v13.6.5) (2026-09-15)
 
 
