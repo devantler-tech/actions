@@ -4115,6 +4115,46 @@ jobs:
       - name: 🧪 Assert the trigger guard blocks every bad-input fixture
         run: bash .github/tests/test-govulncheck-main-coverage-blocks.sh
 
+  test-go-filter-nested-modules:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Go Filter Nested Modules"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the go filter covers nested modules
+        run: bash .github/tests/test-go-filter-nested-modules.sh
+
+  test-go-filter-nested-modules-blocks:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Go Filter Nested Modules - Blocks On Bad Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🧪 Assert the nested-module filter guard blocks every bad-input fixture
+        run: bash .github/tests/test-go-filter-nested-modules-blocks.sh
+
   # ── The same property, asserted for the Go TEST suite (ksail#6373) ──────────────
   # `needs.changes.outputs.go` answers "did a Go source file change", which is narrower
   # than "could the suite's verdict have changed": a Go test may read a non-Go file as its
@@ -4880,6 +4920,8 @@ jobs:
       - test-govulncheck-timeout
       - test-govulncheck-main-coverage
       - test-govulncheck-main-coverage-blocks
+      - test-go-filter-nested-modules
+      - test-go-filter-nested-modules-blocks
       - test-suite-default-branch-coverage
       - test-suite-default-branch-coverage-blocks
       - test-zizmor-blocks
@@ -4995,6 +5037,8 @@ jobs:
             ${{ needs.test-govulncheck-timeout.result }}
             ${{ needs.test-govulncheck-main-coverage.result }}
             ${{ needs.test-govulncheck-main-coverage-blocks.result }}
+            ${{ needs.test-go-filter-nested-modules.result }}
+            ${{ needs.test-go-filter-nested-modules-blocks.result }}
             ${{ needs.test-suite-default-branch-coverage.result }}
             ${{ needs.test-suite-default-branch-coverage-blocks.result }}
             ${{ needs.test-zizmor-blocks.result }}
