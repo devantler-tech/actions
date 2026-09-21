@@ -49,7 +49,8 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
-          prs="$(gh api "repos/${REPO}/pulls?state=closed&head=${OWNER}:release-please--branches--main&sort=created&direction=desc&per_page=100")"
+          # Every page: a reopened release PR can merge after newer ones were created.
+          prs="$(gh api --paginate --slurp "repos/${REPO}/pulls?state=closed&head=${OWNER}:release-please--branches--main&per_page=100" | jq -c 'add // []')"
           bash .scripts/check-release-pr-lifecycle.sh <<<"$prs"
 
       # Maintains the release PR — version bump, CHANGELOG, and (via extra-files) rewrites the

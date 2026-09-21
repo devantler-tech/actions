@@ -62,5 +62,33 @@
     "name": "an API error object is not a pull request list",
     "expected_exit": 2,
     "prs": { "message": "Bad credentials", "status": "401" }
+  },
+  {
+    "name": "labels null on a merged record is malformed input, not a missing label",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 40, "merged_at": "2026-09-21T00:00:00Z", "labels": null }
+    ]
+  },
+  {
+    "name": "a label without a string name is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 41, "merged_at": "2026-09-21T00:00:00Z", "labels": [{ "id": 1 }] }
+    ]
+  },
+  {
+    "name": "a record without a numeric number is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": "42", "merged_at": "2026-09-21T00:00:00Z", "labels": [] }
+    ]
+  },
+  {
+    "name": "a non-string merge time is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 43, "merged_at": 1726876800, "labels": [] }
+    ]
   }
 ]
