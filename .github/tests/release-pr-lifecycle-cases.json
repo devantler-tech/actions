@@ -1,0 +1,94 @@
+[
+  {
+    "name": "no release PR has ever merged",
+    "expected_exit": 0,
+    "prs": []
+  },
+  {
+    "name": "only closed-unmerged release PRs",
+    "expected_exit": 0,
+    "prs": [
+      { "number": 10, "merged_at": null, "labels": [] }
+    ]
+  },
+  {
+    "name": "newest merged release PR is tagged",
+    "expected_exit": 0,
+    "prs": [
+      { "number": 12, "merged_at": "2026-09-20T18:21:49Z", "labels": [{ "name": "autorelease: tagged" }] },
+      { "number": 11, "merged_at": "2026-09-15T16:33:41Z", "labels": [{ "name": "autorelease: tagged" }] }
+    ]
+  },
+  {
+    "name": "newest merged release PR is pending (this run tags it)",
+    "expected_exit": 0,
+    "prs": [
+      { "number": 12, "merged_at": "2026-09-20T18:21:49Z", "labels": [{ "name": "autorelease: pending" }] },
+      { "number": 11, "merged_at": "2026-09-15T16:33:41Z", "labels": [{ "name": "autorelease: tagged" }] }
+    ]
+  },
+  {
+    "name": "newest merged release PR lost its label (the #892 incident)",
+    "expected_exit": 1,
+    "prs": [
+      { "number": 892, "merged_at": "2026-08-03T02:40:00Z", "labels": [] },
+      { "number": 880, "merged_at": "2026-08-01T10:00:00Z", "labels": [{ "name": "autorelease: tagged" }] }
+    ]
+  },
+  {
+    "name": "unrelated labels do not count as a lifecycle label",
+    "expected_exit": 1,
+    "prs": [
+      { "number": 13, "merged_at": "2026-09-21T09:00:00Z", "labels": [{ "name": "release" }, { "name": "autorelease" }] }
+    ]
+  },
+  {
+    "name": "newest is chosen by merge time, not list order",
+    "expected_exit": 1,
+    "prs": [
+      { "number": 20, "merged_at": "2026-09-01T00:00:00Z", "labels": [{ "name": "autorelease: tagged" }] },
+      { "number": 21, "merged_at": "2026-09-02T00:00:00Z", "labels": [] }
+    ]
+  },
+  {
+    "name": "an older unlabelled PR does not block a tagged newer one",
+    "expected_exit": 0,
+    "prs": [
+      { "number": 31, "merged_at": "2026-09-02T00:00:00Z", "labels": [{ "name": "autorelease: tagged" }] },
+      { "number": 30, "merged_at": "2026-09-01T00:00:00Z", "labels": [] }
+    ]
+  },
+  {
+    "name": "an API error object is not a pull request list",
+    "expected_exit": 2,
+    "prs": { "message": "Bad credentials", "status": "401" }
+  },
+  {
+    "name": "labels null on a merged record is malformed input, not a missing label",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 40, "merged_at": "2026-09-21T00:00:00Z", "labels": null }
+    ]
+  },
+  {
+    "name": "a label without a string name is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 41, "merged_at": "2026-09-21T00:00:00Z", "labels": [{ "id": 1 }] }
+    ]
+  },
+  {
+    "name": "a record without a numeric number is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": "42", "merged_at": "2026-09-21T00:00:00Z", "labels": [] }
+    ]
+  },
+  {
+    "name": "a non-string merge time is malformed input",
+    "expected_exit": 2,
+    "prs": [
+      { "number": 43, "merged_at": 1726876800, "labels": [] }
+    ]
+  }
+]

@@ -39,6 +39,20 @@ jobs:
           permission-issues: write
           permission-workflows: write
 
+      # Release Please recognises the release it just merged by its `autorelease: pending`
+      # label. If that label is lost before the tag is cut, the run re-scans history and
+      # proposes an unintended version (#894), so refuse to run until it is restored.
+      - name: 🔒 Check the last release PR kept its lifecycle label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          # Every page: a reopened release PR can merge after newer ones were created.
+          prs="$(gh api --paginate --slurp "repos/${REPO}/pulls?state=closed&head=${OWNER}:release-please--branches--main&per_page=100" | jq -c 'add // []')"
+          bash .scripts/check-release-pr-lifecycle.sh <<<"$prs"
+
       # Maintains the release PR — version bump, CHANGELOG, and (via extra-files) rewrites the
       # self-referenced action/workflow tag pins to the version being released — then cuts the
       # GitHub release + tag once that PR is merged. The tagged commit therefore references itself.
