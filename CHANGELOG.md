@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.7](https://github.com/devantler-tech/actions/compare/v13.6.6...v13.6.7) (2026-09-21)
+
+
+### Bug Fixes
+
+* **release:** refuse to release when the last release PR lost its lifecycle label ([#1284](https://github.com/devantler-tech/actions/issues/1284)) ([9e3c94d](https://github.com/devantler-tech/actions/commit/9e3c94d3ff41acc00ff03e85bb74c9d55c64128a))
+
 ## [13.6.6](https://github.com/devantler-tech/actions/compare/v13.6.5...v13.6.6) (2026-09-20)
 
 
