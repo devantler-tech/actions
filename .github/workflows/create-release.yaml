@@ -22,6 +22,14 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # One release at a time per repository and ref, so overlapping merges cannot compute the same
+    # version and fail on each other's tag. Queued runs are kept in order rather than cancelled or
+    # replaced, because a dropped run is a lost release. Callers inherit this and need no block of
+    # their own. Guarded by .github/tests/test-create-release-concurrency.sh (#970).
+    concurrency:
+      group: create-release-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+      queue: max
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
