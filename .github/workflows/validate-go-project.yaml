@@ -525,12 +525,18 @@ jobs:
     # ceiling instead of OOM-killing; timeout-minutes bounds the worst case to a clear,
     # fast failure rather than a hung runner.
     #
-    # 25 (not 20): a cold-cache scan of a large module legitimately takes most of the
-    # previous limit. A KSail main run finished the scan after 17m44s, then setup-go's
-    # cache-save post-step hit the 20-minute ceiling and cancelled an otherwise-passing
-    # required check. 25 keeps a finite ceiling with headroom for both the scan and its
-    # post-job cleanup. Guarded by test-govulncheck-timeout.
-    timeout-minutes: 25
+    # The deadline lives on the scan STEP, not only the job (#1097). A job that hits its own
+    # timeout-minutes ends `cancelled`, and a cancelled required check is terminal: Dependabot
+    # never reruns it and auto-merge waits forever, so one slow scan stalled a bot PR until
+    # someone noticed. Each scan attempt therefore gets 24 minutes — about 1.3× the slowest
+    # measured successful scan (it passed 18m54s into a ksail job on 2026-09-06, and 17m44s
+    # into a KSail main run; 14 recent ksail jobs took 11–16 min end to end) — and a timeout,
+    # and only a timeout, earns exactly one retry. The job ceiling stays finite but covers two
+    # attempts plus checkout and setup-go's post-job cache save (measured 6m07s after that
+    # 2026-09-06 scan): 2 × 24 + 10 = 58,
+    # rounded to 60. Below that the job cap would pre-empt the retry and end the run
+    # `cancelled` again. Guarded by test-govulncheck-timeout and test-govulncheck-timeout-retry.
+    timeout-minutes: 60
     env:
       # ubuntu-latest provides 16 GB RAM to a public repository and 8 GB to a private one;
       # this value is sized for the public ceiling and already exceeds the private one, so
@@ -589,7 +595,18 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Start of the first scan attempt, so the classifier below can tell a scan that ran out
+      # of time from one that failed on its own (see the job's timeout-minutes comment).
+      - name: ⏱️ Record vulnerability scan start
+        id: scan-clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      # continue-on-error lets the classifier see this attempt's outcome; it never lets a
+      # failure through, because the classifier fails the job on anything but a timeout.
       - name: 🛡️ Scan for known vulnerabilities
+        id: scan
+        continue-on-error: true
+        timeout-minutes: 24
         uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
         with:
           repo-checkout: false
@@ -618,6 +635,45 @@ jobs:
           # the ROOT allowlist while the detection step above — which IS a `run:` step, and so does
           # honour the default — reports the NESTED one as present, and a nested module's risk
           # acceptance would be silently dropped.
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
+
+      # A timed-out step is reported as a failure, exactly like a reachable advisory, so the
+      # elapsed time is what tells them apart: only an attempt that reached its deadline is
+      # retried. A finding or an operational error fails the job here, before any retry, so the
+      # gate stays exactly as strict. Unreadable timing fails closed rather than retrying.
+      - name: 🔁 Retry the scan only if it ran out of time
+        id: scan-timeout
+        if: ${{ steps.scan.outcome != 'success' }}
+        env:
+          OUTCOME: ${{ steps.scan.outcome }}
+          STARTED: ${{ steps.scan-clock.outputs.started }}
+          TIMEOUT_MINUTES: 24
+        run: |
+          set -euo pipefail
+          if [[ ! "$STARTED" =~ ^[0-9]+$ || ! "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
+            echo "::error::Cannot tell whether the vulnerability scan timed out (start '$STARTED', limit '$TIMEOUT_MINUTES'); failing instead of retrying."
+            exit 1
+          fi
+          elapsed=$(( $(date +%s) - STARTED ))
+          if (( elapsed >= TIMEOUT_MINUTES * 60 )); then
+            echo "::warning::The vulnerability scan ran out of time after ${elapsed}s (limit ${TIMEOUT_MINUTES} min), so it is retried once. A second timeout fails this check."
+            echo "retry=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::The vulnerability scan ended '$OUTCOME' after ${elapsed}s, before its ${TIMEOUT_MINUTES}-minute limit: it reported findings or failed for another reason (see the scan step above), so it is not retried."
+          exit 1
+
+      # Identical to the scan above (test-govulncheck-timeout-retry keeps uses/with/timeout in
+      # lockstep), without continue-on-error: a second timeout or any failure fails the check.
+      - name: 🛡️ Scan for known vulnerabilities (retry after timeout)
+        if: ${{ steps.scan-timeout.outputs.retry == 'true' }}
+        timeout-minutes: 24
+        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        with:
+          repo-checkout: false
+          work-dir: ${{ inputs.working-directory || '.' }}
+          go-version-input: ''
+          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
 
   lint:

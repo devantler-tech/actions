@@ -1,0 +1,27 @@
+name: Govulncheck timeout-retry stand-in
+description: |
+  Composite stand-in for validate-go-project.yaml's vulnerability scan step, used only by
+  ci.yaml's live timeout-retry test: it sleeps, then exits with the given code, so a caller
+  can make an attempt outlive its step-level timeout-minutes or fail before it.
+author: devantler-tech
+
+inputs:
+  seconds:
+    description: Seconds to sleep before exiting.
+    required: true
+  exit-code:
+    description: Exit code once the sleep ends.
+    required: false
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: 💤 Sleep, then exit
+      shell: bash
+      env:
+        SLEEP_SECONDS: ${{ inputs.seconds }}
+        EXIT_CODE: ${{ inputs.exit-code }}
+      run: |
+        sleep "$SLEEP_SECONDS"
+        exit "$EXIT_CODE"
