@@ -151,6 +151,8 @@ Consumer rollout and flag removal are tracked in [#1186](https://github.com/deva
 
 The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App always needs `contents: write` (tags/releases). By default it also needs `issues: write` + `pull-requests: write` for semantic-release success/fail hooks. Set `disable-issue-side-effects: true` to suppress those hooks and mint the token with `contents: write` only.
 
+Release runs for one repository and ref run one at a time, in the order they were queued, and waiting runs are kept (up to GitHub's limit of 100) rather than cancelled. Two merges that land close together therefore produce two sequential release runs instead of racing for the same version. Callers need no `concurrency` block of their own.
+
 #### Usage
 
 ```yaml
