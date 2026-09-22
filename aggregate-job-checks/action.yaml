@@ -1,9 +1,9 @@
 name: Aggregate Job Checks
 description: |
   Aggregates the results of multiple jobs into a single required check.
-  Fails if any job failed or was cancelled. Skipped jobs are treated as
-  acceptable (non-failure). Useful for branch protection rules that need
-  a single, stable check name.
+  Fails if any job failed, was cancelled, or was abandoned. Skipped jobs are
+  treated as acceptable (non-failure). Useful for branch protection rules that
+  need a single, stable check name.
 author: devantler-tech
 
 inputs:
@@ -11,6 +11,9 @@ inputs:
     description: |
       Space-separated list of job results to check.
       Each result should be one of: success, failure, cancelled, skipped.
+      GitHub can also report `abandoned` for a job it gave up on (a runner or
+      infrastructure outcome, beyond the four documented values); it fails the
+      check with its own message. Any other value is reported as malformed input.
       Example: "success success skipped failure"
     required: true
   check-name:
@@ -35,6 +38,7 @@ runs:
         read -r -a results <<< "$JOB_RESULTS"
 
         failed=false
+        abandoned=false
         allowed_values="success, failure, cancelled, skipped"
 
         for result in "${results[@]}"; do
@@ -44,6 +48,13 @@ runs:
             failure|cancelled)
               failed=true
               ;;
+            abandoned)
+              # Not one of the four documented needs.<job>.result values, but GitHub emits it
+              # when it gives up on a job. It is a GitHub-side outcome, not a malformed input, so
+              # it gets its own message and the catch-all below stays reserved for values that
+              # really are unexpected. It still fails: an abandoned job did not succeed.
+              abandoned=true
+              ;;
             *)
               printf '%s\n' "❌ $CHECK_NAME — unknown job result: '$result'. Allowed values: $allowed_values."
               exit 1
@@ -51,8 +62,15 @@ runs:
           esac
         done
 
+        if [ "$abandoned" = true ]; then
+          printf '%s\n' "❌ $CHECK_NAME — at least one job was abandoned by GitHub (a runner or infrastructure outcome, not an input error). Re-run the failed jobs."
+        fi
+
         if [ "$failed" = true ]; then
           printf '%s\n' "❌ $CHECK_NAME — at least one job failed or was cancelled."
+        fi
+
+        if [ "$abandoned" = true ] || [ "$failed" = true ]; then
           exit 1
         fi
 

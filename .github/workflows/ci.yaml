@@ -624,6 +624,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # Exit status alone cannot tell a failed job, a GitHub-abandoned job and a malformed input
+      # apart, so this runs the action's own run block against each class and asserts the
+      # message too (#1098).
+      - name: 🧪 Verify every job-result class fails or passes with its own message
+        shell: bash
+        run: bash .github/tests/test-aggregate-job-checks.sh
+
       - name: 🧪 Run aggregate-job-checks with an unknown result (expected to fail)
         id: check
         continue-on-error: true
@@ -638,6 +645,23 @@ jobs:
         run: |
           if [[ "$OUTCOME" != "failure" ]]; then
             echo "::error::Expected the action to fail on an unknown result, got: $OUTCOME"
+            exit 1
+          fi
+
+      - name: 🧪 Run aggregate-job-checks with an abandoned job (expected to fail)
+        id: abandoned
+        continue-on-error: true
+        uses: ./aggregate-job-checks
+        with:
+          job-results: "success abandoned skipped"
+
+      - name: ✅ Verify an abandoned job fails the check
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.abandoned.outcome }}
+        run: |
+          if [[ "$OUTCOME" != "failure" ]]; then
+            echo "::error::Expected the action to fail on an abandoned job, got: $OUTCOME"
             exit 1
           fi
 
