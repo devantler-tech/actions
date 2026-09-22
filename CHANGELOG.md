@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.8](https://github.com/devantler-tech/actions/compare/v13.6.7...v13.6.8) (2026-09-22)
+
+
+### Bug Fixes
+
+* **create-release:** serialize release runs so concurrent merges cannot lose a release ([#1297](https://github.com/devantler-tech/actions/issues/1297)) ([9ef983e](https://github.com/devantler-tech/actions/commit/9ef983e3aa8ea22bb5ca6e1a1061e9b19659c574)), closes [#970](https://github.com/devantler-tech/actions/issues/970)
+
 ## [13.6.7](https://github.com/devantler-tech/actions/compare/v13.6.6...v13.6.7) (2026-09-21)
 
 
