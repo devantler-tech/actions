@@ -31,9 +31,9 @@ runs:
       working-directory: ${{ github.workspace }}
       env:
         GOBIN: ${{ runner.temp }}/govulncheck-bin
-        # Build the tool with its own supported compiler. This affects only this
-        # command; scanning below still uses the caller's setup-go installation.
-        GOTOOLCHAIN: go1.26.8
+        # The scanner's parser must support the newest Go version we test.
+        # Scanning below still uses the caller's setup-go installation.
+        GOTOOLCHAIN: go1.27.1
         GOWORK: 'off'
       run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
     - name: Scan and enforce reachable findings
