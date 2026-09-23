@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.7.2](https://github.com/devantler-tech/actions/compare/v13.7.1...v13.7.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* **go:** run lint and dead-code checks with tools that understand Go 1.27 ([#1324](https://github.com/devantler-tech/actions/issues/1324)) ([07934df](https://github.com/devantler-tech/actions/commit/07934dfb52b4c20388d669e0beee6f604f0c2afc)), closes [#1323](https://github.com/devantler-tech/actions/issues/1323)
+
 ## [13.7.1](https://github.com/devantler-tech/actions/compare/v13.7.0...v13.7.1) (2026-09-23)
 
 
