@@ -156,6 +156,10 @@ jobs:
           path: .devantler-tech-actions
           persist-credentials: false
 
+      # Before signing, the helper keeps the target's devantler-tech/actions pin wherever the
+      # template's pin for the same path is older (ordered by commit ancestry through the compare
+      # API), so a template that lags its consumer cannot downgrade it (#1239). Workflow files can
+      # only be synced on this App-token path, which is the only path that can carry such a pin.
       - name: ✍️ Replace sync commit with a verified App commit
         if: ${{ inputs.use-app-token }}
         shell: bash
