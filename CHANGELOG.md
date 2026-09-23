@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.6.9](https://github.com/devantler-tech/actions/compare/v13.6.8...v13.6.9) (2026-09-23)
+
+
+### Bug Fixes
+
+* **aggregate-job-checks:** report a GitHub-abandoned job as abandoned ([#1303](https://github.com/devantler-tech/actions/issues/1303)) ([dd3b3a5](https://github.com/devantler-tech/actions/commit/dd3b3a5d0519a6d53922dc2b06a5804961d13460))
+
 ## [13.6.8](https://github.com/devantler-tech/actions/compare/v13.6.7...v13.6.8) (2026-09-22)
 
 
