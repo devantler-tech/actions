@@ -93,12 +93,43 @@ grep -qF "plugins/core/stray.txt" <<<"$err" || fail "the refusal does not name t
 rm "$repo/plugins/core/stray.txt"
 echo "ok: a change outside every skill fails closed and is named"
 
+# The single-PR mode commits every workspace change, so one outside dir must fail here too, not vanish.
+printf 'outside\n' >"$repo/outside.txt"
+if err="$(cd "$repo" && bash "$splitter" plugins "$work/out-outside" 2>&1)"; then
+  fail "the splitter dropped a change outside dir"
+fi
+grep -qF "outside.txt" <<<"$err" || fail "the refusal does not name the change outside dir: ${err}"
+rm "$repo/outside.txt"
+echo "ok: a change outside dir fails closed and is named"
+
 # No change at all is an empty manifest, not an error.
 git -C "$repo" add -A
 git -C "$repo" commit -q -m updated
 manifest="$(cd "$repo" && bash "$splitter" plugins "$work/out-empty")" || fail "the splitter failed on a clean tree"
 [[ "$(jq -c . <<<"$manifest")" == "[]" ]] || fail "a clean tree produced a manifest: ${manifest}"
 echo "ok: a clean tree yields an empty manifest"
+
+# A skill nested inside another is its own skill, and a skill name may hold a pathspec wildcard:
+# neither may put one skill's files into another skill's patch.
+skill "$repo" plugins/core/skills/alpha/sub "sub v1"
+skill "$repo" 'plugins/core/skills/a*' "star v1"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m nested
+skill "$repo" plugins/core/skills/alpha "alpha v3"
+skill "$repo" plugins/core/skills/alpha/sub "sub v2"
+skill "$repo" 'plugins/core/skills/a*' "star v2"
+manifest="$(cd "$repo" && bash "$splitter" plugins "$work/out-nested")" || fail "the splitter failed on nested skills"
+[[ "$(jq -c 'sort_by(.path)' <<<"$manifest")" == '[{"slug":"core-skills-a-","path":"plugins/core/skills/a*"},{"slug":"core-skills-alpha","path":"plugins/core/skills/alpha"},{"slug":"core-skills-alpha-sub","path":"plugins/core/skills/alpha/sub"}]' ]] ||
+  fail "unexpected manifest for nested skills: ${manifest}"
+for pair in "core-skills-alpha=plugins/core/skills/alpha/SKILL.md" \
+  "core-skills-alpha-sub=plugins/core/skills/alpha/sub/SKILL.md" \
+  "core-skills-a-=plugins/core/skills/a*/SKILL.md"; do
+  files="$(git -C "$repo" apply --numstat "$work/out-nested/${pair%%=*}.patch" | cut -f3)"
+  [[ "$files" == "${pair#*=}" ]] || fail "${pair%%=*}.patch must touch only ${pair#*=}, got: ${files}"
+done
+git -C "$repo" add -A
+git -C "$repo" commit -q -m nested-updated
+echo "ok: a nested skill and a wildcard-named skill each get only their own files"
 
 # The directory is a repository-relative path; anything else is refused.
 for bad in /etc ../outside ""; do
