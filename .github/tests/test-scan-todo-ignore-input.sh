@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Guards the reusable TODO workflow's optional ignore contract. The dry-run caller in ci.yaml
+# Guards the reusable todo-scan workflow's optional ignore contract. The dry-run caller in ci.yaml
 # proves the input is accepted by GitHub's workflow schema; these assertions prove the value is
 # also forwarded to the shared scanner action when the real job runs.
 
