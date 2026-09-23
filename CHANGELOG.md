@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.7.3](https://github.com/devantler-tech/actions/compare/v13.7.2...v13.7.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **go:** restore golangci-lint v2.11.4 until consumers adopt v2.13 ([#1331](https://github.com/devantler-tech/actions/issues/1331)) ([af705cf](https://github.com/devantler-tech/actions/commit/af705cf48b13140d05d59a76ece3ba0f8d724442)), closes [#1323](https://github.com/devantler-tech/actions/issues/1323)
+
 ## [13.7.2](https://github.com/devantler-tech/actions/compare/v13.7.1...v13.7.2) (2026-09-23)
 
 
