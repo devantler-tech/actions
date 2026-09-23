@@ -4745,13 +4745,22 @@ jobs:
       # validate-go-project.yaml is also the org-required workflow, reached directly from
       # pull_request, where `inputs` is empty — so a default:true input read as a bare truthy
       # gate is false there, and every self-test here (which does use workflow_call) stays green
-      # while the guarded behaviour is silently off for that direct run. The signed-fixes decision
-      # deliberately does NOT rely on the input there: it recognises the direct run by its empty
-      # inputs object and its own workflow ref instead (#1075), which this guard does not scan —
+      # while the guarded behaviour is silently off for that direct run. The guard scans every
+      # evaluated expression (`if:` and every `${{ }}` in env/with/run/outputs), not only `if:`.
+      # The signed-fixes decision deliberately does NOT rely on the input there: it recognises the
+      # direct run by its empty inputs object and its own workflow ref instead (#1075), and
       # test-validate-go-signed-fixes-contract.sh pins that expression.
       - name: 🎚️ Assert multi-trigger input gates cannot silently evaluate false
         shell: bash
         run: bash .github/tests/test-multi-trigger-input-gate-polarity.sh
+
+      # The guard above must see a bare read wherever an expression is evaluated — lint.yaml's
+      # APPLY_FIXES `env:` shape, `with:`, `run:`, cancel-in-progress — not only in `if:`, and
+      # must accept an explicit comparison written with the input on the right. This ablation
+      # proves both on fixtures, each refusal checked for the guard's own message (#1028).
+      - name: 🎚️ Ablate the multi-trigger input-gate guard's expression coverage
+        shell: bash
+        run: bash .github/tests/test-multi-trigger-input-gate-polarity-ablation.sh
 
       # The commit API can inherit a file mode from the base tree but cannot set one. Measured:
       # modifying a path already at 100755 keeps it; adding a NEW executable file lands at
