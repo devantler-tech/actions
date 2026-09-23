@@ -328,7 +328,7 @@ jobs:
         id: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.11.4
+          version: v2.13.2
           working-directory: ${{ inputs.working-directory || '.' }}
           args: --fix
           # Skip the action's `config verify` step: it fetches the golangci-lint
@@ -437,7 +437,7 @@ jobs:
         # go install is idempotent, so re-running it is always safe.
         run: |
           for attempt in 1 2 3; do
-            if go install golang.org/x/tools/cmd/deadcode@v0.43.0; then
+            if go install golang.org/x/tools/cmd/deadcode@v0.50.0; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
