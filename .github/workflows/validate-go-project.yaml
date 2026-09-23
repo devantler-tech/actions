@@ -593,7 +593,8 @@ jobs:
         id: scan
         continue-on-error: true
         timeout-minutes: 24
-        uses: ./.devantler-tech-actions/.github/actions/govulncheck
+        # Keep exact-commit checkout until actionlint supports $/ (#1234).
+        uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
           work-dir: ${{ inputs.working-directory || '.' }}
           # No stable-channel override: scan using the version the caller ships.
@@ -648,7 +649,8 @@ jobs:
       - name: 🛡️ Scan for known vulnerabilities (retry after timeout)
         if: ${{ steps.scan-timeout.outputs.retry == 'true' }}
         timeout-minutes: 24
-        uses: ./.devantler-tech-actions/.github/actions/govulncheck
+        # Keep exact-commit checkout until actionlint supports $/ (#1234).
+        uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
           work-dir: ${{ inputs.working-directory || '.' }}
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod

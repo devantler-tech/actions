@@ -3741,7 +3741,8 @@ jobs:
       # .govulncheck-allow.txt the scan MUST pass. Keep this `uses:` in lockstep
       # with validate-go-project.yaml — enforced by test-govulncheck-action-lockstep.
       - name: 🛡️ Scan fixture with allowlist (must pass)
-        uses: ./.github/actions/govulncheck
+        # Keep local syntax until the supported actionlint accepts $/ (#1234).
+        uses: ./.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
           work-dir: .github/tests/${{ matrix.fixture }}
           go-version-file: .github/tests/${{ matrix.fixture }}/go.mod
@@ -3791,7 +3792,8 @@ jobs:
       - name: 🛡️ Scan fixture without allowlist (expected to fail)
         id: scan
         continue-on-error: true
-        uses: ./.github/actions/govulncheck
+        # Keep local syntax until the supported actionlint accepts $/ (#1234).
+        uses: ./.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
           work-dir: .github/tests/${{ matrix.fixture }}
           go-version-file: .github/tests/${{ matrix.fixture }}/go.mod
