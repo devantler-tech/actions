@@ -3,3 +3,5 @@
 .DS_Store
 node_modules
 megalinter-reports/
+# `go build` output inside Go test fixtures: the self-tests build from source, so a binary here is only a local leftover.
+/.github/tests/go-valid-fixture/go-valid-fixture
