@@ -1,6 +1,6 @@
 # Aggregate Job Checks
 
-A GitHub composite action that aggregates the results of multiple jobs into a single required check. Fails if any job failed or was cancelled. Useful for branch protection rules that need a single, stable check name.
+A GitHub composite action that aggregates the results of multiple jobs into a single required check. Fails if any job failed, was cancelled, or was abandoned. Useful for branch protection rules that need a single, stable check name.
 
 ## Why?
 
@@ -50,6 +50,9 @@ jobs:
 | `skipped`   | Job was skipped (condition not met) | ✅ Pass     |
 | `failure`   | Job failed                          | ❌ Fail     |
 | `cancelled` | Job was cancelled                   | ❌ Fail     |
+| `abandoned` | GitHub gave up on the job           | ❌ Fail     |
+
+GitHub documents only `success`, `failure`, `cancelled` and `skipped` for `needs.<job>.result`, but it also reports `abandoned` when it gives up on a job — typically a runner or infrastructure transient. The check fails with a message naming the abandoned job as a GitHub-side outcome and pointing at a re-run. Any other value fails as malformed `job-results` input, so a broken calling workflow stays distinguishable from a GitHub-side outcome.
 
 ## Custom Check Name
 
