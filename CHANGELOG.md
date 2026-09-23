@@ -1,5 +1,17 @@
 # Changelog
 
+## [13.7.0](https://github.com/devantler-tech/actions/compare/v13.6.9...v13.7.0) (2026-09-23)
+
+
+### Features
+
+* **update-agent-skills:** opt-in per-skill pull requests ([#1310](https://github.com/devantler-tech/actions/issues/1310)) ([d29b2f9](https://github.com/devantler-tech/actions/commit/d29b2f92d3678ebaf783f8702cd6077c7097b6ae))
+
+
+### Bug Fixes
+
+* **template-sync:** never downgrade a devantler-tech/actions pin ([#1306](https://github.com/devantler-tech/actions/issues/1306)) ([f6da458](https://github.com/devantler-tech/actions/commit/f6da4585587edfbc333054c8ee0dac501e984a5c))
+
 ## [13.6.9](https://github.com/devantler-tech/actions/compare/v13.6.8...v13.6.9) (2026-09-23)
 
 
