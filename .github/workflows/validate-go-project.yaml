@@ -641,6 +641,11 @@ jobs:
       # elapsed time is what tells them apart: only an attempt that reached its deadline is
       # retried. A finding or an operational error fails the job here, before any retry, so the
       # gate stays exactly as strict. Unreadable timing fails closed rather than retrying.
+      #
+      # A step timeout signals only the step's own shell, so the scanner it started keeps running
+      # as an orphan until the job ends (the live test observes this). Left alone it would scan
+      # beside the retry, doubling the memory GOMEMLIMIT keeps under half the host and slowing the
+      # attempt that is meant to finish, so the timed-out scanner is stopped before the retry.
       - name: 🔁 Retry the scan only if it ran out of time
         id: scan-timeout
         if: ${{ steps.scan.outcome != 'success' }}
@@ -648,14 +653,25 @@ jobs:
           OUTCOME: ${{ steps.scan.outcome }}
           STARTED: ${{ steps.scan-clock.outputs.started }}
           TIMEOUT_MINUTES: 24
+          SCAN_PROCESS: govulncheck
         run: |
           set -euo pipefail
           if [[ ! "$STARTED" =~ ^[0-9]+$ || ! "$TIMEOUT_MINUTES" =~ ^[0-9]+$ ]]; then
             echo "::error::Cannot tell whether the vulnerability scan timed out (start '$STARTED', limit '$TIMEOUT_MINUTES'); failing instead of retrying."
             exit 1
           fi
+          # pgrep/pkill -x match the kernel's 15-character process name.
+          if [[ ! "$SCAN_PROCESS" =~ ^[A-Za-z0-9._-]{1,15}$ ]]; then
+            echo "::error::Cannot identify the scanner process to stop (SCAN_PROCESS '$SCAN_PROCESS'); failing instead of retrying."
+            exit 1
+          fi
           elapsed=$(( $(date +%s) - STARTED ))
           if (( elapsed >= TIMEOUT_MINUTES * 60 )); then
+            if pkill -TERM -x "$SCAN_PROCESS"; then
+              sleep 5
+              pkill -KILL -x "$SCAN_PROCESS" || true
+              echo "Stopped the timed-out ${SCAN_PROCESS} before retrying."
+            fi
             echo "::warning::The vulnerability scan ran out of time after ${elapsed}s (limit ${TIMEOUT_MINUTES} min), so it is retried once. A second timeout fails this check."
             echo "retry=true" >> "$GITHUB_OUTPUT"
             exit 0

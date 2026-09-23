@@ -4084,10 +4084,12 @@ jobs:
   # The offline tests above pin the vulnerability scan's retry structure and its classifier's
   # decisions. What they cannot show is the GitHub behaviour the retry depends on: a composite
   # `uses:` step that outlives its step-level timeout-minutes reports outcome `failure` and, under
-  # continue-on-error, lets the job go on to the classifier instead of ending `cancelled`. This job
-  # proves that on a stand-in step that deliberately outlives a 1-minute deadline, runs the gate's
-  # OWN classifier (extracted from validate-go-project.yaml) against it, and checks that a failure
-  # before the deadline — a finding — is not retried (#1097). The stand-in keeps the `./` form with
+  # continue-on-error, lets the job go on to the classifier instead of ending `cancelled`, while the
+  # scanner that step started keeps running. This job proves that on a stand-in step that
+  # deliberately outlives a 1-minute deadline, runs the gate's OWN classifier (extracted from
+  # validate-go-project.yaml) against it, checks that it stops the leftover scanner before
+  # retrying, and checks that a failure before the deadline — a finding — is not retried (#1097).
+  # The stand-in keeps the `./` form with
   # zizmor's self-repository audit suppressed: actionlint 1.7.12 rejects `$/` (#1234).
   test-govulncheck-timeout-retry-live:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -4131,6 +4133,18 @@ jobs:
         with:
           seconds: "150"
 
+      # The step timeout signals only the step's shell, so its scan-standin child is left running;
+      # the real scan's govulncheck would be too, beside the retry. This pins that behaviour, which
+      # is why the classifier stops the scanner before it retries.
+      - name: 🔎 Confirm the timed-out attempt's scanner outlived its step
+        shell: bash
+        run: |
+          if ! pgrep -x scan-standin >/dev/null; then
+            echo "::error::The timed-out step's scan-standin child is gone before the classifier ran. If GitHub now stops a timed-out step's children itself, the classifier's stop is redundant but harmless: update this assertion."
+            exit 1
+          fi
+          echo "The timed-out attempt's scanner is still running after its step ended ✅"
+
       - name: 🔁 Classify the timed-out attempt with the gate's classifier
         id: slow-classify
         if: ${{ steps.slow.outcome != 'success' }}
@@ -4139,6 +4153,7 @@ jobs:
           OUTCOME: ${{ steps.slow.outcome }}
           STARTED: ${{ steps.slow-clock.outputs.started }}
           TIMEOUT_MINUTES: 1
+          SCAN_PROCESS: scan-standin
         run: bash "$RUNNER_TEMP/classify.sh"
 
       - name: ✅ Assert the timed-out attempt is retried
@@ -4155,7 +4170,15 @@ jobs:
             echo "::error::The gate's classifier did not request a retry for a timed-out attempt (retry='$RETRY')."
             exit 1
           fi
-          echo "A timed-out attempt reports failure, the job continues, and the classifier retries it ✅"
+          # A killed orphan may linger as a zombie until its new parent reaps it; only a live one counts.
+          for pid in $(pgrep -x scan-standin || true); do
+            state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+            if [[ -n "$state" && "$state" != Z* ]]; then
+              echo "::error::The classifier requested a retry while the timed-out scanner (pid $pid) was still running."
+              exit 1
+            fi
+          done
+          echo "A timed-out attempt reports failure, the job continues, and the classifier stops its scanner and retries it ✅"
 
       - name: ⏱️ Record the failing attempt's start
         id: fast-clock
@@ -4180,7 +4203,9 @@ jobs:
           OUTCOME: ${{ steps.fast.outcome }}
           STARTED: ${{ steps.fast-clock.outputs.started }}
           TIMEOUT_MINUTES: 1
-        run: bash "$RUNNER_TEMP/classify.sh"
+          SCAN_PROCESS: scan-standin
+        # Kept for the assertion below, so the classifier must fail for the not-a-timeout reason.
+        run: bash "$RUNNER_TEMP/classify.sh" 2>&1 | tee "$RUNNER_TEMP/fast-classify.log"
 
       - name: ✅ Assert a failure before the deadline is not retried
         shell: bash
@@ -4191,6 +4216,11 @@ jobs:
         run: |
           if [[ "$OUTCOME" != "failure" || "$CLASSIFY" != "failure" || -n "$RETRY" ]]; then
             echo "::error::A failure before the deadline must fail the classifier without a retry (attempt '$OUTCOME', classifier '$CLASSIFY', retry '$RETRY')."
+            exit 1
+          fi
+          if ! grep -qF "before its 1-minute limit" "$RUNNER_TEMP/fast-classify.log"; then
+            echo "::error::The classifier failed, but not because the attempt ended before its deadline:"
+            cat "$RUNNER_TEMP/fast-classify.log"
             exit 1
           fi
           echo "A failure before the deadline fails the gate and is not retried ✅"

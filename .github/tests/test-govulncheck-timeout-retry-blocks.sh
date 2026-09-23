@@ -65,6 +65,12 @@ blocks "classifier that only runs on failure" \
 blocks "classifier that retries every failure" \
   "(${classify}).run |= sub(\"elapsed >= TIMEOUT_MINUTES \\\\* 60\"; \"elapsed >= 0\")" \
   "must fail the job without a retry"
+blocks "classifier that does not name the scanner to stop" \
+  "del((${classify}).env.SCAN_PROCESS)" \
+  "must name the scanner it stops before a retry"
+blocks "classifier that retries beside the timed-out scanner" \
+  "(${classify}).run |= sub(\"pkill -\"; \": -\")" \
+  "retried beside the timed-out scanner"
 blocks "job ceiling below two attempts" \
   ".jobs.govulncheck.\"timeout-minutes\" = 57" \
   "pre-empts the retry"
