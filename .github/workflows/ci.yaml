@@ -2106,6 +2106,16 @@ jobs:
         shell: bash
         run: bash .github/tests/test-update-agent-skills-mark-internal.sh
 
+      # Opt-in per-skill PRs (#1309): the splitter isolates each skill's update and fails closed on
+      # a change outside every skill; the workflow keeps its single PR with the flag off.
+      - name: 🧩 Test the per-skill update splitter
+        shell: bash
+        run: bash .github/tests/test-split-skill-updates.sh
+
+      - name: 🧩 Test the per-skill PR mode in both flag states
+        shell: bash
+        run: bash .github/tests/test-update-agent-skills-per-skill.sh
+
       - name: 📦 Seed pinned agent-skill fixture
         shell: bash
         run: |
@@ -3663,6 +3673,19 @@ jobs:
     with:
       dry-run: true
 
+  # Flag-on state of the opt-in per-skill PRs (#1309), so the input stays part of the interface;
+  # test-update-agent-skills-per-skill.sh pins both states and the per-skill job's apply step.
+  test-update-agent-skills-per-skill:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Update Agent Skills - Per-Skill PRs Dry Run"
+    uses: ./.github/workflows/update-agent-skills.yaml # zizmor: ignore[self-repository]
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      dry-run: true
+      pr-per-skill: true
+
   test-template-sync:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Template Sync - Dry Run"
@@ -4960,6 +4983,7 @@ jobs:
       - test-scan-for-todo-comments-ignore
       - test-sync-cluster-policies
       - test-update-agent-skills
+      - test-update-agent-skills-per-skill
       - test-template-sync
       - test-govulncheck-allowlist-honored
       - test-govulncheck-strict-blocks
@@ -5077,6 +5101,7 @@ jobs:
             ${{ needs.test-scan-for-todo-comments-ignore.result }}
             ${{ needs.test-sync-cluster-policies.result }}
             ${{ needs.test-update-agent-skills.result }}
+            ${{ needs.test-update-agent-skills-per-skill.result }}
             ${{ needs.test-template-sync.result }}
             ${{ needs.test-govulncheck-allowlist-honored.result }}
             ${{ needs.test-govulncheck-strict-blocks.result }}
