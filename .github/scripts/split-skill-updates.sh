@@ -90,7 +90,7 @@ while IFS= read -r skill; do
   # changed skill nested inside this one is left to its own patch instead of riding along here.
   pathspec=(":(literal)$skill")
   while IFS= read -r other; do
-    [[ "$other" == "$skill/"* ]] && pathspec+=(":(exclude,literal)$other")
+    if [[ "$other" == "$skill/"* ]]; then pathspec+=(":(exclude,literal)$other"); fi
   done <"$work/skills.sorted"
   git diff --cached --binary --no-renames -- "${pathspec[@]}" >"$out_dir/$slug.patch" ||
     fail "could not write the patch for $skill"
