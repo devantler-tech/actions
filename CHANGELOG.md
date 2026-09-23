@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.7.1](https://github.com/devantler-tech/actions/compare/v13.7.0...v13.7.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **validate-go-project:** retry a vulnerability scan that runs out of time ([#1305](https://github.com/devantler-tech/actions/issues/1305)) ([e265a4c](https://github.com/devantler-tech/actions/commit/e265a4cd1424be53c52018d767be7a68a8b6a2c2))
+
 ## [13.7.0](https://github.com/devantler-tech/actions/compare/v13.6.9...v13.7.0) (2026-09-23)
 
 
