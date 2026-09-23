@@ -1,0 +1,48 @@
+name: Scan Go vulnerabilities
+description: Internal implementation of the reusable Go workflow's reachable-vulnerability gate
+author: devantler-tech
+inputs:
+  work-dir:
+    description: Module directory, relative to the caller checkout
+    default: '.'
+  go-version-file:
+    description: Caller Go version file, relative to the checkout
+    required: true
+  allow-file:
+    description: Optional accepted advisory IDs, relative to the checkout
+    default: ''
+  output-file:
+    description: Optional raw JSON report, relative to the checkout
+    default: ''
+outputs:
+  verdict:
+    description: clean or blocking after a completed scan; empty on operational failure
+    value: ${{ steps.scan.outputs.verdict }}
+runs:
+  using: composite
+  steps:
+    - name: Set up the caller's Go version
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.work-dir }}/go.sum
+    - name: Install the reviewed scanner version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GOBIN: ${{ runner.temp }}/govulncheck-bin
+        GOTOOLCHAIN: local
+        GOWORK: 'off'
+      run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+    - name: Scan and enforce reachable findings
+      id: scan
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SCANNER: ${{ runner.temp }}/govulncheck-bin/govulncheck
+        WORK_DIR: ${{ inputs.work-dir }}
+        ALLOW_FILE: ${{ inputs.allow-file }}
+        OUTPUT_FILE: ${{ inputs.output-file }}
+        GOTOOLCHAIN: local
+      run: bash "$ACTION_PATH/scan.sh" "$SCANNER" "$WORK_DIR" "$ALLOW_FILE" "$OUTPUT_FILE"
