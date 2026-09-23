@@ -14,6 +14,12 @@ Scan code for TODO comments and automatically create corresponding GitHub issues
 
 ¹ Provide exactly one of `client-id` or `app-id`. Prefer `client-id`: `actions/create-github-app-token` has deprecated `app-id`, so passing it emits a `Input 'app-id' has been deprecated` warning.
 
+## What counts as a TODO
+
+The scanner treats the uppercase marker as a TODO wherever it appears in a comment, including
+in ordinary prose, and titles the issue with the text that follows it. When a comment only
+describes TODOs, write the word in lowercase, or exclude the file with `ignore`.
+
 ## Usage
 
 ### Standard TODO scanning
