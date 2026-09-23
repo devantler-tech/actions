@@ -648,10 +648,12 @@ jobs:
             exit 1
           fi
 
+      # `$/` would satisfy zizmor's self-repository audit, but actionlint 1.7.12 (MegaLinter's pin)
+      # rejects it, so this keeps the repository's `./` convention; #1234 tracks the migration.
       - name: 🧪 Run aggregate-job-checks with an abandoned job (expected to fail)
         id: abandoned
         continue-on-error: true
-        uses: ./aggregate-job-checks
+        uses: ./aggregate-job-checks # zizmor: ignore[self-repository]
         with:
           job-results: "success abandoned skipped"
 
