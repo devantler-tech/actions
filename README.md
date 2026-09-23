@@ -703,7 +703,7 @@ jobs:
 
 [.github/workflows/template-sync.yaml](.github/workflows/template-sync.yaml) keeps a repository in sync with an upstream template repository via [AndreasAugustin/actions-template-sync](https://github.com/AndreasAugustin/actions-template-sync), opening a PR with any incoming template changes. List the files this repository *owns* (and that must never be overwritten by the template) in a `.templatesyncignore` file at the repo root — everything else the template ships is kept in sync.
 
-With `use-app-token: true`, the sync never moves this repository back to an older `devantler-tech/actions` pin: wherever the template pins a shared workflow or action to a commit that is older than (or diverged from) the one this repository already uses, the sync keeps this repository's line and says so in a warning (or stops without signing, if the template also changed the rest of that line). Equal pins and upgrades sync as usual.
+With `use-app-token: true`, the sync never moves this repository back to an older `devantler-tech/actions` pin: wherever the template pins a shared workflow or action to a commit that is older than (or diverged from) the one this repository already uses, the sync keeps this repository's line and says so in a warning. It stops without signing instead when it cannot keep that line safely: the template also changed the rest of the line, or a file here pins the same workflow at more than one commit and the template moved one of those lines to the older pin. Equal pins and upgrades sync as usual.
 
 #### Usage
 

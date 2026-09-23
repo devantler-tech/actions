@@ -69,8 +69,9 @@ remote_sha="$(jq -er '.object.sha' <<<"$remote_ref")" || fail "generated remote 
 # check stayed green, because both pins were approved. Each changed pin is therefore ordered against
 # the target's pin for the same path with GitHub's compare API (commit ancestry, never the mutable
 # `# vX.Y.Z` comment). Where the template's pin is behind or diverged, the target's whole line is
-# kept; only that corrected tree is signed. An ordering the API cannot answer, or a regressive line
-# the template also reshaped, fails closed before anything is signed.
+# kept; only that corrected tree is signed. An ordering the API cannot answer, a regressive line
+# the template also reshaped, or a line moved onto the older of two pins the target keeps for one
+# path fails closed before anything is signed.
 actions_repo="devantler-tech/actions"
 pin_pattern="${actions_repo}(/[^@[:space:]]*)?@[0-9a-f]{40}"
 work="$(mktemp -d)" || fail "could not create a work directory"
@@ -82,6 +83,38 @@ pins_at() {
   git cat-file -e "$1:$2" 2>/dev/null || return 0
   content="$(git show "$1:$2")" || fail "could not read $2 at $1"
   { grep -oE "$pin_pattern" <<<"$content" || true; } | sort -u
+}
+
+ref_count() {
+  # ref_count <rev> <path> <ref>: how many times <ref> occurs in that revision of the file.
+  local content
+  content="$(git show "$1:$2")" || fail "could not read $2 at $1"
+  { grep -oF -- "$3" <<<"$content" || true; } | wc -l
+}
+
+order_pins() {
+  # order_pins <target-pin> <template-ref>: the compare API's status for the template's pin
+  # relative to the target's. Anything but a known status fails closed.
+  local comparison status
+  if ! comparison="$(gh api "repos/${actions_repo}/compare/${1}...${2##*@}" </dev/null)" ||
+    ! status="$(jq -er '.status' <<<"$comparison")"; then
+    fail "could not order ${2} against the target's ${1}; refusing to sign an unverified pin change"
+  fi
+  case "$status" in
+    ahead | identical | behind | diverged) printf '%s\n' "$status" ;;
+    *) fail "unexpected compare status '$status' for ${2}; refusing to sign" ;;
+  esac
+}
+
+annotation_property() {
+  # Escape a workflow-command property value (file=…), so a path cannot end or split the command.
+  local value="$1"
+  value="${value//'%'/%25}"
+  value="${value//$'\r'/%0D}"
+  value="${value//$'\n'/%0A}"
+  value="${value//:/%3A}"
+  value="${value//,/%2C}"
+  printf '%s' "$value"
 }
 
 corrected=()
@@ -120,22 +153,34 @@ while IFS= read -r -d '' path; do
   old_pins="$(pins_at "$base_sha" "$path")"
   [[ -n "$old_pins" ]] || continue
   while IFS= read -r new_ref; do
-    grep -qxF -- "$new_ref" <<<"$old_pins" && continue
     new_pin="${new_ref##*@}"
+    if grep -qxF -- "$new_ref" <<<"$old_pins"; then
+      # The target already carries this pin, so it is not new to the file. But where the target
+      # pins the same path at more than one commit, the sync can move one of its lines onto this
+      # older pin without adding a new one. Set membership cannot see that, so a pin that gained
+      # lines is ordered against the target's other pins for the path, and restoring it would
+      # also rewrite the target's own lines on this pin, so a downgrade there fails closed.
+      head_count="$(ref_count HEAD "$path" "$new_ref")"
+      base_count="$(ref_count "$base_sha" "$path" "$new_ref")"
+      ((head_count > base_count)) || continue
+      while IFS= read -r old_ref; do
+        [[ "${old_ref%@*}" == "${new_ref%@*}" && "$old_ref" != "$new_ref" ]] || continue
+        status="$(order_pins "${old_ref##*@}" "$new_ref")"
+        [[ "$status" == ahead || "$status" == identical ]] ||
+          fail "${path} pins ${new_ref%@*} at more than one commit and the sync moved a line onto ${new_pin}, which is ${status} the target's ${old_ref##*@}; refusing to sign a downgrade it cannot isolate"
+      done <<<"$old_pins"
+      continue
+    fi
     while IFS= read -r old_ref; do
       [[ "${old_ref%@*}" == "${new_ref%@*}" ]] || continue
-      old_pin="${old_ref##*@}"
-      if ! comparison="$(gh api "repos/${actions_repo}/compare/${old_pin}...${new_pin}" </dev/null)" ||
-        ! status="$(jq -er '.status' <<<"$comparison")"; then
-        fail "could not order ${new_ref} against the target's ${old_pin}; refusing to sign an unverified pin change"
-      fi
+      status="$(order_pins "${old_ref##*@}" "$new_ref")"
       case "$status" in
         ahead | identical) continue ;;
-        behind | diverged) ;;
-        *) fail "unexpected compare status '$status' for ${new_ref}; refusing to sign" ;;
       esac
       restore_pin "$path" "$new_ref" "$old_ref"
-      echo "::warning file=${path}::Template sync kept ${old_ref}: the template's ${new_pin} is ${status} it, so that downgrade was left out."
+      # stderr, not stdout: the workflow captures stdout as the signing result, which would turn
+      # the first warning into plain log text instead of an annotation.
+      echo "::warning file=$(annotation_property "$path")::Template sync kept ${old_ref}: the template's ${new_pin} is ${status} it, so that downgrade was left out." >&2
       break
     done <<<"$old_pins"
   done <<<"$new_pins"
