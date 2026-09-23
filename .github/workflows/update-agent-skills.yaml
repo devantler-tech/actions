@@ -25,6 +25,18 @@ on:
         required: false
         type: string
         default: 2.90.0
+      pr-per-skill:
+        description: >-
+          When `true`, open one PR per changed skill instead of one PR for every skill, so a skill
+          whose update is blocked holds back only itself. Each PR comes from `<pr-branch>-<skill>`
+          (the skill's path under `dir`, with `/` replaced by `-`), is titled `<pr-title> (<skill>)`
+          and contains only that skill's files. A change that belongs to no skill fails the run.
+          Defaults to `false` (one PR from `pr-branch`, as before); opt in only after any follow-up
+          job, auto-merge rule or review exemption that matches the exact `pr-branch` also accepts
+          the per-skill branches.
+        required: false
+        default: false
+        type: boolean
       pr-branch:
         description: Branch the update PR is opened from
         required: false
@@ -66,6 +78,13 @@ on:
           GitHub App private key, required only when `use-app-token` is `true`. Paired with the
           `APP_CLIENT_ID` repository/organization variable to mint an App token for PR creation.
         required: false
+    outputs:
+      skills:
+        description: >-
+          With `pr-per-skill`, a JSON array of `{"slug", "path"}` for every skill that got its own
+          PR (its branch is `<pr-branch>-<slug>`), so a follow-up job can act on each branch. Empty
+          otherwise.
+        value: ${{ jobs.update-agent-skills.outputs.skills }}
 
 permissions: {}
 
@@ -77,6 +96,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      skills: ${{ steps.split.outputs.skills }}
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -123,13 +144,41 @@ jobs:
           mark-internal: ${{ inputs.mark-internal }}
           gh-version: ${{ inputs.gh-version }}
 
+      # The per-skill splitter stages everything under `dir`, which is the repository root by
+      # default, so it must run after the self-checkout is gone; keep a copy of it first.
+      - name: 📋 Keep the per-skill splitter
+        if: ${{ inputs.pr-per-skill && steps.update.outputs.changed == 'true' }}
+        run: cp .devantler-tech-actions/.github/scripts/split-skill-updates.sh "$RUNNER_TEMP/split-skill-updates.sh"
+
       # create-pull-request commits every workspace change, so drop the self-checkout first —
       # otherwise the opened PR would carry a stray `.devantler-tech-actions` gitlink.
       - name: 🧹 Remove self-checkout
         run: rm -rf .devantler-tech-actions
 
+      # Per-skill mode (#1309): one patch per changed skill, opened as its own PR by the job below,
+      # so a skill whose update is blocked holds back only itself (agent-plugins#175).
+      - name: 🧩 Split the update per skill
+        id: split
+        if: ${{ inputs.pr-per-skill && steps.update.outputs.changed == 'true' }}
+        env:
+          SKILLS_DIR: ${{ inputs.dir }}
+        run: |
+          set -euo pipefail
+          manifest="$(bash "$RUNNER_TEMP/split-skill-updates.sh" "$SKILLS_DIR" "$RUNNER_TEMP/skill-updates")"
+          echo "Per-skill updates: $manifest"
+          echo "skills=$manifest" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload the per-skill patches
+        if: ${{ steps.split.outputs.skills != '' && steps.split.outputs.skills != '[]' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-skill-updates
+          path: ${{ runner.temp }}/skill-updates
+          if-no-files-found: error
+          retention-days: 1
+
       - name: 📦 Create pull request
-        if: steps.update.outputs.changed == 'true'
+        if: ${{ !inputs.pr-per-skill && steps.update.outputs.changed == 'true' }}
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           commit-message: ${{ inputs.commit-message }}
@@ -150,6 +199,83 @@ jobs:
           # holds the branch-scoped signature rule open for the whole org
           # (devantler-tech/.github#142). The fixer lanes were migrated in #1005/#1011/#1036
           # and sync-cluster-policies.yaml already sets this; this workflow was missed.
+          sign-commits: true
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          branch-token: ${{ steps.app-token.outputs.token || github.token }}
+
+  # One PR per changed skill (opt-in, #1309). Each leg starts from the same commit the update ran
+  # on, applies only its own skill's patch, and refuses to open a PR carrying anything else.
+  open-skill-pull-requests:
+    name: Open PR for ${{ matrix.skill.path }}
+    needs: update-agent-skills
+    if: ${{ inputs.pr-per-skill && needs.update-agent-skills.outputs.skills != '' && needs.update-agent-skills.outputs.skills != '[]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: ${{ fromJSON(needs.update-agent-skills.outputs.skills) }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 🔑 Generate GitHub App token
+        id: app-token
+        if: ${{ inputs.use-app-token }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 📥 Download the per-skill patches
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-skill-updates
+          path: ${{ runner.temp }}/skill-updates
+
+      - name: 🩹 Apply only this skill's update
+        env:
+          SKILL_SLUG: ${{ matrix.skill.slug }}
+          SKILL_PATH: ${{ matrix.skill.path }}
+        run: |
+          set -euo pipefail
+          patch="$RUNNER_TEMP/skill-updates/${SKILL_SLUG}.patch"
+          [[ -s "$patch" ]] || { echo "::error::No patch for ${SKILL_PATH}"; exit 1; }
+          git apply --binary "$patch"
+          changed="$(git status --porcelain --untracked-files=all)"
+          [[ -n "$changed" ]] || { echo "::error::The ${SKILL_PATH} patch changed nothing"; exit 1; }
+          while IFS= read -r file; do
+            if [[ "${file:3}" != "${SKILL_PATH}/"* ]]; then
+              echo "::error::The ${SKILL_PATH} patch changed ${file:3}, outside that skill"
+              exit 1
+            fi
+          done <<<"$changed"
+
+      - name: 📦 Create pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          commit-message: ${{ inputs.commit-message }} (${{ matrix.skill.path }})
+          title: ${{ inputs.pr-title }} (${{ matrix.skill.path }})
+          body: |
+            Automated update of the agent skill at `${{ matrix.skill.path }}` to its latest version.
+
+            Each changed skill gets its own pull request, so one blocked update does not hold back the others.
+          branch: ${{ inputs.pr-branch }}-${{ matrix.skill.slug }}
+          labels: ${{ inputs.pr-labels }}
+          delete-branch: true
+          # Commit through the GitHub API so GitHub signs it (devantler-tech/.github#142).
           sign-commits: true
           token: ${{ steps.app-token.outputs.token || github.token }}
           branch-token: ${{ steps.app-token.outputs.token || github.token }}
