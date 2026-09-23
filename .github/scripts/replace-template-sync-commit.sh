@@ -154,12 +154,18 @@ while IFS= read -r -d '' path; do
   [[ -n "$old_pins" ]] || continue
   while IFS= read -r new_ref; do
     new_pin="${new_ref##*@}"
+    # How many distinct pins the target keeps for this path. With more than one, a restore cannot
+    # know which of them each line had, so any downgrade there fails closed instead of guessing.
+    same_path=0
+    while IFS= read -r old_ref; do
+      if [[ "${old_ref%@*}" == "${new_ref%@*}" ]]; then same_path=$((same_path + 1)); fi
+    done <<<"$old_pins"
     if grep -qxF -- "$new_ref" <<<"$old_pins"; then
       # The target already carries this pin, so it is not new to the file. But where the target
       # pins the same path at more than one commit, the sync can move one of its lines onto this
       # older pin without adding a new one. Set membership cannot see that, so a pin that gained
-      # lines is ordered against the target's other pins for the path, and restoring it would
-      # also rewrite the target's own lines on this pin, so a downgrade there fails closed.
+      # lines is ordered against the target's other pins for the path.
+      ((same_path > 1)) || continue
       head_count="$(ref_count HEAD "$path" "$new_ref")"
       base_count="$(ref_count "$base_sha" "$path" "$new_ref")"
       ((head_count > base_count)) || continue
@@ -177,6 +183,8 @@ while IFS= read -r -d '' path; do
       case "$status" in
         ahead | identical) continue ;;
       esac
+      ((same_path == 1)) ||
+        fail "${path} pins ${new_ref%@*} at more than one commit and the template's ${new_pin} is ${status} the target's ${old_ref##*@}; refusing to sign a downgrade it cannot isolate"
       restore_pin "$path" "$new_ref" "$old_ref"
       # stderr, not stdout: the workflow captures stdout as the signing result, which would turn
       # the first warning into plain log text instead of an annotation.

@@ -331,4 +331,26 @@ run_case "$dir" "$(git -C "$r" rev-parse 'HEAD^{tree}')"
 ! grep -q "git/trees" "$dir/gh.log" || fail "mixed-upgrade — the synced tree was rewritten"
 echo "ok: a line moved up to the newer of the target's two pins syncs as usual"
 
+# ── 9. A new, older pin over a target with two pins for the path: no restore can be right ──────
+# Restoring would put one target line back on every line, and which one depends on sort order: here
+# the middle pin sorts first, so job a would be signed from the newest pin down to the middle one.
+newest="dddddddddddddddddddddddddddddddddddddddd"
+middle="1111111111111111111111111111111111111111"
+oldest="0000000000000000000000000000000000000000"
+dir="$(new_case mixed-new-downgrade)"
+r="$dir/repo"
+mixed "$r/.github/workflows/cd.yaml" "$newest" v3 "$middle" v2
+commit_all "$r" base
+base="$(git -C "$r" rev-parse HEAD)"
+git -C "$r" switch -q -c chore/template-sync_deadbee
+mixed "$r/.github/workflows/cd.yaml" "$oldest" v1 "$oldest" v1
+commit_all "$r" "chore: sync template"
+printf '%s...%s behind\n' "$middle" "$oldest" "$newest" "$oldest" >"$dir/compare"
+run_case "$dir" "$(git -C "$r" rev-parse 'HEAD^{tree}')"
+[[ "$rc" -ne 0 ]] || fail "mixed-new-downgrade — the helper signed a restore it could not attribute to each line"
+[[ ! -f "$dir/updated" ]] || fail "mixed-new-downgrade — the branch was moved"
+! grep -q "git/commits" "$dir/gh.log" || fail "mixed-new-downgrade — a commit was attempted before refusing"
+grep -q "more than one commit" "$dir/error" || fail "mixed-new-downgrade — the refusal does not explain itself: $(cat "$dir/error")"
+echo "ok: an older pin over a target with two pins for the path is refused rather than guessed at"
+
 echo "PASS: template sync keeps every devantler-tech/actions pin at or ahead of the target's"
