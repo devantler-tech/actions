@@ -3714,7 +3714,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.26.8', '1.27.1']
+        go: ['1.25.14', '1.26.8', '1.27.1']
         fixture: [govulncheck-allowlist, govulncheck-generics]
     runs-on: ubuntu-latest
     permissions:
@@ -3746,6 +3746,12 @@ jobs:
           work-dir: .github/tests/${{ matrix.fixture }}
           go-version-file: .github/tests/${{ matrix.fixture }}/go.mod
           allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt
+          output-file: govulncheck-allowlisted.json
+
+      - name: Assert the scan used the caller's Go version
+        env:
+          GO_VERSION: ${{ matrix.go }}
+        run: jq -es --arg version "go$GO_VERSION" '.[0].config.go_version == $version' govulncheck-allowlisted.json
 
   test-govulncheck-strict-blocks:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -3753,7 +3759,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.26.8', '1.27.1']
+        go: ['1.25.14', '1.26.8', '1.27.1']
         fixture: [govulncheck-allowlist, govulncheck-generics]
     runs-on: ubuntu-latest
     permissions:
@@ -3797,8 +3803,10 @@ jobs:
         env:
           OUTCOME: ${{ steps.scan.outcome }}
           VERDICT: ${{ steps.scan.outputs.verdict }}
+          GO_VERSION: ${{ matrix.go }}
         run: |
           set -euo pipefail
+          jq -es --arg version "go$GO_VERSION" '.[0].config.go_version == $version' govulncheck-strict.txt
           if [[ "$OUTCOME" != "failure" || "$VERDICT" != "blocking" ]]; then
             echo "::error::Strict govulncheck scan should FAIL on the reachable GO-2021-0113 fixture, but its outcome was '$OUTCOME'. The strict gate is no longer blocking reachable advisories."
             exit 1
