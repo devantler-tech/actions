@@ -1,0 +1,35 @@
+name: Govulncheck timeout-retry stand-in
+description: |
+  Composite stand-in for validate-go-project.yaml's vulnerability scan step, used only by
+  ci.yaml's live timeout-retry test: it runs a child process named `scan-standin` (standing in
+  for the scanner the real step starts), then exits with the given code, so a
+  caller can make an attempt outlive its step-level timeout-minutes or fail before it, and can
+  observe what happens to the child when the step times out.
+author: devantler-tech
+
+inputs:
+  seconds:
+    description: Seconds the scan-standin child runs before the step exits.
+    required: true
+  exit-code:
+    description: Exit code once the child ends.
+    required: false
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: 💤 Run the stand-in scanner, then exit
+      shell: bash
+      env:
+        SLEEP_SECONDS: ${{ inputs.seconds }}
+        EXIT_CODE: ${{ inputs.exit-code }}
+      # A script rather than a renamed copy of sleep: a script's process takes the file's name
+      # on every coreutils build, including multi-call ones that dispatch on their own name.
+      run: |
+        # shellcheck disable=SC2016 # the stand-in's own source, expanded when it runs
+        printf '%s\n' '#!/bin/bash' 'end=$((SECONDS + $1))' 'while ((SECONDS < end)); do sleep 1; done' \
+          >"$RUNNER_TEMP/scan-standin"
+        chmod +x "$RUNNER_TEMP/scan-standin"
+        "$RUNNER_TEMP/scan-standin" "$SLEEP_SECONDS"
+        exit "$EXIT_CODE"
