@@ -3702,7 +3702,7 @@ jobs:
   # validate-go-project.yaml's vuln-scan gate honors a `.govulncheck-allow.txt`
   # allowlist so consumers can risk-accept a reachable advisory with no upstream
   # fix. That contract was silently lost for several releases (v5.4.1–v5.4.4, on
-  # the official action which has no allow-file input) with no test catching it.
+  # an implementation which ignores allow-file) with no test catching it.
   # These jobs exercise the SAME action the gate uses against a pinned-vulnerable
   # fixture (.github/tests/govulncheck-allowlist) so the contract is provable and stable:
   #   • allowlisted ⇒ the scan PASSES,  • strict (no allow-file) ⇒ the scan FAILS.
@@ -3711,6 +3711,11 @@ jobs:
   test-govulncheck-allowlist-honored:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck Allowlist - Allowlisted Advisory Passes"
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25.14', '1.26.8', '1.27.1']
+        fixture: [govulncheck-allowlist, govulncheck-generics]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3725,22 +3730,38 @@ jobs:
         with:
           persist-credentials: false
 
-      # Mirror validate-go-project.yaml's scan step (same action SHA + inputs).
+      - name: Select the fixture toolchain
+        env:
+          GO_VERSION: ${{ matrix.go }}
+          FIXTURE: ${{ matrix.fixture }}
+        run: sed -i "s/^go .*/go $GO_VERSION/" ".github/tests/$FIXTURE/go.mod"
+
+      # Mirror validate-go-project.yaml's scan step (same local action + inputs).
       # The fixture reachably calls a GO-2021-0113 symbol; with that ID listed in
       # .govulncheck-allow.txt the scan MUST pass. Keep this `uses:` in lockstep
       # with validate-go-project.yaml — enforced by test-govulncheck-action-lockstep.
       - name: 🛡️ Scan fixture with allowlist (must pass)
-        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        # Keep local syntax until the supported actionlint accepts $/ (#1234).
+        uses: ./.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          repo-checkout: false
-          work-dir: .github/tests/govulncheck-allowlist
-          go-version-input: ""
-          go-version-file: .github/tests/govulncheck-allowlist/go.mod
+          work-dir: .github/tests/${{ matrix.fixture }}
+          go-version-file: .github/tests/${{ matrix.fixture }}/go.mod
           allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt
+          output-file: govulncheck-allowlisted.json
+
+      - name: Assert the scan used the caller's Go version
+        env:
+          GO_VERSION: ${{ matrix.go }}
+        run: jq -es --arg version "go$GO_VERSION" '.[0].config.go_version == $version' govulncheck-allowlisted.json
 
   test-govulncheck-strict-blocks:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Govulncheck Allowlist - Strict Path Blocks"
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25.14', '1.26.8', '1.27.1']
+        fixture: [govulncheck-allowlist, govulncheck-generics]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3754,6 +3775,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Select the fixture toolchain
+        env:
+          GO_VERSION: ${{ matrix.go }}
+          FIXTURE: ${{ matrix.fixture }}
+        run: sed -i "s/^go .*/go $GO_VERSION/" ".github/tests/$FIXTURE/go.mod"
 
       # Same fixture, but with NO allow-file: the strict path must FAIL on the
       # reachable advisory. continue-on-error lets the run proceed so the next step
@@ -3765,12 +3792,11 @@ jobs:
       - name: 🛡️ Scan fixture without allowlist (expected to fail)
         id: scan
         continue-on-error: true
-        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        # Keep local syntax until the supported actionlint accepts $/ (#1234).
+        uses: ./.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          repo-checkout: false
-          work-dir: .github/tests/govulncheck-allowlist
-          go-version-input: ""
-          go-version-file: .github/tests/govulncheck-allowlist/go.mod
+          work-dir: .github/tests/${{ matrix.fixture }}
+          go-version-file: .github/tests/${{ matrix.fixture }}/go.mod
           allow-file: ""
           output-file: govulncheck-strict.txt
 
@@ -3778,9 +3804,12 @@ jobs:
         shell: bash
         env:
           OUTCOME: ${{ steps.scan.outcome }}
+          VERDICT: ${{ steps.scan.outputs.verdict }}
+          GO_VERSION: ${{ matrix.go }}
         run: |
           set -euo pipefail
-          if [ "$OUTCOME" != "failure" ]; then
+          jq -es --arg version "go$GO_VERSION" '.[0].config.go_version == $version' govulncheck-strict.txt
+          if [[ "$OUTCOME" != "failure" || "$VERDICT" != "blocking" ]]; then
             echo "::error::Strict govulncheck scan should FAIL on the reachable GO-2021-0113 fixture, but its outcome was '$OUTCOME'. The strict gate is no longer blocking reachable advisories."
             exit 1
           fi
@@ -3793,7 +3822,7 @@ jobs:
 
   test-govulncheck-action-lockstep:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    name: "[Test] Govulncheck Allowlist - Gate Pins Self-Tested Action"
+    name: "[Test] Govulncheck Allowlist - Gate Uses Self-Tested Implementation"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3808,27 +3837,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # `uses:` cannot be parametrized, so the two scan jobs above hard-code the
-      # govulncheck action SHA. This guard asserts validate-go-project.yaml pins
-      # that SAME SHA, so the self-test always exercises the real gate. If the gate
-      # is ever swapped to an action without allow-file support, this check goes red
-      # and forces the self-test to be updated — at which point the allowlisted case
-      # fails too. That is what makes this suite catch the v5.4.1–v5.4.4 regression.
-      - name: 🔒 Assert the gate pins the self-tested action SHA
-        shell: bash
-        env:
-          # Match the full `uses:` line fragment, not the bare action ref — the ref
-          # also appears in surrounding comments in validate-go-project.yaml, so a
-          # bare-ref grep would false-pass if the real `uses:` SHA were changed while
-          # a comment still mentioned the old ref.
-          EXPECTED: "uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5"
-        run: |
-          set -euo pipefail
-          if ! grep -qF "$EXPECTED" .github/workflows/validate-go-project.yaml; then
-            echo "::error::validate-go-project.yaml no longer pins '$EXPECTED'. If the govulncheck action was changed intentionally, update both scan jobs in ci.yaml (test-govulncheck-allowlist-honored / test-govulncheck-strict-blocks) and this EXPECTED value so the allowlist self-test keeps exercising the real gate."
-            exit 1
-          fi
-          echo "validate-go-project.yaml pins the self-tested govulncheck action ✅"
+      - name: Assert the gate and fixtures use the same implementation
+        run: bash .github/tests/test-govulncheck-wiring.sh
+
+      - name: Exercise vulnerability verdict and operational failure boundaries
+        run: bash .github/tests/test-govulncheck-scan.sh
 
   test-govulncheck-timeout:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"

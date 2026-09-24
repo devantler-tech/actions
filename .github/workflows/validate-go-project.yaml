@@ -560,32 +560,18 @@ jobs:
         with:
           persist-credentials: false
 
-      # govulncheck reports only vulnerabilities your code actually CALLS (call-graph
-      # reachability), so the gate trips only on genuinely reachable issues —
-      # imported-but-unreachable advisories never block. The action sets up Go from
-      # go.mod, installs govulncheck, runs `govulncheck ./...`, and fails the job on any
-      # reachable finding. (We check out above with persist-credentials:false, so the
-      # action's own checkout is disabled via repo-checkout:false.)
-      #
-      # By default this is a strict gate that blocks on any reachable advisory. A consumer
-      # that opts in by committing a `.govulncheck-allow.txt` (one accepted advisory ID per
-      # line) gets the allowlist path: it can risk-accept a reachable advisory that has NO
-      # upstream fix (`Fixed in: N/A`) — e.g. a server-side symbol a CLI links transitively
-      # via k8s.io/kubernetes or docker/docker — with an explicit, version-controlled
-      # justification, instead of wedging EVERY Go PR on that consumer indefinitely.
-      #
-      # We use the `devantler/govulncheck-action` fork (not the official
-      # `golang/govulncheck-action`) on every path because: (1) it adds the `allow-file`
-      # input the official lacks, and (2) its nested actions are SHA-pinned
-      # (actions/checkout, actions/setup-go), whereas the official action's are tag-pinned
-      # (actions/checkout@v4.1.1, actions/setup-go@v5.0.0). Consumers that enforce "require
-      # actions pinned to a full-length commit SHA" reject those tags at JOB SETUP, and
-      # GitHub validates every `uses:` in the job — even ones behind an unreached `if` — so
-      # merely *referencing* the official action wedged the whole vuln-scan job on such repos.
-      # With no allow-file the fork behaves exactly like the official (strict). Swap back to
-      # `golang/govulncheck-action` once both `allow-file` and SHA-pinned internals land
-      # upstream (the fork is Gerrit-ready at devantler/govulncheck-action@feat/allow-file).
-      # See the action README for the allow-file format.
+      # Resolve the scanner and allowlist evaluator from this workflow's exact
+      # commit. The caller's checkout remains the module being scanned.
+      - name: 📥 Checkout the shared scanner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+
+      # Only reachable symbols block. A committed allowlist accepts exactly the
+      # listed advisory IDs; operational errors always fail the check.
       - name: 🔎 Detect govulncheck allowlist
         id: govulncheck-allow
         run: |
@@ -607,34 +593,13 @@ jobs:
         id: scan
         continue-on-error: true
         timeout-minutes: 24
-        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        # Keep exact-commit checkout until actionlint supports $/ (#1234).
+        uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          repo-checkout: false
           work-dir: ${{ inputs.working-directory || '.' }}
-          # Scan under the SAME Go version the consumer actually ships (its go.mod), so
-          # govulncheck's stdlib analysis matches the produced binary. The fork's setup-go
-          # receives BOTH go-version (default 'stable') and go-version-file, and in
-          # actions/setup-go go-version WINS over go-version-file when both are non-empty —
-          # so without this override the scan always ran under 'stable' (currently 1.26.3)
-          # and IGNORED go.mod. That made the gate unable to clear a stdlib advisory whose
-          # only fix ships in a Go release newer than the runner's 'stable' channel: a
-          # consumer that bumps go.mod past 'stable' got an operational error
-          # ("go.mod requires go >= X; running go <stable>; GOTOOLCHAIN=local") instead of a
-          # passing scan, wedging its entire Go PR lane. Empty go-version-input lets setup-go
-          # honour go-version-file (go.mod), installing the exact shipped version.
-          go-version-input: ''
+          # No stable-channel override: scan using the version the caller ships.
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
-          # present ⇒ honour the allowlist (JSON mode, risk-accept listed IDs); absent ⇒ '' ⇒ strict.
-          #
-          # Root-relative, like `go-version-file` above: the action resolves both paths from the
-          # checkout root rather than from `work-dir`. The allowlist self-test in ci.yaml pins that
-          # semantics — it passes `work-dir: .github/tests/govulncheck-allowlist` alongside a fully
-          # prefixed `allow-file: .github/tests/govulncheck-allowlist/.govulncheck-allow.txt`.
-          # `defaults.run.working-directory` does not apply here either, because it governs `run:`
-          # steps only, never a `uses:` step's inputs. So a bare literal would send the scanner to
-          # the ROOT allowlist while the detection step above — which IS a `run:` step, and so does
-          # honour the default — reports the NESTED one as present, and a nested module's risk
-          # acceptance would be silently dropped.
+          # uses: inputs stay checkout-root-relative, including nested modules.
           allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
 
       # A timed-out step is reported as a failure, exactly like a reachable advisory, so the
@@ -684,11 +649,10 @@ jobs:
       - name: 🛡️ Scan for known vulnerabilities (retry after timeout)
         if: ${{ steps.scan-timeout.outputs.retry == 'true' }}
         timeout-minutes: 24
-        uses: devantler/govulncheck-action@e92df19a112e291ce95619a05f03d9bb1339e2e5 # feat/allow-file (fork; pending upstream)
+        # Keep exact-commit checkout until actionlint supports $/ (#1234).
+        uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          repo-checkout: false
           work-dir: ${{ inputs.working-directory || '.' }}
-          go-version-input: ''
           go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
           allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
 
