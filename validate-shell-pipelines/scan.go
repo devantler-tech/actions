@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -14,9 +15,18 @@ type finding struct {
 	flag string
 }
 
+// scanSource parses without execution and reports early-exiting pipeline consumers.
 func scanSource(name string, source []byte) ([]finding, error) {
 	file, err := syntax.NewParser(syntax.KeepComments(true)).Parse(bytes.NewReader(source), name)
 	if err != nil {
+		var parseErr syntax.ParseError
+		if errors.As(err, &parseErr) {
+			return nil, fmt.Errorf("line %d column %d: invalid shell syntax (source omitted)", parseErr.Pos.Line(), parseErr.Pos.Col())
+		}
+		var langErr syntax.LangError
+		if errors.As(err, &langErr) {
+			return nil, fmt.Errorf("line %d column %d: invalid shell syntax (source omitted)", langErr.Pos.Line(), langErr.Pos.Col())
+		}
 		return nil, fmt.Errorf("invalid shell syntax (source omitted)")
 	}
 	allowed := map[uint]bool{}
@@ -69,7 +79,7 @@ func scanSource(name string, source []byte) ([]finding, error) {
 	return findings, nil
 }
 
-// Only a single receiving command is resolved through grouping. General shell
+// receivingCall resolves only a single receiving command through grouping. General shell
 // control flow, functions, and runtime command/argument expansion are not evaluated.
 func receivingCall(stmt *syntax.Stmt) *syntax.CallExpr {
 	switch cmd := stmt.Cmd.(type) {
@@ -87,9 +97,11 @@ func receivingCall(stmt *syntax.Stmt) *syntax.CallExpr {
 	return nil
 }
 
-// A literal is assembled without invoking shell expansion. Unknown words remain
+// literal assembles a word without invoking shell expansion. Unknown words remain
 // unknown, including dollar quoting, parameters, substitutions, and globs.
 func literal(word *syntax.Word) (string, bool) { return literalParts(word.Parts, false) }
+
+// literalParts applies quote-specific escaping while rejecting runtime expansions.
 func literalParts(parts []syntax.WordPart, quoted bool) (string, bool) {
 	var out strings.Builder
 	for _, part := range parts {
@@ -133,7 +145,7 @@ func literalParts(parts []syntax.WordPart, quoted bool) (string, bool) {
 	return out.String(), true
 }
 
-// Unwrap ordinary command and env invocations; query modes and unsupported env
+// grepArgs unwraps ordinary command and env invocations; query modes and unsupported env
 // grammars (notably --split-string) cannot be treated as executable grep calls.
 func grepArgs(args []*syntax.Word) []*syntax.Word {
 	for len(args) > 0 {
@@ -201,6 +213,7 @@ func grepArgs(args []*syntax.Word) []*syntax.Word {
 	return nil
 }
 
+// earlyExitFlag distinguishes early-exit options from pattern and option operands.
 func earlyExitFlag(args []*syntax.Word) string {
 	for i := 0; i < len(args); i++ {
 		arg, ok := literal(args[i])

@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// git prepares a fixture index and attributes setup failures to the calling test.
 func git(t *testing.T, root string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
@@ -18,6 +19,8 @@ func git(t *testing.T, root string, args ...string) {
 		t.Fatalf("git: %v: %s", err, out)
 	}
 }
+
+// fixture creates tracked inputs without requiring commits or signing credentials.
 func fixture(t *testing.T, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -34,6 +37,8 @@ func fixture(t *testing.T, files map[string]string) string {
 	}
 	return root
 }
+
+// checkRun checks the CLI contract while retaining both streams for privacy assertions.
 func checkRun(t *testing.T, args []string, status int, contains string) string {
 	t.Helper()
 	var out, errors bytes.Buffer
@@ -44,6 +49,8 @@ func checkRun(t *testing.T, args []string, status int, contains string) string {
 	}
 	return all
 }
+
+// TestTrackedScope proves scoping, deduplication, and source-free file diagnostics.
 func TestTrackedScope(t *testing.T) {
 	root := fixture(t, map[string]string{
 		"scripts/check space ø.sh": "#!/bin/bash\nproducer | grep -q SECRET_PATTERN\n",
@@ -65,6 +72,8 @@ func TestTrackedScope(t *testing.T) {
 	checkRun(t, []string{"--root", root, "--paths", "other\nother/safe.bash"}, 0, "1 shell file")
 	checkRun(t, []string{"--root", filepath.Join(root, "other")}, 0, "1 shell file")
 }
+
+// TestInvalidScans requires incomplete scans to fail without disclosing source text.
 func TestInvalidScans(t *testing.T) {
 	for _, scope := range []string{"", "missing", "../escape", "/tmp", ":(glob)*", "*.sh", "safe.sh\nmissing", "README.md", "./safe.sh"} {
 		t.Run(scope, func(t *testing.T) {
@@ -75,10 +84,17 @@ func TestInvalidScans(t *testing.T) {
 	t.Run("not git", func(t *testing.T) { checkRun(t, []string{"--root", t.TempDir()}, 2, "Git discovery failed") })
 	t.Run("missing root", func(t *testing.T) { checkRun(t, []string{"--root", filepath.Join(t.TempDir(), "missing")}, 2, "") })
 	t.Run("invalid syntax", func(t *testing.T) {
-		root := fixture(t, map[string]string{"bad.sh": "if then SECRET\n"})
-		out := checkRun(t, []string{"--root", root}, 2, "invalid shell")
+		root := fixture(t, map[string]string{"bad.sh": "true\n  if then SECRET\n"})
+		out := checkRun(t, []string{"--root", root}, 2, "line 2 column 3: invalid shell syntax (source omitted)")
 		if strings.Contains(out, "SECRET") {
 			t.Fatal("parser leaked source")
+		}
+	})
+	t.Run("unsupported language syntax", func(t *testing.T) {
+		root := fixture(t, map[string]string{"bad.sh": "true\necho ${SECRET@#}\n"})
+		out := checkRun(t, []string{"--root", root}, 2, "line 2 column 15: invalid shell syntax (source omitted)")
+		if strings.Contains(out, "SECRET") {
+			t.Fatal("language parser leaked source")
 		}
 	})
 	t.Run("tracked deletion", func(t *testing.T) {
@@ -112,6 +128,8 @@ func TestInvalidScans(t *testing.T) {
 	})
 	t.Run("argument", func(t *testing.T) { checkRun(t, []string{"--unknown"}, 2, ""); checkRun(t, []string{"extra"}, 2, "") })
 }
+
+// TestDoesNotExecute checks that discovering a dangerous command never runs it.
 func TestDoesNotExecute(t *testing.T) {
 	root := fixture(t, map[string]string{"unsafe.sh": "#!/bin/bash\ntouch EXECUTED\nproducer | grep -q value\n"})
 	checkRun(t, []string{"--root", root}, 1, "capture")
@@ -120,7 +138,7 @@ func TestDoesNotExecute(t *testing.T) {
 	}
 }
 
-// The consumer signals after its grep matched. The producer then writes more
+// TestRealSIGPIPEAndSafeCapture signals after grep matched. The producer then writes more
 // than a pipe can buffer, forcing SIGPIPE instead of depending on scheduling.
 func TestRealSIGPIPEAndSafeCapture(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -160,6 +178,7 @@ printf 'safe capture preserved producer failure\n'
 	}
 }
 
+// TestScanLimitsAndEnvironment checks filesystem bounds and hostile Git environment state.
 func TestScanLimitsAndEnvironment(t *testing.T) {
 	t.Run("filesystem monitor is not executed", func(t *testing.T) {
 		root := fixture(t, map[string]string{"safe.sh": "true\n"})

@@ -14,6 +14,7 @@ import (
 
 const maxScriptBytes = 16 << 20
 
+// run separates findings (1) from incomplete scans (2) and emits deterministic diagnostics.
 func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("validate-shell-pipelines", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -67,6 +68,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// parseScopes accepts explicit relative paths without wildcard or traversal semantics.
 func parseScopes(input string) ([]string, error) {
 	var scopes []string
 	for _, line := range strings.Split(input, "\n") {
@@ -85,6 +87,7 @@ func parseScopes(input string) ([]string, error) {
 	return scopes, nil
 }
 
+// discover reads the tracked scan set without hooks, alternate indexes, or submodules.
 func discover(root *os.Root, rootPath string, scopes []string) (map[string][]byte, error) {
 	sources := map[string][]byte{}
 	for _, scope := range scopes {
@@ -135,6 +138,7 @@ func discover(root *os.Root, rootPath string, scopes []string) (map[string][]byt
 	return sources, nil
 }
 
+// readScript confines regular-file reads to the checkout and enforces the byte limit.
 func readScript(root *os.Root, name string) ([]byte, bool, error) {
 	// Reject symlink components explicitly; OpenRoot also confines reads if a
 	// checkout changes between inspection and opening the file.
@@ -179,6 +183,7 @@ func readScript(root *os.Root, name string) ([]byte, bool, error) {
 	return append(prefix, rest...), true, nil
 }
 
+// shellShebang recognizes direct and env-based sh/bash interpreters without execution.
 func shellShebang(source []byte) bool {
 	line, _, _ := bytes.Cut(source, []byte{'\n'})
 	if !bytes.HasPrefix(line, []byte("#!")) {

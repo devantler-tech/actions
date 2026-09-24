@@ -2,6 +2,7 @@ package main
 
 import "testing"
 
+// TestPipelineSyntax distinguishes executable consumers from quotes, wrappers, and operands.
 func TestPipelineSyntax(t *testing.T) {
 	cases := []struct{ name, source, flag string }{
 		{"cluster", "producer | grep -Fqn needle", "-q"},
@@ -60,6 +61,7 @@ func TestPipelineSyntax(t *testing.T) {
 	}
 }
 
+// TestCommentExceptions confines exemptions to real comments with an explicit reason.
 func TestCommentExceptions(t *testing.T) {
 	cases := []struct {
 		name, source string
@@ -87,12 +89,14 @@ func TestCommentExceptions(t *testing.T) {
 	}
 }
 
+// TestInvalidShell prevents malformed input from being reported as a clean scan.
 func TestInvalidShell(t *testing.T) {
 	if _, err := scanSource("bad.sh", []byte("if then\n")); err == nil {
 		t.Fatal("invalid shell accepted")
 	}
 }
 
+// TestEarlyExitPipeline pins the actionable flag and its source location.
 func TestEarlyExitPipeline(t *testing.T) {
 	findings, err := scanSource("check.sh", []byte("set -o pipefail\nproducer | grep -q NEEDLE\n"))
 	if err != nil {
