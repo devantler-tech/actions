@@ -4868,6 +4868,79 @@ jobs:
           fi
           echo "Lint gate correctly blocked on the invalid JSON fixture ✅"
 
+  # Exercise the internal exporter through the runner, including deletion of its
+  # loaded helper checkout and upload recovery after an actual preparation error.
+  test-prepare-fixes:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Fix Exporter - ${{ matrix.scenario }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {scenario: ordinary, mode: ordinary, manual: 'false', upload: 'true'}
+          - {scenario: manual, mode: workflow, manual: 'true', upload: 'true'}
+          - {scenario: clean, mode: ordinary, manual: 'false', upload: 'true'}
+          - {scenario: read-only, mode: ordinary, manual: 'false', upload: 'false'}
+          - {scenario: export-failure, mode: workflow, manual: 'true', upload: 'true'}
+    defaults:
+      run:
+        # The composite must override a consumer's nested-module default.
+        working-directory: module
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+      MANUAL: ${{ matrix.manual }}
+      UPLOAD: ${{ matrix.upload }}
+      ARTIFACT: prepare-fixes-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.scenario }}
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout exporter and fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: .devantler-tech-actions
+
+      - name: 📦 Create disposable consumer
+        working-directory: ${{ github.workspace }}
+        run: |
+          cp .devantler-tech-actions/.github/tests/fixtures/prepare-fixes-runner.sh "$RUNNER_TEMP/prepare-fixes-runner.sh"
+          bash "$RUNNER_TEMP/prepare-fixes-runner.sh" setup
+
+      - name: 📤 Prepare and transfer the real patch
+        id: fixes
+        continue-on-error: ${{ matrix.scenario == 'export-failure' }}
+        uses: ./.devantler-tech-actions/.github/actions/prepare-fixes
+        with:
+          artifact-name: ${{ env.ARTIFACT }}
+          upload-enabled: ${{ matrix.upload }}
+          mode: ${{ matrix.mode }}
+          manual-workflow-fixes: ${{ matrix.manual }}
+
+      - name: 📥 Download eligible patch
+        if: ${{ matrix.upload == 'true' && matrix.scenario != 'clean' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}/download
+
+      - name: 🔎 Verify outputs, artifacts, complete Git tree, and failure outcome
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTUAL_ARTIFACT: ${{ steps.fixes.outputs.artifact-name }}
+          ACTUAL_CHANGED: ${{ steps.fixes.outputs.changed }}
+          ACTUAL_MANUAL: ${{ steps.fixes.outputs.manual-required }}
+          ACTUAL_ELIGIBLE: ${{ steps.fixes.outputs.upload-enabled }}
+          ACTUAL_OUTCOME: ${{ steps.fixes.outcome }}
+        run: bash "$RUNNER_TEMP/prepare-fixes-runner.sh" verify
+
   test-lint-gate-lockstep:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Lint - Gate Pins Self-Tested Image"
@@ -5173,6 +5246,7 @@ jobs:
       - test-lint-workflow-manual-fixes
       - test-lint-blocks
       - test-lint-gate-lockstep
+      - test-prepare-fixes
       - test-apply-signed-fixes-suppresses-bots
       - test-apply-signed-fixes-verifies-without-a-patch
       - test-run-dotnet-tests-blocks
@@ -5292,6 +5366,7 @@ jobs:
             ${{ needs.test-lint-workflow-manual-fixes.result }}
             ${{ needs.test-lint-blocks.result }}
             ${{ needs.test-lint-gate-lockstep.result }}
+            ${{ needs.test-prepare-fixes.result }}
             ${{ needs.test-apply-signed-fixes-suppresses-bots.result }}
             ${{ needs.test-apply-signed-fixes-verifies-without-a-patch.result }}
             ${{ needs.test-run-dotnet-tests-blocks.result }}

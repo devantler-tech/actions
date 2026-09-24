@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Match literal GitHub expressions and shell source.
 
 # The org-required Go workflow may export three independently produced patches and then apply
 # them serially. This guard pins the safety contract at that boundary: signed writes are opt-in,
@@ -69,9 +70,12 @@ for job in tidy golangci-lint lint; do
   [[ "$(yq -r '.if // ""' <<<"$prepare")" == "$expected_prepare_if" ]] ||
     fail "${job}'s fix detector must run in read-only mode too"
 
-  [[ "$(yq -r '.env.FIXES_ARTIFACT // ""' <<<"$prepare")" == "${artifact_prefix}-\${{ job.check_run_id }}" ]] ||
-    fail "${job} must pass its job.check_run_id-qualified artifact name through the environment"
-  run_block="$(yq -r '.run // ""' <<<"$prepare")"
+  [[ "$(yq -r '.uses // ""' <<<"$prepare")" == './.devantler-tech-actions/.github/actions/prepare-fixes' ]] ||
+    fail "${job} must call the shared exact-commit exporter"
+  [[ "$(yq -r '.with."artifact-name" // ""' <<<"$prepare")" == "${artifact_prefix}-\${{ job.check_run_id }}" ]] ||
+    fail "${job} must pass its job.check_run_id-qualified artifact name"
+  action=.github/actions/prepare-fixes/action.yaml
+  run_block="$(yq -r '.runs.steps[] | select(.id == "prepare") | .run' "$action")"
   grep -qF 'artifact-name=${FIXES_ARTIFACT}' <<<"$run_block" ||
     fail "${job} must emit the environment-qualified artifact name"
   grep -qF '${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch' <<<"$run_block" ||
@@ -81,22 +85,24 @@ for job in tidy golangci-lint lint; do
   [[ "$artifact_output" == '${{ steps.fixes.outputs.artifact-name }}' ]] ||
     fail "${job} must expose the unique artifact name produced by its fixes step"
 
-  upload="$(yq -r ".jobs.\"${job}\".steps[] | select((.uses // \"\") | contains(\"actions/upload-artifact@\"))" "$workflow")"
-  [[ "$(yq -r '.with.name // ""' <<<"$upload")" == '${{ steps.fixes.outputs.artifact-name }}' ]] ||
+  upload="$(yq -r '.runs.steps[] | select((.uses // "") | contains("actions/upload-artifact@"))' "$action")"
+  [[ "$(yq -r '.with.name // ""' <<<"$upload")" == '${{ steps.prepare.outputs.artifact-name }}' ]] ||
     fail "${job}'s upload must use its invocation-unique artifact name"
-  [[ "$(yq -r '.with.path // ""' <<<"$upload")" == '${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch' ]] ||
+  [[ "$(yq -r '.with.path // ""' <<<"$upload")" == '${{ runner.temp }}/${{ steps.prepare.outputs.artifact-name }}.patch' ]] ||
     fail "${job}'s patch filename must match its invocation-unique artifact name"
   upload_if="$(yq -r '.if // ""' <<<"$upload")"
-  expected_upload_if="\${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}"
-  if [[ "$job" == lint ]]; then
-    expected_upload_if="\${{ ${recovery} && ${expected_upload_if#\$\{\{ }"
-  fi
+  expected_eligibility="\${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) && !contains(fromJSON('${dependency_bots}'), inputs.pr-owner) }}"
+  [[ "$(yq -r '.with."upload-enabled" // ""' <<<"$prepare")" == "$expected_eligibility" ]] ||
+    fail "${job}'s artifact export must preserve the audited opt-in, same-repository PR eligibility"
+  expected_upload_if="\${{ !cancelled() && (success() || inputs.manual-workflow-fixes == 'true') && inputs.upload-enabled == 'true' && steps.prepare.outputs.changed == 'true' }}"
   [[ "$upload_if" == "$expected_upload_if" ]] ||
     fail "${job}'s artifact export must use the audited opt-in, same-repository PR gate"
 
   read_only="$(yq -r ".jobs.\"${job}\".steps[] | select(.name == \"❌ Fail if uncommitted changes remain (read-only mode)\")" "$workflow")"
   read_only_if="$(yq -r '.if // ""' <<<"$read_only")"
-  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('${dependency_bots}'), github.event.pull_request.user.login) || contains(fromJSON('${dependency_bots}'), inputs.pr-owner)) }}"
+  [[ "$(yq -r '.outputs."upload-enabled".value' "$action")" == '${{ inputs.upload-enabled }}' ]] ||
+    fail 'shared exporter must return the caller eligibility unchanged'
+  expected_read_only_if="\${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.upload-enabled != 'true' }}"
   [[ "$read_only_if" == "$expected_read_only_if" ]] ||
     fail "${job}'s dirty-tree gate must be the exact complement of the eligible write context"
 
