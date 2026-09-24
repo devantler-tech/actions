@@ -182,6 +182,13 @@ Two App identities exist:
 
 ## Validation Commands
 
+**Retired repository links:** `validate-retired-repo-links` is a default-off,
+read-only Go validator with no module dependencies. Keep both flag states, real
+good/bad action fixtures on Linux/macOS, and the required-check wiring covered.
+Configuration belongs to each consumer; never hard-code retired portfolio names
+or blanket historical exemptions in the action. Exceptions require an exact
+file, repository and reason. Consumer adoption and flag retirement are in #1350.
+
 ```bash
 # Run yamllint
 yamllint .github/workflows/

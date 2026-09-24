@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "repositories": ["example/retired"],
+  "paths": ["docs"],
+  "exceptions": [
+    {
+      "path": "docs/history.md",
+      "repository": "example/retired",
+      "reason": "Keep the historical migration record."
+    }
+  ]
+}

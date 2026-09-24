@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "repositories": ["example/retired"],
+  "paths": ["docs"]
+}

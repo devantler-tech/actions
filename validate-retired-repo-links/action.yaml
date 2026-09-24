@@ -1,0 +1,60 @@
+name: Validate retired repository links
+description: Reject links to configured retired GitHub repositories with documented historical exceptions.
+author: devantler-tech
+inputs:
+  enabled:
+    description: Opt in to checking retired repository links.
+    required: false
+    default: "false"
+  config-file:
+    description: JSON configuration path relative to working-directory.
+    required: false
+    default: .github/retired-repo-links.json
+  working-directory:
+    description: Consumer repository directory relative to GITHUB_WORKSPACE or absolute.
+    required: false
+    default: .
+outputs:
+  validated:
+    description: The string true after a complete successful scan; empty when disabled or unsuccessful.
+    value: ${{ steps.validate.outputs.validated }}
+runs:
+  using: composite
+  steps:
+    - name: Check opt-in input
+      shell: bash
+      env:
+        ENABLED: ${{ inputs.enabled }}
+      run: |
+        case "$ENABLED" in
+          true) ;;
+          false) echo "Retired repository link validation is disabled; set enabled to true to opt in." ;;
+          *) echo "::error::enabled must be exactly true or false"; exit 1 ;;
+        esac
+
+    - name: Set up Go for the link validator
+      if: ${{ inputs.enabled == 'true' }}
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    - name: Validate retired repository links
+      if: ${{ inputs.enabled == 'true' }}
+      id: validate
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        CONFIG_FILE: ${{ inputs.config-file }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        GOWORK: "off"
+        GOFLAGS: ""
+        GOTOOLCHAIN: local
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        temporary=$(mktemp -d "$RUNNER_TEMP/retired-repo-links.XXXXXX")
+        trap 'rm -rf "$temporary"' EXIT
+        go -C "$ACTION_PATH" build -mod=readonly -trimpath -o "$temporary/validate-retired-repo-links" .
+        "$temporary/validate-retired-repo-links" --root "$WORKING_DIRECTORY" --config "$CONFIG_FILE"
+        echo "validated=true" >> "$GITHUB_OUTPUT"

@@ -13,6 +13,108 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-validate-retired-repo-links:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Retired Repository Links - Enabled (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Accept current links and documented history
+        id: valid
+        uses: ./validate-retired-repo-links
+        with:
+          enabled: "true"
+          working-directory: .github/fixtures/retired-repo-links
+      - name: Reject an unexcepted retired link
+        id: violation
+        continue-on-error: true
+        uses: ./validate-retired-repo-links
+        with:
+          enabled: "true"
+          working-directory: .github/fixtures/retired-repo-links
+          config-file: invalid.json
+      - name: Assert action results
+        shell: bash
+        env:
+          VALIDATED: ${{ steps.valid.outputs.validated }}
+          VIOLATION: ${{ steps.violation.outcome }}
+          INVALID_VALIDATED: ${{ steps.violation.outputs.validated }}
+        run: |
+          test "$VALIDATED" = true
+          test "$VIOLATION" = failure
+          test -z "$INVALID_VALIDATED"
+      - name: Test consumer behavior and verify the negative fixture finding
+        shell: bash
+        env:
+          GOWORK: "off"
+          GOFLAGS: ""
+          GOTOOLCHAIN: local
+        run: |
+          go -C validate-retired-repo-links test -race -cover ./...
+          go -C validate-retired-repo-links vet ./...
+          go -C validate-retired-repo-links build -mod=readonly -o "$RUNNER_TEMP/retired-repo-links" .
+          result=0
+          "$RUNNER_TEMP/retired-repo-links" --root .github/fixtures/retired-repo-links --config invalid.json > "$RUNNER_TEMP/retired-links.log" 2>&1 || result=$?
+          cat "$RUNNER_TEMP/retired-links.log"
+          test "$result" -eq 1
+          grep -F 'docs/history.md:3: link targets retired repository example/retired' "$RUNNER_TEMP/retired-links.log"
+
+  test-validate-retired-repo-links-disabled:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Retired Repository Links - Disabled"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Omitted opt-in skips a missing consumer
+        id: omitted
+        uses: ./validate-retired-repo-links
+        with:
+          working-directory: missing-directory
+      - name: Explicit false skips the seeded violation
+        id: disabled
+        uses: ./validate-retired-repo-links
+        with:
+          enabled: "false"
+          working-directory: .github/fixtures/retired-repo-links
+          config-file: invalid.json
+      - name: Reject invalid opt-in spelling
+        id: invalid
+        continue-on-error: true
+        uses: ./validate-retired-repo-links
+        with:
+          enabled: "yes"
+      - name: Assert disabled and invalid calls do not validate
+        shell: bash
+        env:
+          OMITTED: ${{ steps.omitted.outputs.validated }}
+          DISABLED: ${{ steps.disabled.outputs.validated }}
+          INVALID: ${{ steps.invalid.outcome }}
+        run: |
+          test -z "$OMITTED"
+          test -z "$DISABLED"
+          test "$INVALID" = failure
+
   test-validate-naming:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Naming - Enabled (${{ matrix.os }})"
@@ -5068,6 +5170,8 @@ jobs:
     if: ${{ always() }}
     needs:
       - test-validate-naming
+      - test-validate-retired-repo-links
+      - test-validate-retired-repo-links-disabled
       - test-validate-naming-disabled
       - test-validate-naming-rejects
       - test-approve-pr
@@ -5187,6 +5291,8 @@ jobs:
         env:
           JOB_RESULTS: >-
             ${{ needs.test-validate-naming.result }}
+            ${{ needs.test-validate-retired-repo-links.result }}
+            ${{ needs.test-validate-retired-repo-links-disabled.result }}
             ${{ needs.test-validate-naming-disabled.result }}
             ${{ needs.test-validate-naming-rejects.result }}
             ${{ needs.test-approve-pr.result }}
