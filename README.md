@@ -142,6 +142,16 @@ signature. Actual lint errors still fail the job and prevent signer writes;
 `validate-go-project`'s read-only mode still fails on uncommitted fixes.
 Consumer rollout and flag removal are tracked in [#1186](https://github.com/devantler-tech/actions/issues/1186).
 
+#### Secrets and Inputs
+
+| Key | Type | Default | Required | Description |
+|-----|------|---------|----------|-------------|
+| `artifact-name` | Input (string) | `megalinter-fixes` | No | Uploaded artifact containing one `<artifact-name>.patch` file |
+| `commit-message` | Input (string) | `chore: Apply megalinter fixes` | No | Commit message for the applied patch |
+| `pr-owner` | Input (string) | `""` | No | Pull request author login used to suppress commits to dependency-bot branches |
+| `fixes-created` | Input (boolean) | `true` | No | Whether a patch exists; false skips signing and retains the branch-tip signature check |
+| `APP_PRIVATE_KEY` | Secret | - | For signing | GitHub App private key; paired with the `APP_CLIENT_ID` variable. No unsigned fallback |
+
 ### 🎉 Create Release
 
 <details>
@@ -500,6 +510,7 @@ jobs:
 |---------------|----------------|------------|----------|----------------------------------------------------------------------------|
 | `app-name`    | Input (string) | -          | Yes      | Container name in the deployment manifest to pin to the built image digest |
 | `deploy-path` | Input (string) | `./deploy` | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact    |
+| `dry-run` | Input (boolean) | `false` | No | Skip publication and validate only the workflow interface |
 | `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
@@ -541,6 +552,7 @@ jobs:
 |---------------|----------------|----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `oci-name`    | Input (string) | `${{ github.repository }}` | No       | OCI repository name (`<owner>/<name>`) the artifact is published under, without the registry prefix or trailing `/manifests`. Override for invalid OCI path components |
 | `deploy-path` | Input (string) | `./deploy`           | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact                                                              |
+| `dry-run` | Input (boolean) | `false` | No | Skip publication and validate only the workflow interface |
 | `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
@@ -809,6 +821,8 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 | `pr-labels`      | Input (string)  | `dependencies,automation`            | No       | Comma-separated labels for the update PR                               |
 | `commit-message` | Input (string)  | `chore(deps): update agent skills`   | No       | Commit message for the update PR                                       |
 | `dry-run`        | Input (boolean) | `false`                              | No       | Skip update and PR creation (validate workflow interface only)         |
+| `use-app-token` | Input (boolean) | `false` | No | Create the update PR with a GitHub App token so it triggers the caller's CI |
+| `APP_PRIVATE_KEY` | Secret | - | When `use-app-token` is true | GitHub App private key, paired with the `APP_CLIENT_ID` variable |
 
 > **Note:** The calling workflow must grant `contents: write` and `pull-requests: write` permissions.
 

@@ -2776,6 +2776,14 @@ jobs:
           fi
           exit "$status"
 
+      - name: 📋 Check reusable workflow input and secret documentation
+        shell: bash
+        run: bash .scripts/check-workflow-readme.sh
+
+      - name: 🧪 Exercise workflow documentation failures
+        shell: bash
+        run: bash .github/tests/test-workflow-readme-parity.sh
+
   lint-ci-coverage-parity:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     runs-on: ubuntu-latest

@@ -136,6 +136,14 @@ guard rejects missing invocations and ignores step names, printed commands, here
 functions. Helper scripts use names without the
 `test-` prefix and are invoked by a tested entrypoint instead of needing an exemption list.
 
+`lint-readme-parity` also checks every reusable workflow's declared inputs and secrets against
+its own level-three section in the root README. Link that section to the workflow file and put
+each name in a `Secrets and Inputs`, `Inputs`, or `Secrets` table. Prose, fenced examples,
+HTML comments, and another workflow's table do not count. Internal reusable workflows are
+included. Run `bash .scripts/check-workflow-readme.sh` locally; its behavioral regressions live in
+`.github/tests/test-workflow-readme-parity.sh`. This checks documentation presence and input/secret
+classification; default values, descriptions, outputs, and reverse parity remain review concerns.
+
 ### Shipping a new capability behind an opt-in flag (feature-flag-first)
 
 A new job/step/behaviour must not go live for every consumer the moment it merges. Ship it as the CI analog of a release flag — an **opt-in input, default-off, backward-compatible** — so it can be validated on a few callers before broad rollout (the portfolio-wide **feature-flag-first delivery** contract in the monorepo `AGENTS.md`; [monorepo#2059](https://github.com/devantler-tech/monorepo/issues/2059)):
