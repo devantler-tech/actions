@@ -35,6 +35,13 @@ type exception struct {
 var repositoryName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*/[a-zA-Z0-9_.-]+$`)
 var repositoryURL = regexp.MustCompile(`(?i)https?://(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)/([a-z0-9-]+/[a-z0-9_.-]+)`)
 
+// Check the end of the complete greedy match rather than adding a regex suffix:
+// backtracking at a dot could otherwise turn a distinct name into a prefix match.
+// Percent escapes and unsupported name characters are outside the literal scope.
+func repositoryBoundary(text string, end int) bool {
+	return end == len(text) || strings.ContainsRune(" \t\r\f\v/?#\"'`<>[](),;!|}", rune(text[end]))
+}
+
 func run(args []string, output io.Writer) int {
 	flags := flag.NewFlagSet("validate-retired-repo-links", flag.ContinueOnError)
 	flags.SetOutput(output)
@@ -203,8 +210,11 @@ func scan(root *os.Root, config configuration, output io.Writer) (int, error) {
 			}
 			checked++
 			for line, text := range strings.Split(string(data), "\n") {
-				for _, match := range repositoryURL.FindAllStringSubmatch(text, -1) {
-					repo := strings.TrimRight(strings.ToLower(match[1]), ".")
+				for _, match := range repositoryURL.FindAllStringSubmatchIndex(text, -1) {
+					if !repositoryBoundary(text, match[1]) {
+						continue
+					}
+					repo := strings.TrimRight(strings.ToLower(text[match[2]:match[3]]), ".")
 					if !repositories[repo] {
 						repo = strings.TrimSuffix(repo, ".git")
 					}
