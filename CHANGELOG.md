@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.7.4](https://github.com/devantler-tech/actions/compare/v13.7.3...v13.7.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **validate-go-project:** support Go 1.27 vulnerability scans ([#1335](https://github.com/devantler-tech/actions/issues/1335)) ([ecd4f00](https://github.com/devantler-tech/actions/commit/ecd4f00f8a8be2a0c0fc876b28c3f421f45f72d7))
+
 ## [13.7.3](https://github.com/devantler-tech/actions/compare/v13.7.2...v13.7.3) (2026-09-23)
 
 
