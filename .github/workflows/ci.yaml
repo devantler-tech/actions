@@ -3398,6 +3398,7 @@ jobs:
     uses: ./.github/workflows/create-release.yaml
     with:
       disable-issue-side-effects: true
+      warn-missing-breaking-bang: true
       dry-run: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
@@ -3424,6 +3425,9 @@ jobs:
 
       - name: 🧪 Verify release runs serialize without dropping queued runs
         run: bash .github/tests/test-create-release-concurrency.sh
+
+      - name: 🧪 Verify breaking-change warning and silent cases
+        run: bash .github/tests/test-create-release-breaking-bang.sh
 
   test-release-please-semantics:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
