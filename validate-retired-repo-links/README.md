@@ -72,6 +72,10 @@ recognizes literal HTTP(S) URLs on `github.com`, `www.github.com` and
 `raw.githubusercontent.com`, including file, issue, fragment and clone links.
 Similar names such as `retired-tools` remain distinct. Plain prose, relative
 links, encoded URL components, SSH URLs and other GitHub hosts are outside scope.
+The scheme must start at a text boundary, so `nothttps://...` does not count.
+Paired underscore emphasis and one- or two-tilde strikethrough around a URL are
+recognized. Unpaired underscore repository suffixes remain literal; this scanner
+does not render arbitrary Markdown.
 
 Exceptions apply only to an exact file and one configured repository, and require
 a nonempty reason. They allow every matching link in that file, so reserve them

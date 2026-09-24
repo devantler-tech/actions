@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -38,9 +39,47 @@ var repositoryURL = regexp.MustCompile(`(?i)https?://(?:www\.)?(?:github\.com|ra
 // Check the end of the complete greedy match rather than adding a regex suffix:
 // backtracking at a dot could otherwise turn a distinct name into a prefix match.
 // Percent escapes and unsupported name characters are outside the literal scope.
-// Asterisks delimit Markdown emphasis; underscores remain valid repository bytes.
 func repositoryBoundary(text string, end int) bool {
-	return end == len(text) || strings.ContainsRune(" \t\r\f\v/?#\"'`<>[](),;!|}*", rune(text[end]))
+	if end == len(text) {
+		return true
+	}
+	next, _ := utf8.DecodeRuneInString(text[end:])
+	return unicode.IsSpace(next) || strings.ContainsRune("/?#\"'`<>[](),;!|}*", next)
+}
+
+// repositoryReference checks both ends of a literal URL. Formatting immediately
+// around it may be paired Markdown punctuation, but never a repository suffix
+// inferred from the retired-name list. This is not a general Markdown renderer.
+func repositoryReference(text string, match []int) (string, bool) {
+	start := match[0]
+	for start > 0 && strings.ContainsRune("*_~", rune(text[start-1])) {
+		start--
+	}
+	if start > 0 {
+		previous, _ := utf8.DecodeLastRuneInString(text[:start])
+		if !unicode.IsSpace(previous) && !strings.ContainsRune("\"'`<>[](){}=,:;!?|", previous) {
+			return "", false
+		}
+	}
+	opener := text[start:match[0]]
+	if !repositoryBoundary(text, match[1]) {
+		// GFM strike delimiters contain one or two tildes, in matching runs.
+		tildes := len(opener) - len(strings.TrimRight(opener, "~"))
+		if tildes < 1 || tildes > 2 || !strings.HasPrefix(text[match[1]:], strings.Repeat("~", tildes)) ||
+			!repositoryBoundary(text, match[1]+tildes) {
+			return "", false
+		}
+	}
+	repo := strings.TrimRight(strings.ToLower(text[match[2]:match[3]]), ".")
+	underscores := len(opener) - len(strings.TrimRight(opener, "_"))
+	closing := len(repo) - len(strings.TrimRight(repo, "_"))
+	// A slash/query/fragment means the URL continues: in _.../repo_/path_,
+	// the first underscore belongs to the repository, not the closing markup.
+	if underscores > 0 && closing == underscores &&
+		(match[1] == len(text) || !strings.ContainsRune("/?#", rune(text[match[1]]))) {
+		repo = repo[:len(repo)-closing]
+	}
+	return strings.TrimRight(repo, "."), true
 }
 
 func run(args []string, output io.Writer) int {
@@ -212,10 +251,10 @@ func scan(root *os.Root, config configuration, output io.Writer) (int, error) {
 			checked++
 			for line, text := range strings.Split(string(data), "\n") {
 				for _, match := range repositoryURL.FindAllStringSubmatchIndex(text, -1) {
-					if !repositoryBoundary(text, match[1]) {
+					repo, literal := repositoryReference(text, match)
+					if !literal {
 						continue
 					}
-					repo := strings.TrimRight(strings.ToLower(text[match[2]:match[3]]), ".")
 					if !repositories[repo] {
 						repo = strings.TrimSuffix(repo, ".git")
 					}
