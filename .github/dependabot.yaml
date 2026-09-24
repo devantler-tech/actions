@@ -40,3 +40,15 @@ updates:
       default-days: 7
     ignore:
       - dependency-name: "*"
+  # The Go 1.27 generics fixture (.github/tests/govulncheck-generics) is the second
+  # matrix entry of the same self-tests, so it pins the same vulnerable
+  # golang.org/x/text v0.3.0 and is frozen the same way. Without this block,
+  # Dependabot security updates try to "fix" it and fail on every run.
+  - package-ecosystem: gomod
+    directory: /.github/tests/govulncheck-generics
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
