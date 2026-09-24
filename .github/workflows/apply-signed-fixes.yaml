@@ -116,6 +116,10 @@ jobs:
             echo "::error::Could not read head commit ${HEAD_SHA} to check its signature."
             exit 1
           fi
+          if ! jq -e 'type == "object" and (.commit | type == "object") and (.commit.message | type == "string")' <<<"$head_json" >/dev/null; then
+            echo "::error::Head commit ${HEAD_SHA} returned no valid commit message."
+            exit 1
+          fi
           headline="$(jq -r '.commit.message | split("\n")[0]' <<<"$head_json")"
           if [ "$headline" != "${COMMIT_MESSAGE}" ]; then
             echo "Head ${HEAD_SHA} is not this lane's applied-fixes commit; nothing to verify."
@@ -238,6 +242,7 @@ jobs:
           # -uall lists untracked files individually; without it git collapses a new
           # directory into a single "dir/" entry, which is not a file we can encode.
           git status --porcelain -z --no-renames -uall >"$workdir/status"
+          head_oid="$(git rev-parse HEAD)"
 
           while IFS= read -r -d '' entry; do
             entry_status="${entry:0:2}"
@@ -301,9 +306,10 @@ jobs:
             # committing run before it verifies. The replacement run lands here with the
             # work already done — so verify the head rather than exiting blind, or a signing
             # regression escapes unreported.
-            if [ "$(git log -1 --format=%s)" = "${COMMIT_MESSAGE}" ]; then
+            headline="$(git log -1 --format=%s)"
+            if [ "$headline" = "${COMMIT_MESSAGE}" ]; then
               echo "Head is an applied-fixes commit; verifying it here in case the run that created it was cancelled."
-              verify_signed "$(git rev-parse HEAD)"
+              verify_signed "$head_oid"
             fi
             exit 0
           fi
@@ -314,7 +320,7 @@ jobs:
             --arg repo "$REPO" \
             --arg branch "$BRANCH" \
             --arg message "$COMMIT_MESSAGE" \
-            --arg oid "$(git rev-parse HEAD)" \
+            --arg oid "$head_oid" \
             --slurpfile additions "$additions" \
             --slurpfile deletions "$deletions" \
             '{

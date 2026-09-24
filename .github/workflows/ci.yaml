@@ -4917,6 +4917,14 @@ jobs:
         shell: bash
         run: bash .github/tests/test-lint-signed-commit.sh
 
+      - name: 🔏 Exercise applied-fixes signatures and failure handling
+        shell: bash
+        run: bash .github/tests/test-apply-signed-fixes-behavior.sh
+
+      - name: 🔏 Prove signing behavior tests reject lost controls
+        shell: bash
+        run: bash .github/tests/test-apply-signed-fixes-behavior-ablation.sh
+
       # The assertion above matches the createCommitOnBranch CALL by shape, not by spacing:
       # a reformat that splits `createCommitOnBranch(` from `input:` leaves the call intact,
       # and refusing it for whitespace would be a false positive that trains people to
