@@ -38,8 +38,9 @@ var repositoryURL = regexp.MustCompile(`(?i)https?://(?:www\.)?(?:github\.com|ra
 // Check the end of the complete greedy match rather than adding a regex suffix:
 // backtracking at a dot could otherwise turn a distinct name into a prefix match.
 // Percent escapes and unsupported name characters are outside the literal scope.
+// Asterisks delimit Markdown emphasis; underscores remain valid repository bytes.
 func repositoryBoundary(text string, end int) bool {
-	return end == len(text) || strings.ContainsRune(" \t\r\f\v/?#\"'`<>[](),;!|}", rune(text[end]))
+	return end == len(text) || strings.ContainsRune(" \t\r\f\v/?#\"'`<>[](),;!|}*", rune(text[end]))
 }
 
 func run(args []string, output io.Writer) int {
