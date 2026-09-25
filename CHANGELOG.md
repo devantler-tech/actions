@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.3](https://github.com/devantler-tech/actions/compare/v13.10.2...v13.10.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **dependency-review:** only skip same-repository release pull requests ([#1387](https://github.com/devantler-tech/actions/issues/1387)) ([ffc1e24](https://github.com/devantler-tech/actions/commit/ffc1e2403519922e0f3dfd22bea0bd0a5b5d9b62))
+
 ## [13.10.2](https://github.com/devantler-tech/actions/compare/v13.10.1...v13.10.2) (2026-09-25)
 
 
