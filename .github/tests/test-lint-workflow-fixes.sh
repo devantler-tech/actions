@@ -1,21 +1,34 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Match literal GitHub expressions and shell source.
 
 # Run each consumer's actual patch exporter against real Git changes. Workflow edits
 # must remain downloadable without reaching a contents-only signing job, and a mixed
 # patch must stay intact (a rename or related edit cannot be committed in pieces).
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-for workflow in lint validate-go-project; do
-  file="$root/.github/workflows/$workflow.yaml"
-  yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .run' "$file" >"$work/export.sh"
+for workflow in lint:lint validate-go-project:tidy validate-go-project:golangci-lint validate-go-project:lint; do
+  job="${workflow#*:}"
+  file="$root/.github/workflows/${workflow%:*}.yaml"
+  prepare="$(JOB="$job" yq -o=json '.jobs[strenv(JOB)].steps[] | select(.id == "fixes")' "$file")"
+  composite="$(jq -r '.uses // ""' <<< "$prepare")"
+  mode=ordinary
+  if [[ -n "$composite" ]]; then
+    [[ "$composite" == './.devantler-tech-actions/.github/actions/prepare-fixes' ]] || fail 'unknown exporter'
+    action="$root/.github/actions/prepare-fixes/action.yaml"
+    yq -er '.runs.steps[] | select(.id == "prepare") | .run' "$action" >"$work/export.sh"
+    mode="$(jq -r '.with.mode // "ordinary"' <<< "$prepare")"
+    [[ "$(yq -r '.runs.steps[] | select(.id == "prepare") | .working-directory' "$action")" == '${{ github.workspace }}' ]] || fail 'composite must export from repository root'
+  else
+    jq -er '.run' <<< "$prepare" >"$work/export.sh"
+  fi
   for enabled in false true; do
-  for scenario in workflow clean ordinary new-workflow deleted-workflow mixed rename-in rename-out similar-directory nested-workflow binary-only binary-mixed mode-only mode-mixed; do
+  for scenario in workflow clean ordinary untracked new-workflow deleted-workflow mixed rename-in rename-out similar-directory nested-workflow binary-only binary-mixed mode-only mode-mixed; do
     fixture="$work/$workflow-$enabled-$scenario"
     mkdir -p "$fixture/.github/workflows" "$fixture/.github/workflows-extra" "$fixture/nested/.github/workflows" "$fixture/nested/module" "$fixture/../artifacts-$workflow-$enabled-$scenario"
     git -C "$fixture" init -q
@@ -37,6 +50,7 @@ for workflow in lint validate-go-project; do
     case "$scenario" in
       clean) changed=false; manual=false ;;
       ordinary) printf 'formatted\n' >"$fixture/value.txt"; manual=false ;;
+      untracked) printf 'new\n' >"$fixture/nested/new file.txt"; manual=false ;;
       workflow) printf 'formatted\n' >"$fixture/.github/workflows/ci.yaml" ;;
       new-workflow) printf 'new\n' >"$fixture/.github/workflows/new workflow.yml" ;;
       deleted-workflow) rm "$fixture/.github/workflows/ci.yaml" ;;
@@ -61,17 +75,29 @@ for workflow in lint validate-go-project; do
         ;;
     esac
     [[ "$enabled" == true ]] || manual=false
+    [[ "$job" == lint ]] || manual=false
+
+    action_path="$root/.github/actions/prepare-fixes"
+    if [[ -n "$composite" ]]; then
+      action_path="$fixture/.devantler-tech-actions/.github/actions/prepare-fixes"
+      mkdir -p "$action_path"
+      cp "$action" "$action_path/action.yaml"
+    fi
 
     artifacts="$fixture/../artifacts-$workflow-$enabled-$scenario"
     (
       cd "$fixture"
       export FIXES_ARTIFACT=megalinter-fixes-123 RUNNER_TEMP="$artifacts" GITHUB_OUTPUT="$artifacts/outputs"
       export MANUAL_WORKFLOW_FIXES="$enabled"
+      export ACTION_PATH="$action_path" PREPARE_MODE="$mode" GITHUB_WORKSPACE="$fixture"
       bash -euo pipefail "$work/export.sh"
     ) >"$artifacts/log" 2>&1 || fail "$workflow/$scenario exporter failed"
     grep -qxF "changed=$changed" "$artifacts/outputs" || fail "$workflow/$scenario changed output"
-    grep -qxF "manual-required=$manual" "$artifacts/outputs" || fail "$workflow/$scenario manual routing"
+    if [[ "$job" == lint ]]; then
+      grep -qxF "manual-required=$manual" "$artifacts/outputs" || fail "$workflow/$scenario manual routing"
+    fi
     grep -qxF 'artifact-name=megalinter-fixes-123' "$artifacts/outputs" || fail "$workflow/$scenario artifact identity"
+    [[ ! -d "$fixture/.devantler-tech-actions" ]] || fail "$workflow/$scenario leaked its source checkout"
     if [[ "$manual" == true ]]; then
       grep -qF '::warning::' "$artifacts/log" || fail "$workflow/$scenario needs an actionable warning"
       grep -qF 'git apply' "$artifacts/log" || fail "$workflow/$scenario warning must explain recovery"
@@ -102,19 +128,26 @@ for workflow in lint validate-go-project; do
 
   # The job output is the authorization handed to the existing signer. Require an
   # explicit false manual flag so a missing exporter output cannot authorize a commit.
+  if [[ "$job" == lint ]]; then
   output="$(yq -r '.jobs.lint.outputs."fixes-created"' "$file")"
   [[ "$output" == "\${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.manual-required == 'false' }}" ]] ||
     fail "$workflow must withhold workflow patches from the signer"
 
   # Every changed patch, including a manual one, must still use the upload path. The
   # existing contract test covers the Go caller's full opt-in/fork/bot boundary.
-  upload_if="$(yq -r '.jobs.lint.steps[] | select(.uses != null and (.uses | test("^actions/upload-artifact@"))) | .if' "$file")"
+  if [[ -n "$composite" ]]; then
+    upload_if="$(yq -r '.runs.steps[] | select(.uses != null and (.uses | test("^actions/upload-artifact@"))) | .if' "$action")"
+    upload_if="${upload_if//steps.prepare/steps.fixes}"
+  else
+    upload_if="$(yq -r '.jobs.lint.steps[] | select(.uses != null and (.uses | test("^actions/upload-artifact@"))) | .if' "$file")"
+  fi
   [[ "$upload_if" == *"steps.fixes.outputs.changed == 'true'"* && "$upload_if" != *manual-required* ]] ||
     fail "$workflow must retain manual patches for download"
+  fi
 
   # A failed git read must not be mistaken for a clean or signable patch.
   mkdir -p "$work/not-a-repo-$workflow"
-  if (cd "$work/not-a-repo-$workflow" && FIXES_ARTIFACT=x RUNNER_TEMP="$work" GITHUB_OUTPUT="$work/error-output" bash -euo pipefail "$work/export.sh") >/dev/null 2>&1; then
+  if (cd "$work/not-a-repo-$workflow" && ACTION_PATH="$root/.github/actions/prepare-fixes" PREPARE_MODE="$mode" FIXES_ARTIFACT=x RUNNER_TEMP="$work" GITHUB_OUTPUT="$work/error-output" bash -euo pipefail "$work/export.sh") >/dev/null 2>&1; then
     fail "$workflow accepted a Git failure"
   fi
 done
