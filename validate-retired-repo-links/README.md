@@ -63,21 +63,24 @@ Create `.github/retired-repo-links.json` in the consumer repository:
 }
 ```
 
-Paths are exact relative file or directory names. Directories are scanned
-recursively, including hidden files. Glob patterns, absolute paths, parent
-traversal and symlinks are unsupported. Every configured path must exist;
-overlapping paths are scanned only once. Select documentation roots instead of
-the entire checkout to avoid scanning Git internals and dependency directories.
+Paths are exact relative file or directory names; colons are ordinary filename
+characters. Directories are scanned recursively, including hidden files. Glob
+patterns, absolute paths, parent traversal and symlinks are unsupported. Every
+configured path must exist; overlapping paths are scanned only once. Select
+documentation roots instead of the entire checkout to avoid scanning Git
+internals and dependency directories.
 
-Repositories use `owner/repository` names, matched case-insensitively. The check
-recognizes literal HTTP(S) URLs on `github.com`, `www.github.com` and
-`raw.githubusercontent.com`, including file, issue, fragment and clone links.
-Similar names such as `retired-tools` remain distinct. Plain prose, relative
-links, encoded URL components, SSH URLs and other GitHub hosts are outside scope.
-The scheme must start at a text boundary, so `nothttps://...` does not count.
-Paired underscore emphasis and one- or two-tilde strikethrough around a URL are
-recognized. Unpaired underscore repository suffixes remain literal; this scanner
-does not render arbitrary Markdown.
+Repositories use ASCII `owner/repository` names, matched without regard to ASCII
+case. The check recognizes literal HTTP(S) URLs on `github.com`, `www.github.com`
+and `raw.githubusercontent.com`, including file, issue, fragment and clone links.
+Similar names such as `retired-tools` remain distinct, and so do names followed by
+a non-ASCII letter. Plain prose, relative links, encoded URL components, SSH URLs
+and other GitHub hosts are outside scope. The scheme must start at a text
+boundary, so `nothttps://...` does not count; typographic quotes and other
+non-ASCII punctuation count as boundaries. Paired underscore emphasis and one- or
+two-tilde strikethrough around a URL are recognized, nested in either order.
+Unpaired underscore repository suffixes remain literal; this scanner does not
+render arbitrary Markdown.
 
 Exceptions apply only to an exact file and one configured repository, and require
 a nonempty reason. They allow every matching link in that file, so reserve them

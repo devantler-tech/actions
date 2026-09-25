@@ -70,6 +70,15 @@ func TestConsumerLinks(t *testing.T) {
 		{"sentence punctuation blocks", basic, "See https://github.com/example/retired.", 1, "example/retired"},
 		{"colon punctuation blocks", basic, "See https://github.com/example/retired: moved", 1, "example/retired"},
 		{"colon after a distinct name passes", basic, "See https://github.com/example/retired-tools: moved", 0, "checked 1 text file"},
+		{"typographic quotes block", basic, "See “https://github.com/example/retired”", 1, "example/retired"},
+		{"typographic apostrophes block", basic, "the ‘https://github.com/example/retired’ link", 1, "example/retired"},
+		{"typographic quotes around a distinct name pass", basic, "“https://github.com/example/retired-tools”", 0, "checked 1 text file"},
+		{"unicode case folding stays outside scope", `{"version":1,"repositories":["example/retiredk"],"paths":["docs"]}`, "https://github.com/example/retiredK", 0, "checked 1 text file"},
+		{"unicode long s folding stays outside scope", `{"version":1,"repositories":["example/retireds"],"paths":["docs"]}`, "https://github.com/example/retiredſ", 0, "checked 1 text file"},
+		{"non-ASCII repository name blocks", `{"version":1,"repositories":["example/retiredK"],"paths":["docs"]}`, "safe", 2, "owner/repository"},
+		{"underscore around strike blocks", basic, "_~~https://github.com/example/retired~~_", 1, "example/retired"},
+		{"strike around underscore blocks", basic, "~~_https://github.com/example/retired_~~", 1, "example/retired"},
+		{"strike around an underscored distinct name passes", basic, "~~_https://github.com/example/retired_tools_~~", 0, "checked 1 text file"},
 		{"line number is useful", basic, "current\nhttps://github.com/example/retired/issues/1\n", 1, "docs/guide.md:2"},
 		{"plain historical prose passes", basic, "Merged example/retired into example/current", 0, "checked 1 text file"},
 		{"documented exception passes", `{"version":1,"repositories":["example/retired"],"paths":["docs"],"exceptions":[{"path":"docs/guide.md","repository":"example/retired","reason":"Historical migration record"}]}`, "https://github.com/example/retired", 0, "allowed 1"},
@@ -137,6 +146,21 @@ func TestOverlappingPathsDoNotDuplicateFindings(t *testing.T) {
 	var output bytes.Buffer
 	if code := run([]string{"--root", root}, &output); code != 1 || strings.Count(output.String(), "docs/guide.md:1") != 1 {
 		t.Fatalf("exit=%d output=%q", code, output.String())
+	}
+}
+
+// Colons are ordinary filename characters on the supported Linux and macOS runners.
+func TestColonFilenamesAreScanned(t *testing.T) {
+	for _, paths := range []string{`["docs"]`, `["docs/API: v2.md"]`} {
+		t.Run(paths, func(t *testing.T) {
+			root := t.TempDir()
+			writeFixture(t, root, ".github/retired-repo-links.json", `{"version":1,"repositories":["example/retired"],"paths":`+paths+`}`)
+			writeFixture(t, root, "docs/API: v2.md", "https://github.com/example/retired")
+			var output bytes.Buffer
+			if code := run([]string{"--root", root}, &output); code != 1 || !strings.Contains(output.String(), "docs/API: v2.md:1") {
+				t.Fatalf("exit=%d output=%q", code, output.String())
+			}
+		})
 	}
 }
 

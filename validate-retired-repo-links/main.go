@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode"
@@ -33,8 +34,27 @@ type exception struct {
 	Reason     string `json:"reason"`
 }
 
-var repositoryName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*/[a-zA-Z0-9_.-]+$`)
-var repositoryURL = regexp.MustCompile(`(?i)https?://(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)/([a-z0-9-]+/[a-z0-9_.-]+)`)
+var repositoryName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9_.-]+$`)
+
+// The pattern is matched against asciiLower(text), so case folding stays within
+// ASCII: a Unicode letter that folds to one never extends a repository name.
+var repositoryURL = regexp.MustCompile(`https?://(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)/([a-z0-9-]+/[a-z0-9_.-]+)`)
+
+// asciiLower lowercases only ASCII letters, so byte offsets are unchanged.
+func asciiLower(text string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, text)
+}
+
+// Non-ASCII punctuation, such as typographic quotes, ends a URL in prose; GitHub
+// names are ASCII, so it can never be part of one.
+func typographicPunctuation(r rune) bool {
+	return r >= utf8.RuneSelf && unicode.IsPunct(r)
+}
 
 // Check the end of the complete greedy match rather than adding a regex suffix:
 // backtracking at a dot could otherwise turn a distinct name into a prefix match.
@@ -44,7 +64,36 @@ func repositoryBoundary(text string, end int) bool {
 		return true
 	}
 	next, _ := utf8.DecodeRuneInString(text[end:])
-	return unicode.IsSpace(next) || strings.ContainsRune("/?#\"'`<>[](),:;!|}*", next)
+	return unicode.IsSpace(next) || strings.ContainsRune("/?#\"'`<>[](),:;!|}*", next) || typographicPunctuation(next)
+}
+
+// closingMarkup reports how many trailing characters of the captured name belong
+// to the markup that closes opener. Paired markup closes in reverse order, so
+// _~~url~~_ and ~~_url_~~ both pair; a repository name may itself end in
+// underscores, so the closing run can begin inside the greedy capture.
+func closingMarkup(text string, match []int, opener string) (int, bool) {
+	// GFM strike delimiters contain one or two tildes.
+	for _, run := range strings.FieldsFunc(opener, func(r rune) bool { return r != '~' }) {
+		if len(run) > 2 {
+			return 0, false
+		}
+	}
+	closer := []byte(opener)
+	for i, j := 0, len(closer)-1; i < j; i, j = i+1, j-1 {
+		closer[i], closer[j] = closer[j], closer[i]
+	}
+	name := text[match[2]:match[3]]
+	inside := len(closer) - len(bytes.TrimLeft(closer, "_"))
+	if len(closer) > 0 && inside < len(name) && inside <= len(name)-len(strings.TrimRight(name, "_")) &&
+		strings.HasPrefix(text[match[1]-inside:], string(closer)) && repositoryBoundary(text, match[1]-inside+len(closer)) {
+		return inside, true
+	}
+	// Strikethrough may close inside unclosed emphasis: *~~url~~ still pairs its tildes.
+	tildes := len(opener) - len(strings.TrimRight(opener, "~"))
+	if tildes >= 1 && strings.HasPrefix(text[match[1]:], strings.Repeat("~", tildes)) && repositoryBoundary(text, match[1]+tildes) {
+		return 0, true
+	}
+	return 0, false
 }
 
 // repositoryReference checks both ends of a literal URL. Formatting immediately
@@ -57,20 +106,19 @@ func repositoryReference(text string, match []int) (string, bool) {
 	}
 	if start > 0 {
 		previous, _ := utf8.DecodeLastRuneInString(text[:start])
-		if !unicode.IsSpace(previous) && !strings.ContainsRune("\"'`<>[](){}=,:;!?|", previous) {
+		if !unicode.IsSpace(previous) && !strings.ContainsRune("\"'`<>[](){}=,:;!?|", previous) && !typographicPunctuation(previous) {
 			return "", false
 		}
 	}
 	opener := text[start:match[0]]
 	if !repositoryBoundary(text, match[1]) {
-		// GFM strike delimiters contain one or two tildes, in matching runs.
-		tildes := len(opener) - len(strings.TrimRight(opener, "~"))
-		if tildes < 1 || tildes > 2 || !strings.HasPrefix(text[match[1]:], strings.Repeat("~", tildes)) ||
-			!repositoryBoundary(text, match[1]+tildes) {
+		inside, closed := closingMarkup(text, match, opener)
+		if !closed {
 			return "", false
 		}
+		return strings.TrimRight(asciiLower(text[match[2]:match[3]-inside]), "."), true
 	}
-	repo := strings.TrimRight(strings.ToLower(text[match[2]:match[3]]), ".")
+	repo := strings.TrimRight(asciiLower(text[match[2]:match[3]]), ".")
 	underscores := len(opener) - len(strings.TrimRight(opener, "_"))
 	closing := len(repo) - len(strings.TrimRight(repo, "_"))
 	// A slash/query/fragment means the URL continues: in _.../repo_/path_,
@@ -113,8 +161,10 @@ func run(args []string, output io.Writer) int {
 	return 0
 }
 
+// Colons and backslashes are ordinary filename characters on the supported Linux
+// and macOS runners; os.Root confines every read to the consumer root either way.
 func localPath(name string) bool {
-	return fs.ValidPath(name) && !strings.ContainsAny(name, "\\:")
+	return fs.ValidPath(name) && (runtime.GOOS != "windows" || !strings.ContainsAny(name, "\\:"))
 }
 
 // Root confines reads even if a checked-out path changes during validation.
@@ -191,7 +241,7 @@ func loadConfig(root *os.Root, name string) (configuration, error) {
 	}
 	repositories := make(map[string]bool)
 	for i, repo := range config.Repositories {
-		repo = strings.ToLower(repo)
+		repo = asciiLower(repo)
 		if !repositoryName.MatchString(repo) || path.Base(repo) == "." || path.Base(repo) == ".." || repositories[repo] {
 			return config, errors.New("repositories must be unique owner/repository names")
 		}
@@ -206,7 +256,7 @@ func loadConfig(root *os.Root, name string) (configuration, error) {
 		if !localPath(item.Path) || item.Path == "." || strings.TrimSpace(item.Reason) == "" {
 			return config, errors.New("each exception needs an exact relative file path and a nonempty reason")
 		}
-		item.Repository = strings.ToLower(item.Repository)
+		item.Repository = asciiLower(item.Repository)
 		if !repositories[item.Repository] {
 			return config, errors.New("exception repository must be present in repositories")
 		}
@@ -250,7 +300,7 @@ func scan(root *os.Root, config configuration, output io.Writer) (int, error) {
 			}
 			checked++
 			for line, text := range strings.Split(string(data), "\n") {
-				for _, match := range repositoryURL.FindAllStringSubmatchIndex(text, -1) {
+				for _, match := range repositoryURL.FindAllStringSubmatchIndex(asciiLower(text), -1) {
 					repo, literal := repositoryReference(text, match)
 					if !literal {
 						continue
