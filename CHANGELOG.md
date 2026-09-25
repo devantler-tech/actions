@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.2](https://github.com/devantler-tech/actions/compare/v13.10.1...v13.10.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **upsert-issue:** reopen a closed tracking issue instead of duplicating it ([#1380](https://github.com/devantler-tech/actions/issues/1380)) ([e18a278](https://github.com/devantler-tech/actions/commit/e18a2787d625b940f665a7e63e61e9f7f1e3e76c))
+
 ## [13.10.1](https://github.com/devantler-tech/actions/compare/v13.10.0...v13.10.1) (2026-09-25)
 
 
