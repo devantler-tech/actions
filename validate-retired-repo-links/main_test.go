@@ -68,6 +68,8 @@ func TestConsumerLinks(t *testing.T) {
 		{"raw content blocks", basic, "https://raw.githubusercontent.com/example/retired/main/file", 1, "example/retired"},
 		{"clone link blocks", basic, "https://github.com/example/retired.git", 1, "example/retired"},
 		{"sentence punctuation blocks", basic, "See https://github.com/example/retired.", 1, "example/retired"},
+		{"colon punctuation blocks", basic, "See https://github.com/example/retired: moved", 1, "example/retired"},
+		{"colon after a distinct name passes", basic, "See https://github.com/example/retired-tools: moved", 0, "checked 1 text file"},
 		{"line number is useful", basic, "current\nhttps://github.com/example/retired/issues/1\n", 1, "docs/guide.md:2"},
 		{"plain historical prose passes", basic, "Merged example/retired into example/current", 0, "checked 1 text file"},
 		{"documented exception passes", `{"version":1,"repositories":["example/retired"],"paths":["docs"],"exceptions":[{"path":"docs/guide.md","repository":"example/retired","reason":"Historical migration record"}]}`, "https://github.com/example/retired", 0, "allowed 1"},

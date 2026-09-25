@@ -44,7 +44,7 @@ func repositoryBoundary(text string, end int) bool {
 		return true
 	}
 	next, _ := utf8.DecodeRuneInString(text[end:])
-	return unicode.IsSpace(next) || strings.ContainsRune("/?#\"'`<>[](),;!|}*", next)
+	return unicode.IsSpace(next) || strings.ContainsRune("/?#\"'`<>[](),:;!|}*", next)
 }
 
 // repositoryReference checks both ends of a literal URL. Formatting immediately
