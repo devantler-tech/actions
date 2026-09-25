@@ -13,6 +13,130 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-validate-shell-pipelines:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Shell Pipelines (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Accept captured producer output and quoted examples
+        id: clean
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: "true"
+          paths: .github/fixtures/validate-shell-pipelines/good.sh
+      - name: Prepare tracked negative fixtures without executing them
+        shell: bash
+        run: |
+          fixture="$RUNNER_TEMP/shell-pipelines-fixture"
+          mkdir "$fixture"
+          git -C "$fixture" init --quiet
+          cp .github/fixtures/validate-shell-pipelines/unsafe.txt "$fixture/unsafe.sh"
+          cp .github/fixtures/validate-shell-pipelines/malformed.txt "$fixture/malformed.sh"
+          git -C "$fixture" add -- unsafe.sh malformed.sh
+      - name: Reject an unsafe assertion
+        id: unsafe
+        continue-on-error: true
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: "true"
+          working-directory: ${{ runner.temp }}/shell-pipelines-fixture
+          paths: unsafe.sh
+      - name: Reject a malformed script
+        id: malformed
+        continue-on-error: true
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: "true"
+          working-directory: ${{ runner.temp }}/shell-pipelines-fixture
+          paths: malformed.sh
+      - name: Assert action outcomes and output boundaries
+        shell: bash
+        env:
+          CLEAN: ${{ steps.clean.outputs.validated }}
+          UNSAFE: ${{ steps.unsafe.outcome }}
+          MALFORMED: ${{ steps.malformed.outcome }}
+          UNSAFE_VALIDATED: ${{ steps.unsafe.outputs.validated }}
+          MALFORMED_VALIDATED: ${{ steps.malformed.outputs.validated }}
+        run: |
+          test "$CLEAN" = true
+          test "$UNSAFE" = failure
+          test "$MALFORMED" = failure
+          test -z "$UNSAFE_VALIDATED"
+          test -z "$MALFORMED_VALIDATED"
+      - name: Test syntax, Git discovery, exit codes, and real SIGPIPE behavior
+        shell: bash
+        env:
+          GOWORK: "off"
+          GOFLAGS: ""
+          GOTOOLCHAIN: local
+        run: |
+          go -C validate-shell-pipelines test -race -cover ./...
+          go -C validate-shell-pipelines vet ./...
+
+  test-validate-shell-pipelines-disabled:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Test] Validate Shell Pipelines - Disabled and Invalid Input"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Omitted opt-in skips a missing repository
+        id: omitted
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          working-directory: missing-directory
+      - name: Explicit false skips invalid scope
+        id: disabled
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: "false"
+          paths: ../invalid
+      - name: Reject invalid opt-in spelling
+        id: invalid
+        continue-on-error: true
+        # Local syntax remains required by actionlint; migration is tracked in #1234.
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: "yes"
+      - name: Assert disabled and invalid calls never validate
+        shell: bash
+        env:
+          OMITTED: ${{ steps.omitted.outputs.validated }}
+          DISABLED: ${{ steps.disabled.outputs.validated }}
+          INVALID_VALIDATED: ${{ steps.invalid.outputs.validated }}
+          INVALID: ${{ steps.invalid.outcome }}
+        run: |
+          test -z "$OMITTED"
+          test -z "$DISABLED"
+          test -z "$INVALID_VALIDATED"
+          test "$INVALID" = failure
+
   test-validate-naming:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
     name: "[Test] Validate Naming - Enabled (${{ matrix.os }})"
@@ -5080,6 +5204,8 @@ jobs:
     if: ${{ always() }}
     needs:
       - test-validate-naming
+      - test-validate-shell-pipelines
+      - test-validate-shell-pipelines-disabled
       - test-validate-naming-disabled
       - test-validate-naming-rejects
       - test-approve-pr
@@ -5199,6 +5325,8 @@ jobs:
         env:
           JOB_RESULTS: >-
             ${{ needs.test-validate-naming.result }}
+            ${{ needs.test-validate-shell-pipelines.result }}
+            ${{ needs.test-validate-shell-pipelines-disabled.result }}
             ${{ needs.test-validate-naming-disabled.result }}
             ${{ needs.test-validate-naming-rejects.result }}
             ${{ needs.test-approve-pr.result }}

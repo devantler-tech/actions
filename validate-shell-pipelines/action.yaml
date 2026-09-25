@@ -1,0 +1,61 @@
+name: Validate shell pipelines
+description: Find early-exit grep assertions in tracked shell scripts before pipefail can invert their result.
+author: devantler-tech
+inputs:
+  enabled:
+    description: Opt in to the shell pipeline guard. Temporary rollout input tracked in actions issue 1357.
+    required: false
+    default: "false"
+  working-directory:
+    description: Git checkout directory, relative to GITHUB_WORKSPACE or absolute.
+    required: false
+    default: .
+  paths:
+    description: Newline-separated relative tracked files or directories to scan. Each scope must contain shell files.
+    required: false
+    default: .
+outputs:
+  validated:
+    description: The string true after a complete successful scan; empty when disabled or unsuccessful.
+    value: ${{ steps.validate.outputs.validated }}
+runs:
+  using: composite
+  steps:
+    - name: Check opt-in input
+      shell: bash
+      env:
+        ENABLED: ${{ inputs.enabled }}
+      run: |
+        case "$ENABLED" in
+          true) ;;
+          false) echo "Shell pipeline validation is disabled; set enabled to true to opt in." ;;
+          *) echo "::error::enabled must be exactly true or false"; exit 1 ;;
+        esac
+
+    - name: Set up Go for the validator
+      if: ${{ inputs.enabled == 'true' }}
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    - name: Validate shell pipelines
+      if: ${{ inputs.enabled == 'true' }}
+      id: validate
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        SCAN_PATHS: ${{ inputs.paths }}
+        GOWORK: "off"
+        GOFLAGS: ""
+        GOTOOLCHAIN: local
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        temporary=$(mktemp -d "$RUNNER_TEMP/validate-shell-pipelines.XXXXXX")
+        trap 'rm -rf "$temporary"' EXIT
+        bash "$ACTION_PATH/../.scripts/retry.sh" go -C "$ACTION_PATH" mod download
+        go -C "$ACTION_PATH" build -mod=readonly -trimpath -o "$temporary/validate-shell-pipelines" .
+        "$temporary/validate-shell-pipelines" --root "$WORKING_DIRECTORY" --paths "$SCAN_PATHS"
+        echo "validated=true" >> "$GITHUB_OUTPUT"

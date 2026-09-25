@@ -65,6 +65,7 @@ flowchart TD
 | [upload-coverage](upload-coverage/README.md) | Upload a Cobertura coverage report to GitHub Code Quality |
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
 | [validate-naming](validate-naming/README.md) | Opt-in, configurable Kubernetes manifest and machine patch naming validation |
+| [validate-shell-pipelines](validate-shell-pipelines/README.md) | Opt-in detection of early-exit grep assertions that can invert results under pipefail |
 
 ### Distribution
 
