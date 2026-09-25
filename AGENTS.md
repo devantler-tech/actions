@@ -192,6 +192,16 @@ Two App identities exist:
 
 ## Validation Commands
 
+**Shell pipeline assertions:** `lint-shell-pipelines` invokes the shared guard with
+`enabled: true` over the real script directories declared in that CI job's
+`SCAN_PATHS`. Keep new script-owning directories in this scope and extend
+`.github/tests/test-shell-pipeline-adoption.sh` with a representative script.
+The test proves each scope rejects a deliberate regression without executing the
+scanned scripts. Intentionally invalid product fixtures stay in `.github/fixtures`
+and are exercised separately. Repair findings by checking producer completion
+before searching captured output; do not blanket-exempt the repository's scripts.
+The shared action remains default-off for other consumers; #1357 owns that rollout.
+
 **Retired repository links:** `validate-retired-repo-links` is a default-off,
 read-only Go validator with no module dependencies. Keep both flag states, real
 good/bad action fixtures on Linux/macOS, and the required-check wiring covered.

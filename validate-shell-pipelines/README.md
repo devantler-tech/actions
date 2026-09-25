@@ -5,6 +5,13 @@ reading a pipe early. This action is being delivered behind a temporary opt-in;
 consumer validation and retirement of that input are tracked in
 [#1357](https://github.com/devantler-tech/actions/issues/1357).
 
+Actions opts its own required CI into this guard for `.scripts`, `.github/scripts`,
+`.github/tests`, `guard-installed-skill-edits`, and `update-agent-skills`. This
+covers its real helpers and their tests. Deliberately invalid product fixtures
+under `.github/fixtures` belong to the separate positive/negative action tests.
+The adoption regression test reads CI's actual scope and injects a finding into
+a disposable copy from each selected directory; it never executes those scripts.
+
 ## Inputs
 
 | Name | Description | Required | Default |

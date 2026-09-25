@@ -2909,6 +2909,48 @@ jobs:
           fi
           echo "run-dotnet-tests inlined coverage step matches $WRAPPER (uses + input set) ✅"
 
+  lint-shell-pipelines:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    name: "[Lint] Shell Pipeline Assertions"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Real scripts and their tests. Deliberately malformed product fixtures
+      # under .github/fixtures remain covered by their separate negative tests.
+      SCAN_PATHS: |
+        .scripts
+        .github/scripts
+        .github/tests
+        guard-installed-skill-edits
+        update-agent-skills
+    steps:
+      - name: 🛡️ Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📄 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 🔎 Validate the repository's real shell scripts
+        id: pipelines
+        uses: ./validate-shell-pipelines # zizmor: ignore[self-repository]
+        with:
+          enabled: 'true'
+          paths: ${{ env.SCAN_PATHS }}
+
+      - name: ✅ Require completed validation
+        env:
+          VALIDATED: ${{ steps.pipelines.outputs.validated }}
+        run: test "$VALIDATED" = true
+
+      - name: 🧪 Prove the consumer scope catches regressions
+        shell: bash
+        run: bash .github/tests/test-shell-pipeline-adoption.sh
+
   # ── lint-readme-parity ──────────────────────────────────────
   lint-readme-parity:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -5439,6 +5481,7 @@ jobs:
       - test-upsert-issue-missing-body-file
       - test-run-dotnet-tests-missing-working-directory
       - lint-readme-parity
+      - lint-shell-pipelines
       - lint-ci-coverage-parity
       - test-zizmor
       - test-dependency-review-workflow
@@ -5563,6 +5606,7 @@ jobs:
             ${{ needs.test-upsert-issue-missing-body-file.result }}
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.lint-readme-parity.result }}
+            ${{ needs.lint-shell-pipelines.result }}
             ${{ needs.lint-ci-coverage-parity.result }}
             ${{ needs.test-zizmor.result }}
             ${{ needs.test-dependency-review-workflow.result }}

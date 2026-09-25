@@ -17,7 +17,7 @@ if [[ -z "$dir" || ! -d "$dir" ]]; then
   exit 1
 fi
 
-if ! yq --help 2>/dev/null | grep -q -- '--front-matter'; then
+if ! yq_help=$(yq --help 2>/dev/null) || ! grep -q -- '--front-matter' <<< "$yq_help"; then
   echo "::error::mikefarah yq v4 with --front-matter support is required on PATH to mark skills internal."
   exit 1
 fi
