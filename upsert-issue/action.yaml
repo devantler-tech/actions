@@ -63,8 +63,8 @@ runs:
         # the shared .scripts/retry.sh helper (reliability pillar
         # devantler-tech/actions#247). NOTE: `gh issue create` is deliberately NOT
         # wrapped — it is not idempotent, so retrying a partially-succeeded create
-        # would open duplicate issues. Idempotent reads/edits (list/edit/view/close)
-        # are safe; `gh issue reopen` keeps its existing `|| true` best-effort guard.
+        # would open duplicate issues. Idempotent reads/edits (list/edit/view/close/
+        # reopen) are safe: reopening an already-open issue is a no-op success.
         retry() { bash "${GITHUB_ACTION_PATH}/../.scripts/retry.sh" "$@"; }
 
         # Resolve body content
@@ -82,18 +82,18 @@ runs:
         fi
 
         # Search for existing issue by exact title (any state).
-        # Prefer an open issue; fall back to the most recent closed one.
+        # Prefer the newest open issue; fall back to the newest closed one, so a
+        # recurring problem reopens its tracking issue instead of opening a duplicate.
         ISSUES_JSON=$(retry gh issue list \
           --repo "$REPO" \
           --state all \
           --search "in:title \"${TITLE}\"" \
           --json number,title,state)
         ISSUE_NUMBER=$(jq -r --arg title "$TITLE" '
-          [ .[] | select(.title == $title) ] |
-          ([ .[] | select(.state == "OPEN") ] | first // empty) as $open |
-          if $open then $open.number
-          else (last // empty | .number)
-          end
+          [ .[] | select(.title == $title) ] as $matches |
+          ([ $matches[] | select(.state == "OPEN") ] | max_by(.number))
+            // ($matches | max_by(.number))
+          | .number // empty
         ' <<< "$ISSUES_JSON")
 
         if [ "$OPEN" = "true" ]; then
@@ -103,7 +103,16 @@ runs:
             if [ -n "$LABELS" ]; then
               retry gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "$LABELS"
             fi
-            gh issue reopen "$ISSUE_NUMBER" --repo "$REPO" 2>/dev/null || true
+            # Decide on the live state: the title search can still list an issue
+            # as open moments after it was closed. A reopen that keeps failing
+            # fails the step, so a tracked problem is never left hidden.
+            ISSUE_STATE=$(
+              retry gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json state --jq .state
+            )
+            if [ "$ISSUE_STATE" != "OPEN" ]; then
+              echo "Reopening issue #${ISSUE_NUMBER}"
+              retry gh issue reopen "$ISSUE_NUMBER" --repo "$REPO"
+            fi
           else
             echo "Creating new issue"
             CREATE_ARGS=(--repo "$REPO" --title "$TITLE" --body "$BODY")

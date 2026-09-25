@@ -2636,6 +2636,29 @@ jobs:
             exit 1
           fi
 
+  test-upsert-issue-reopen:
+    if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 🔒 Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: 📑 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The live smoke test above cannot make a reopen fail or a search result go stale, so it
+      # cannot show that a closed tracking issue is always reopened or the step fails. This runs
+      # the action's own run block against a stubbed gh for each case (#1375).
+      - name: 🧪 Verify a closed tracking issue is reopened or the step fails
+        shell: bash
+        run: bash .github/tests/test-upsert-issue-reopen.sh
+
   # ── run-dotnet-tests (negative path) ───────────────────────
   test-run-dotnet-tests-missing-working-directory:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
@@ -5437,6 +5460,7 @@ jobs:
       - test-setup-go-toolchain-invalid-version
       - test-upsert-issue-missing-body
       - test-upsert-issue-missing-body-file
+      - test-upsert-issue-reopen
       - test-run-dotnet-tests-missing-working-directory
       - lint-readme-parity
       - lint-ci-coverage-parity
@@ -5561,6 +5585,7 @@ jobs:
             ${{ needs.test-setup-go-toolchain-invalid-version.result }}
             ${{ needs.test-upsert-issue-missing-body.result }}
             ${{ needs.test-upsert-issue-missing-body-file.result }}
+            ${{ needs.test-upsert-issue-reopen.result }}
             ${{ needs.test-run-dotnet-tests-missing-working-directory.result }}
             ${{ needs.lint-readme-parity.result }}
             ${{ needs.lint-ci-coverage-parity.result }}
