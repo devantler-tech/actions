@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.8.0](https://github.com/devantler-tech/actions/compare/v13.7.4...v13.8.0) (2026-09-25)
+
+
+### Features
+
+* **create-release:** warn about lost breaking-change configuration ([#1348](https://github.com/devantler-tech/actions/issues/1348)) ([9289520](https://github.com/devantler-tech/actions/commit/9289520646665fe23d268af94e7f04efad9d9e6a))
+
 ## [13.7.4](https://github.com/devantler-tech/actions/compare/v13.7.3...v13.7.4) (2026-09-24)
 
 
