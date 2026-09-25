@@ -1,0 +1,80 @@
+name: Prepare fixes
+description: Internal patch preparation and upload for credential-free Go fixer jobs
+author: devantler-tech
+inputs:
+  artifact-name:
+    description: Invocation-qualified patch artifact name
+    required: true
+  upload-enabled:
+    description: Caller's audited signed-fixes and pull-request eligibility decision
+    default: 'false'
+  mode:
+    description: ordinary for Go tools, workflow for MegaLinter manual recovery
+    default: ordinary
+  manual-workflow-fixes:
+    description: Preserve workflow edits for manual application, including after lint failure
+    default: 'false'
+outputs:
+  artifact-name:
+    description: Patch artifact name
+    value: ${{ steps.prepare.outputs.artifact-name }}
+  changed:
+    description: Whether the consumer has fixes
+    value: ${{ steps.prepare.outputs.changed }}
+  manual-required:
+    description: Whether the complete patch requires manual application
+    value: ${{ steps.prepare.outputs.manual-required }}
+  upload-enabled:
+    description: Eligibility decision reused by the caller's read-only failure gate
+    value: ${{ inputs.upload-enabled }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare consumer patch
+      id: prepare
+      if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == 'true') }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        FIXES_ARTIFACT: ${{ inputs.artifact-name }}
+        PREPARE_MODE: ${{ inputs.mode }}
+        MANUAL_WORKFLOW_FIXES: ${{ inputs.manual-workflow-fixes }}
+      run: |
+        set -euo pipefail
+        case "$PREPARE_MODE" in ordinary|workflow) ;; *) echo '::error::Unknown fix preparation mode.'; exit 1 ;; esac
+        # Runner has loaded this inline action. Remove only its reserved helper
+        # checkout before Git discovers consumer changes; direct CI calls keep source.
+        source_root="$(cd "$ACTION_PATH/../../.." && pwd -P)"
+        if [ "$source_root" = "$(pwd -P)/.devantler-tech-actions" ]; then
+          rm -rf -- "$source_root"
+        fi
+        echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
+        git add --intent-to-add .
+        if [ "$PREPARE_MODE" = ordinary ] && git diff --quiet HEAD; then
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
+        else
+          git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
+          if [ -s "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch" ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+        fi
+        manual_required=false
+        if [ "$PREPARE_MODE" = workflow ]; then
+          workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
+          if [ "${MANUAL_WORKFLOW_FIXES:-false}" = true ] && [ -n "$workflow_changes" ]; then
+            manual_required=true
+            echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
+          fi
+        fi
+        echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload consumer patch
+      if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == 'true') && inputs.upload-enabled == 'true' && steps.prepare.outputs.changed == 'true' }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ steps.prepare.outputs.artifact-name }}
+        path: ${{ runner.temp }}/${{ steps.prepare.outputs.artifact-name }}.patch
+        if-no-files-found: error

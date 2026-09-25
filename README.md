@@ -66,6 +66,7 @@ flowchart TD
 | [upsert-issue](upsert-issue/README.md) | Create, update, reopen, or close a GitHub issue by title |
 | [validate-naming](validate-naming/README.md) | Opt-in, configurable Kubernetes manifest and machine patch naming validation |
 | [validate-retired-repo-links](validate-retired-repo-links/README.md) | Catch links to retired GitHub repositories with documented historical exceptions |
+| [validate-shell-pipelines](validate-shell-pipelines/README.md) | Opt-in detection of early-exit grep assertions that can invert results under pipefail |
 
 ### Distribution
 
@@ -143,6 +144,16 @@ signature. Actual lint errors still fail the job and prevent signer writes;
 `validate-go-project`'s read-only mode still fails on uncommitted fixes.
 Consumer rollout and flag removal are tracked in [#1186](https://github.com/devantler-tech/actions/issues/1186).
 
+#### Secrets and Inputs
+
+| Key | Type | Default | Required | Description |
+|-----|------|---------|----------|-------------|
+| `artifact-name` | Input (string) | `megalinter-fixes` | No | Uploaded artifact containing one `<artifact-name>.patch` file |
+| `commit-message` | Input (string) | `chore: Apply megalinter fixes` | No | Commit message for the applied patch |
+| `pr-owner` | Input (string) | `""` | No | Pull request author login used to suppress commits to dependency-bot branches |
+| `fixes-created` | Input (boolean) | `true` | No | Whether a patch exists; false skips signing and retains the branch-tip signature check |
+| `APP_PRIVATE_KEY` | Secret | - | For signing | GitHub App private key; paired with the `APP_CLIENT_ID` variable. No unsigned fallback |
+
 ### 🎉 Create Release
 
 <details>
@@ -153,6 +164,12 @@ Consumer rollout and flag removal are tracked in [#1186](https://github.com/deva
 The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App always needs `contents: write` (tags/releases). By default it also needs `issues: write` + `pull-requests: write` for semantic-release success/fail hooks. Set `disable-issue-side-effects: true` to suppress those hooks and mint the token with `contents: write` only.
 
 Release runs for one repository and ref run one at a time, in the order they were queued, and waiting runs are kept (up to GitHub's limit of 100) rather than cancelled. Two merges that land close together therefore produce two sequential release runs instead of racing for the same version. Callers need no `concurrency` block of their own.
+
+Consumers that maintain explicit `type!:` breaking-change handling can set `warn-missing-breaking-bang: true` to catch accidental removal. Before releasing, the workflow warns when an explicitly listed `@semantic-release/commit-analyzer` has no nonempty `parserOpts.breakingHeaderPattern`. The check reads JSON from `.releaserc`, `.releaserc.json`, or the `release` key in `package.json`; it never changes files or blocks a release. The default is off, so consumers that have not adopted this convention get no warning noise.
+
+This is a narrow configuration check, not proof that a commit will produce a major release. Default plugins, shared configurations, custom parser configs, presets (including `conventionalcommits`, which may provide their own handling), non-JSON files, and multiple competing config files are left to semantic-release. The guard does not execute configuration or infer which file wins. When restoring a lost parser setting, also verify that the consumer's release rules select a major version for breaking changes.
+
+Consumer rollout and the decision on removing this temporary flag are tracked in [#1347](https://github.com/devantler-tech/actions/issues/1347).
 
 #### Usage
 
@@ -173,6 +190,7 @@ jobs:
 | `APP_CLIENT_ID`              | Variable        | -       | Yes      | GitHub App client ID used to mint the release token                       |
 | `APP_PRIVATE_KEY`            | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable)         |
 | `disable-issue-side-effects` | Input (boolean) | `false` | No       | Disable success/fail hooks and omit issue/pull-request token permissions  |
+| `warn-missing-breaking-bang` | Input (boolean) | `false` | No       | Warn about missing explicit breaking-header handling in supported JSON configurations |
 | `dry-run`                    | Input (boolean) | `false` | No       | Run semantic-release in dry-run mode (no tags or publishes)               |
 
 </details>
@@ -501,6 +519,7 @@ jobs:
 |---------------|----------------|------------|----------|----------------------------------------------------------------------------|
 | `app-name`    | Input (string) | -          | Yes      | Container name in the deployment manifest to pin to the built image digest |
 | `deploy-path` | Input (string) | `./deploy` | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact    |
+| `dry-run` | Input (boolean) | `false` | No | Skip publication and validate only the workflow interface |
 | `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
@@ -542,6 +561,7 @@ jobs:
 |---------------|----------------|----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `oci-name`    | Input (string) | `${{ github.repository }}` | No       | OCI repository name (`<owner>/<name>`) the artifact is published under, without the registry prefix or trailing `/manifests`. Override for invalid OCI path components |
 | `deploy-path` | Input (string) | `./deploy`           | No       | Path to the Kubernetes manifests directory packaged as the OCI artifact                                                              |
+| `dry-run` | Input (boolean) | `false` | No | Skip publication and validate only the workflow interface |
 | `enable-caller-pin` | Input (boolean) | `false` | No       | Refuse to publish unless the caller pinned this workflow to a 40-character commit SHA. The signing certificate records the calling ref, and the cluster's trust rules verify it, so an unpinned caller lets a superseded revision mint a trusted signature. Opt-in during rollout (devantler-tech/actions#864); every current caller already qualifies |
 
 </details>
@@ -810,6 +830,8 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 | `pr-labels`      | Input (string)  | `dependencies,automation`            | No       | Comma-separated labels for the update PR                               |
 | `commit-message` | Input (string)  | `chore(deps): update agent skills`   | No       | Commit message for the update PR                                       |
 | `dry-run`        | Input (boolean) | `false`                              | No       | Skip update and PR creation (validate workflow interface only)         |
+| `use-app-token` | Input (boolean) | `false` | No | Create the update PR with a GitHub App token so it triggers the caller's CI |
+| `APP_PRIVATE_KEY` | Secret | - | When `use-app-token` is true | GitHub App private key, paired with the `APP_CLIENT_ID` variable |
 
 > **Note:** The calling workflow must grant `contents: write` and `pull-requests: write` permissions.
 

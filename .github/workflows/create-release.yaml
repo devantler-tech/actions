@@ -7,6 +7,11 @@ on:
         required: false
         default: false
         type: boolean
+      warn-missing-breaking-bang:
+        description: "Warn when an explicit JSON commit-analyzer config lacks breaking-header handling"
+        required: false
+        default: false
+        type: boolean
       dry-run:
         description: "Run semantic-release in dry-run mode (no tags, releases, or publishes)"
         required: false
@@ -59,6 +64,57 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+
+      - name: 🔎 Check breaking-change configuration
+        id: breaking-bang-guard
+        if: ${{ inputs.warn-missing-breaking-bang }}
+        continue-on-error: true
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          # Only inspect unambiguous JSON. Never execute config, resolve shared
+          # presets, rewrite files, or turn a diagnostic into a release gate.
+          check_breaking_bang() {
+            local path config='' source='' count=0
+            for path in .releaserc.{yml,yaml,js,cjs,mjs,ts,cts} release.config.{js,cjs,mjs,ts,cts}; do
+              [[ ! -e "$path" ]] || return 0
+            done
+            if [[ -e package.json ]]; then
+              config="$(jq -cse 'select(length == 1) | .[0] | select(type == "object")' package.json 2>/dev/null)" || return 0
+              config="$(jq -c '.release // null' <<<"$config" 2>/dev/null)" || return 0
+              if [[ "$config" != null ]]; then
+                source='package.json'
+                count=$((count + 1))
+              fi
+            fi
+            for path in .releaserc .releaserc.json; do
+              if [[ -e "$path" ]]; then
+                config="$(jq -cse 'select(length == 1) | .[0]' "$path" 2>/dev/null)" || return 0
+                source="$path"
+                count=$((count + 1))
+              fi
+            done
+            # Multiple configs require semantic-release's resolver; guessing its
+            # precedence would create warning noise on an unused file.
+            [[ "$count" == 1 ]] || return 0
+            if jq -e '
+              select(type == "object" and (has("extends") | not)) |
+              . as $root | .plugins | select(type == "array") |
+              any(.[];
+                (if type == "string" then
+                   select(. == "@semantic-release/commit-analyzer") | {}
+                 elif type == "array" and length == 2 then
+                   select(.[0] == "@semantic-release/commit-analyzer") | .[1] | select(type == "object")
+                 else empty end) as $options |
+                ($root + $options) |
+                select((has("preset") or has("config")) | not) |
+                .parserOpts.breakingHeaderPattern | type != "string" or length == 0
+              )
+            ' <<<"$config" >/dev/null 2>&1; then
+              printf '%s\n' "::warning::${source}: @semantic-release/commit-analyzer does not declare parserOpts.breakingHeaderPattern. Restore your type!: breaking-header configuration and verify breaking changes select a major release. This check does not modify configuration or block releases."
+            fi
+          }
+          check_breaking_bang
 
       - name: 🎉 Release
         # GitHub already closes local issues from merge keywords. Disable the

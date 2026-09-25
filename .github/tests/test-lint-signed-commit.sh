@@ -73,7 +73,7 @@ is_signer_ref "$delegated" ||
 #     more than once in one run; a constant name lets a cancelled/replaced invocation race with
 #     another invocation's patch and can make the signer apply the wrong fixes.
 fixes_artifact_env="$(
-  yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .env.FIXES_ARTIFACT // ""' \
+  yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .env.FIXES_ARTIFACT // .with.artifact-name // ""' \
     "$caller_workflow"
 )"
 [[ "$fixes_artifact_env" == "megalinter-fixes-\${{ job.check_run_id }}" ]] ||
@@ -82,6 +82,11 @@ fixes_artifact_env="$(
 fixes_run="$(
   yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .run // ""' "$caller_workflow"
 )"
+exporter=""
+if [[ "$(yq -r '.jobs.lint.steps[] | select(.id == "fixes") | .uses // ""' "$caller_workflow")" == './.devantler-tech-actions/.github/actions/prepare-fixes' ]]; then
+  exporter='.github/actions/prepare-fixes/action.yaml'
+  fixes_run="$(yq -r '.runs.steps[] | select(.id == "prepare") | .run' "$exporter")"
+fi
 grep -qF "echo \"artifact-name=\${FIXES_ARTIFACT}\" >> \"\$GITHUB_OUTPUT\"" <<<"$fixes_run" ||
   fail "${caller_workflow}'s fixes step must export its invocation-unique artifact name"
 grep -qF "\"\${RUNNER_TEMP}/\${FIXES_ARTIFACT}.patch\"" <<<"$fixes_run" ||
@@ -95,6 +100,10 @@ upload_artifact_name="$(
   yq -r '.jobs.lint.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.name // ""' \
     "$caller_workflow"
 )"
+if [[ -n "$exporter" ]]; then
+  upload_artifact_name="$(yq -r '.runs.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.name // ""' "$exporter")"
+  upload_artifact_name="${upload_artifact_name//steps.prepare./steps.fixes.}"
+fi
 [[ "$upload_artifact_name" == "\${{ steps.fixes.outputs.artifact-name }}" ]] ||
   fail "${caller_workflow}'s upload must use the fixes step's artifact-name output"
 
@@ -102,6 +111,10 @@ upload_artifact_path="$(
   yq -r '.jobs.lint.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.path // ""' \
     "$caller_workflow"
 )"
+if [[ -n "$exporter" ]]; then
+  upload_artifact_path="$(yq -r '.runs.steps[] | select((.uses // "") | contains("actions/upload-artifact@")) | .with.path // ""' "$exporter")"
+  upload_artifact_path="${upload_artifact_path//steps.prepare./steps.fixes.}"
+fi
 [[ "$upload_artifact_path" == "\${{ runner.temp }}/\${{ steps.fixes.outputs.artifact-name }}.patch" ]] ||
   fail "${caller_workflow}'s upload path must match the invocation-unique artifact name"
 
@@ -129,6 +142,9 @@ caller_cli_commits="$(
 #     contributors' branches while this guard stayed green.
 #     Read verbs, not the word `git`: the fork gates legitimately run `git status`/`git diff`.
 caller_run_blocks="$(yq -r '[.jobs[].steps[]? | (.run // "")] | join("\n")' "$caller_workflow")"
+if [[ -n "$exporter" ]]; then
+  caller_run_blocks+=$'\n'"$(yq -r '[.runs.steps[]? | (.run // "")] | join("\n")' "$exporter")"
+fi
 #     Match the SUBCOMMAND, not the token right after `git`. Git accepts global options before the
 #     subcommand, and a command may sit inside a substitution, so a pattern requiring `git`
 #     immediately followed by the verb misses `git -C "$GITHUB_WORKSPACE" commit`,
@@ -369,7 +385,7 @@ normalized_runs="$(
 [[ -n "$normalized_runs" ]] ||
   fail "apply-fixes has no run content to pin; this assertion is not reading the job it thinks it is"
 runs_digest="$(printf '%s' "$normalized_runs" | sha256_of)"
-audited_runs_digest="ed563d75b254d92c5e468cfaf7d15aaaa45e3197fd5afe6754ff3cee480b6e35"
+audited_runs_digest="538f1444f76f2882cee0a432aee573b9d01b13d4fb88fb8a97cf61c811f44f6a"
 [[ "$runs_digest" == "$audited_runs_digest" ]] ||
   fail "apply-fixes' run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). Re-read every run block and confirm none invokes anything from the repository AND none writes state (GITHUB_ENV, GITHUB_PATH) that a later step inherits -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"

@@ -1,5 +1,24 @@
 # Changelog
 
+## [13.9.0](https://github.com/devantler-tech/actions/compare/v13.8.0...v13.9.0) (2026-09-25)
+
+
+### Features
+
+* add an opt-in shell pipeline assertion guard ([#1358](https://github.com/devantler-tech/actions/issues/1358)) ([77cb185](https://github.com/devantler-tech/actions/commit/77cb1859e5b5cecfff008d8ded7260f4e04f7cca))
+
+
+### Bug Fixes
+
+* reject unreadable commit state when applying fixes ([#1362](https://github.com/devantler-tech/actions/issues/1362)) ([a84454f](https://github.com/devantler-tech/actions/commit/a84454fb3fa439bea175ff1cf7423b1b6332d84d))
+
+## [13.8.0](https://github.com/devantler-tech/actions/compare/v13.7.4...v13.8.0) (2026-09-25)
+
+
+### Features
+
+* **create-release:** warn about lost breaking-change configuration ([#1348](https://github.com/devantler-tech/actions/issues/1348)) ([9289520](https://github.com/devantler-tech/actions/commit/9289520646665fe23d268af94e7f04efad9d9e6a))
+
 ## [13.7.4](https://github.com/devantler-tech/actions/compare/v13.7.3...v13.7.4) (2026-09-24)
 
 

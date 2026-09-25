@@ -251,32 +251,24 @@ jobs:
 
       # Anchored at the repository ROOT: `git add .` is cwd-scoped and this job's
       # defaults.run.working-directory can be a nested module.
-      - name: 📦 Prepare applied fixes
-        id: fixes
-        working-directory: ${{ github.workspace }}
-        shell: bash
-        env:
-          FIXES_ARTIFACT: tidy-fixes-${{ job.check_run_id }}
-        run: |
-          echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
-          git add --intent-to-add .
-          if git diff --quiet HEAD; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: 📤 Upload applied fixes
-        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: 📥 Checkout fix exporter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: ${{ steps.fixes.outputs.artifact-name }}
-          path: ${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch
-          if-no-files-found: error
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+          sparse-checkout: .github/actions/prepare-fixes
+
+      - name: 📦 Prepare and upload applied fixes
+        id: fixes
+        uses: ./.devantler-tech-actions/.github/actions/prepare-fixes
+        with:
+          artifact-name: tidy-fixes-${{ job.check_run_id }}
+          upload-enabled: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) }}
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.upload-enabled != 'true' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -339,32 +331,24 @@ jobs:
 
       # Anchored at the repository ROOT: `git add .` is cwd-scoped and this job's
       # defaults.run.working-directory can be a nested module.
-      - name: 📦 Prepare applied fixes
-        id: fixes
-        working-directory: ${{ github.workspace }}
-        shell: bash
-        env:
-          FIXES_ARTIFACT: golangci-lint-fixes-${{ job.check_run_id }}
-        run: |
-          echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
-          git add --intent-to-add .
-          if git diff --quiet HEAD; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: 📤 Upload applied fixes
-        if: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: 📥 Checkout fix exporter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: ${{ steps.fixes.outputs.artifact-name }}
-          path: ${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch
-          if-no-files-found: error
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+          sparse-checkout: .github/actions/prepare-fixes
+
+      - name: 📦 Prepare and upload applied fixes
+        id: fixes
+        uses: ./.devantler-tech-actions/.github/actions/prepare-fixes
+        with:
+          artifact-name: golangci-lint-fixes-${{ job.check_run_id }}
+          upload-enabled: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) }}
 
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.upload-enabled != 'true' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
@@ -725,50 +709,28 @@ jobs:
       # defaults.run.working-directory can be a nested module, which would silently drop any
       # untracked fix outside it. `git diff` emits root-relative paths regardless, which is what
       # apply-signed-fixes.yaml applies against.
-      - name: 📦 Prepare applied fixes
+      - name: 📥 Checkout fix exporter
+        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-actions
+          persist-credentials: false
+          sparse-checkout: .github/actions/prepare-fixes
+
+      - name: 📦 Prepare and upload applied fixes
         if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') }}
         id: fixes
-        working-directory: ${{ github.workspace }}
-        shell: bash
-        env:
-          FIXES_ARTIFACT: megalinter-fixes-${{ job.check_run_id }}
-          MANUAL_WORKFLOW_FIXES: ${{ inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true' }}
-        run: |
-          set -euo pipefail
-          echo "artifact-name=${FIXES_ARTIFACT}" >> "$GITHUB_OUTPUT"
-          git add --intent-to-add .
-          git diff --binary --full-index HEAD > "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch"
-          if [ -s "${RUNNER_TEMP}/${FIXES_ARTIFACT}.patch" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-          # The signer has contents permission only. Preserve the complete patch when
-          # workflow edits need manual application; splitting a rename or related changes
-          # could leave the branch with only part of the formatter's result.
-          manual_required=false
-          workflow_changes="$(git diff --name-only --no-renames HEAD -- .github/workflows/)"
-          if [ "${MANUAL_WORKFLOW_FIXES:-false}" = true ] && [ -n "$workflow_changes" ]; then
-            manual_required=true
-            echo "::warning::Linter fixes include workflow files and will not be committed automatically. Run the formatter locally and push, or download ${FIXES_ARTIFACT} if available and run git apply ${FIXES_ARTIFACT}.patch from the repository root, review, and push."
-          fi
-          echo "manual-required=${manual_required}" >> "$GITHUB_OUTPUT"
-
-      - name: 📤 Upload applied fixes
-        if: ${{ !cancelled() && (success() || inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true') && needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) && steps.fixes.outputs.changed == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.devantler-tech-actions/.github/actions/prepare-fixes
         with:
-          name: ${{ steps.fixes.outputs.artifact-name }}
-          path: ${{ runner.temp }}/${{ steps.fixes.outputs.artifact-name }}.patch
-          if-no-files-found: error
+          artifact-name: megalinter-fixes-${{ job.check_run_id }}
+          upload-enabled: ${{ needs.changes.outputs.signed-fixes == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork != true && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) && !contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner) }}
+          mode: workflow
+          manual-workflow-fixes: ${{ inputs.manual-workflow-fixes == true || inputs.manual-workflow-fixes == 'true' }}
 
-      # Fork pull requests get no secrets, so nothing can ever be committed back to them. That
-      # is unchanged by moving the commit to a signed lane, and so is the outcome a contributor
-      # sees: the fixes are applied here and the full diff is printed, so the build fails with
-      # something they can act on locally. Gated on the fork flag directly now that this job no
-      # longer mints a token whose failure used to stand in for it.
       - name: ❌ Fail if uncommitted changes remain (read-only mode)
-        if: ${{ steps.fixes.outputs.changed == 'true' && (needs.changes.outputs.signed-fixes != 'true' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == true || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), github.event.pull_request.user.login) || contains(fromJSON('["dependabot[bot]","dependabot","renovate[bot]","renovatebot","renovate"]'), inputs.pr-owner)) }}
+        if: ${{ steps.fixes.outputs.changed == 'true' && steps.fixes.outputs.upload-enabled != 'true' }}
         shell: bash
         run: |
           if [ -n "$(git status --porcelain)" ]; then
