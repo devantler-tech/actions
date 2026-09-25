@@ -37,7 +37,9 @@ steps:
 Omitted or false `enabled` inputs do not install Go, read configuration or scan
 files. Enabled runs install the Go version from this action's module and build a
 standard-library-only validator from the pinned action revision. The caller's Go
-module and workspace are not used. Linux and macOS runners are supported.
+module and workspace are not used. That Go stays on `PATH` for later steps in the
+same job, so run the action in its own job, or set up your own Go version again
+after it. Linux and macOS runners are supported.
 
 Consumer adoption and removal of the temporary `enabled` flag are tracked in
 [#1350](https://github.com/devantler-tech/actions/issues/1350).
