@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.0](https://github.com/devantler-tech/actions/compare/v13.9.0...v13.10.0) (2026-09-25)
+
+
+### Features
+
+* add an opt-in retired repository link guard ([#1351](https://github.com/devantler-tech/actions/issues/1351)) ([e64bfc0](https://github.com/devantler-tech/actions/commit/e64bfc01ffd0652c7aff6a2c90f271023c544c76))
+
 ## [13.9.0](https://github.com/devantler-tech/actions/compare/v13.8.0...v13.9.0) (2026-09-25)
 
 
