@@ -1,8 +1,8 @@
 # DevantlerTech GitHub Actions & Reusable Workflows 🚀
 
-> **This catalogue now lives in [devantler-tech/.github](https://github.com/devantler-tech/.github).** New work and releases happen there. Reference `devantler-tech/.github/actions/<action>@<sha>` and `devantler-tech/.github/.github/workflows/<file>@<sha>`. This repository only takes urgent fixes for consumers that have not been repointed yet, and is archived once nothing references it ([devantler-tech/.github#240](https://github.com/devantler-tech/.github/issues/240)).
+> **This catalogue now lives in [devantler-tech/.github](https://github.com/devantler-tech/.github).** New work and releases happen there. Reference `devantler-tech/.github/actions/<action>@<sha>` and `devantler-tech/.github/.github/workflows/<file>@<sha>`. This repository only takes urgent fixes for consumers that have not been repointed yet, each linking its `devantler-tech/.github` counterpart, and is archived once nothing references it ([devantler-tech/.github#240](https://github.com/devantler-tech/.github/issues/240)).
 
-The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`; that repo is being retired and will be archived once all consumers migrate their `uses:` pins here.)
+The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`, which is archived.)
 
 ## Using them
 

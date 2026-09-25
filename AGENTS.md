@@ -2,7 +2,7 @@
 
 > **Frozen: this catalogue now lives in [devantler-tech/.github](https://github.com/devantler-tech/.github).** Do new work there. A change here is only an urgent fix for consumers that have not been repointed yet, and it must link its `devantler-tech/.github` counterpart ([devantler-tech/.github#236](https://github.com/devantler-tech/.github/issues/236)).
 
-Composite GitHub Actions **and** reusable `workflow_call` workflows — the shared CI/CD building blocks used across all DevantlerTech projects. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`; that repo is being retired and will be archived once all consumers migrate their `uses:` pins here, so do new shared-CI work in this repo — not in `reusable-workflows`.)
+Composite GitHub Actions **and** reusable `workflow_call` workflows — the shared CI/CD building blocks used across all DevantlerTech projects. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`, which is archived.)
 
 This file is the single canonical instructions file for the repository. It is read natively by GitHub Copilot, and by Cursor, Codex, and Claude (via `CLAUDE.md` → `@AGENTS.md`).
 
