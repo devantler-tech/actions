@@ -369,7 +369,7 @@ normalized_runs="$(
 [[ -n "$normalized_runs" ]] ||
   fail "apply-fixes has no run content to pin; this assertion is not reading the job it thinks it is"
 runs_digest="$(printf '%s' "$normalized_runs" | sha256_of)"
-audited_runs_digest="ed563d75b254d92c5e468cfaf7d15aaaa45e3197fd5afe6754ff3cee480b6e35"
+audited_runs_digest="538f1444f76f2882cee0a432aee573b9d01b13d4fb88fb8a97cf61c811f44f6a"
 [[ "$runs_digest" == "$audited_runs_digest" ]] ||
   fail "apply-fixes' run blocks changed (found ${runs_digest}, audited ${audited_runs_digest}). Re-read every run block and confirm none invokes anything from the repository AND none writes state (GITHUB_ENV, GITHUB_PATH) that a later step inherits -- then set audited_runs_digest to the value above. Comment-only and whitespace-only edits do not reach here."
 echo "PASS: applied linter fixes are delegated to the signing commit API, and the signature is proven at runtime"
