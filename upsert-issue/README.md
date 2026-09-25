@@ -2,6 +2,8 @@
 
 Create, update, reopen, or close a GitHub issue by title. Finds an existing issue with the same title and updates it, or creates a new one. Supports controlling the issue state (`open` / `closed`) to manage issue lifecycle — e.g., auto-closing when a report has no violations and reopening when violations recur.
 
+When several issues share the title, the newest open one is used, otherwise the newest closed one. With `open: "true"`, a closed match is reopened rather than duplicated, and the step fails if the reopen keeps failing, so a tracked problem is never left hidden behind a closed issue.
+
 ## Inputs
 
 | Name | Description | Required | Default |
