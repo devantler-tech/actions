@@ -62,8 +62,10 @@ jobs:
     # reusable workflow safe to wire into a push-triggered CI without breaking it.
     # Also skip release-please PRs (head branch `release-please--*`): they only bump versions +
     # the changelog (no dependency changes to review). A skipped run still
-    # satisfies the required-workflow rule (skipped → green).
-    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !startsWith(github.head_ref, 'release-please--') }}
+    # satisfies the required-workflow rule (skipped → green), and a branch name is chosen by
+    # whoever opens the pull request, so the skip also requires a head branch in this
+    # repository: a fork pull request is always reviewed (devantler-tech/.github#264).
+    if: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !(startsWith(github.head_ref, 'release-please--') && github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       contents: read # read the dependency graph / diff base..head
     steps:

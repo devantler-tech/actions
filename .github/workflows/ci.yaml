@@ -3119,6 +3119,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-zizmor-routing.sh
 
+      - name: 🛡️ Check dependency review only skips same-repository release pull requests
+        shell: bash
+        run: bash .github/tests/test-dependency-review-release-exemption.sh
+
       - name: 🔒 Check publish workflows require a SHA-pinned caller
         shell: bash
         run: bash .github/tests/test-publish-caller-pin.sh
