@@ -20,6 +20,40 @@ command -v yq >/dev/null 2>&1 || fail "yq is required to run this test"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
+# A supported yq may print much more help than a pipe buffer. Its capability
+# probe must finish reading the producer, and must still reject a failed producer
+# even when its partial output already contains the capability name.
+mkdir -p "$work/help-bin" "$work/empty"
+cat > "$work/help-bin/yq" <<'YQ'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != --help ]]; then exec "$REAL_YQ" "$@"; fi
+case "$HELP_CASE" in
+  short) printf '%s\n' '--front-matter' ;;
+  long)
+    printf '%s\n' '--front-matter'
+    for ((i=0; i<4096; i++)); do printf '%1024s\n' ''; done
+    ;;
+  missing) printf '%s\n' 'unrelated help' ;;
+  failed) printf '%s\n' '--front-matter'; exit 42 ;;
+esac
+YQ
+chmod +x "$work/help-bin/yq"
+real_yq=$(command -v yq)
+for help_case in short long missing failed; do
+  rc=0
+  PATH="$work/help-bin:$PATH" REAL_YQ="$real_yq" HELP_CASE="$help_case" \
+    bash "$script" "$work/empty" > "$work/help-$help_case.log" 2>&1 || rc=$?
+  case "$help_case" in
+    short|long) [[ "$rc" == 0 ]] || fail "$help_case successful yq help was rejected" ;;
+    missing|failed)
+      [[ "$rc" != 0 ]] || fail "$help_case yq help was accepted"
+      grep -qF 'yq v4 with --front-matter support is required' "$work/help-$help_case.log" ||
+        fail "$help_case yq help failed for an unrelated reason"
+      ;;
+  esac
+done
+
 body_of() { awk 'n>=2{print} /^---$/{n++}' "$1"; }
 internal_of() { yq --front-matter=extract '.metadata.internal' "$1"; }
 
@@ -134,7 +168,9 @@ workflow="$repo_root/.github/workflows/update-agent-skills.yaml"
   fail "action input mark-internal must default to \"false\""
 [[ "$(yq -r '.runs.steps[] | select(.id == "update") | .env.INPUT_MARK_INTERNAL' "$action")" == '${{ inputs.mark-internal }}' ]] ||
   fail "action update step must receive mark-internal as INPUT_MARK_INTERNAL"
-yq -r '.runs.steps[] | select(.id == "update") | .run' "$action" | grep -qF '${GITHUB_ACTION_PATH}/mark-internal.sh' ||
+update_run=$(yq -r '.runs.steps[] | select(.id == "update") | .run' "$action") ||
+  fail "cannot read the action update step"
+grep -qF '${GITHUB_ACTION_PATH}/mark-internal.sh' <<< "$update_run" ||
   fail "action update step must invoke mark-internal.sh"
 
 [[ "$(yq -r '.on.workflow_call.inputs."mark-internal".type' "$workflow")" == "boolean" ]] ||

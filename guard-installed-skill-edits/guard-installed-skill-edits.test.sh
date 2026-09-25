@@ -209,8 +209,8 @@ if out="$(CHANGED_PATHS=".agents/skills/ways-of-working/SKILL.md"$'\n' run_guard
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "synced skill edit: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "fix it there, not here" || fail "missing failure message"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "missing upstream"
+  grep -q "fix it there, not here" <<< "${out}" || fail "missing failure message"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "missing upstream"
 fi
 pass "synced skill edit is refused with upstream"
 
@@ -228,7 +228,7 @@ if out="$(CHANGED_PATHS=".agents/skills/spoof/SKILL.md"$'\n' run_guard 2>&1)"; t
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "HEAD-spoof: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "evil/spoof" || fail "should name BASE upstream"
+  grep -q "evil/spoof" <<< "${out}" || fail "should name BASE upstream"
 fi
 pass "provenance is read at BASE"
 
@@ -471,7 +471,7 @@ if out="$(CHANGED_PATHS=".agents/skills/crlf/SKILL.md"$'\n' run_guard 2>&1)"; th
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "CRLF SKILL.md: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "CRLF: upstream should be named cleanly"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "CRLF: upstream should be named cleanly"
 fi
 pass "a CRLF SKILL.md still yields provenance"
 
@@ -503,7 +503,7 @@ if out="$(CHANGED_PATHS=".agents/skills/commented2/SKILL.md"$'\n' run_guard 2>&1
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "deep comment in metadata: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "deep comment: upstream should be named"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "deep comment: upstream should be named"
 fi
 pass "an indented comment does not fix the metadata child level"
 
@@ -532,7 +532,7 @@ if out="$(CHANGED_PATHS=".agents/skills/commented0/SKILL.md"$'\n' run_guard 2>&1
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "column-zero comment in metadata: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "column-zero comment: upstream should be named"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "column-zero comment: upstream should be named"
 fi
 pass "a column-zero comment does not close the metadata mapping"
 
@@ -578,7 +578,7 @@ if out="$(SKILL_ROOT=".agents/skills" BASE_SHA="b" HEAD_SHA="h" run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 2 ] || fail "no work tree: rc=${rc} want=2"
-  printf '%s' "${out}" | grep -q "not inside a git work tree" || fail "no work tree: should say why"
+  grep -q "not inside a git work tree" <<< "${out}" || fail "no work tree: should say why"
 fi
 rm -f "${FAKE_GIT_STORE}/not_worktree"
 pass "a missing work tree is UNKNOWN, not a clean pass"
@@ -612,7 +612,7 @@ if out="$(SKILL_ROOT="." CHANGED_PATHS="synced/SKILL.md"$'\n' run_guard 2>&1)"; 
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "control root mode: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "control root mode: should name upstream"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "control root mode: should name upstream"
 fi
 pass "control: root mode still refuses a synced skill"
 
@@ -641,7 +641,7 @@ export FAKE_GIT_STORE="${tmp}/objects28"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 rm -rf "${tmp}/.agents"
 if out="$(run_guard 2>&1)"; then
-  printf '%s' "${out}" | grep -q "nothing to check" || fail "control: should say nothing to check"
+  grep -q "nothing to check" <<< "${out}" || fail "control: should say nothing to check"
 else
   rc=$?
   fail "control: a root absent from both trees should no-op: rc=${rc} want=0"
@@ -658,7 +658,7 @@ if out="$(CHANGED_PATHS=".agents/skills/flow/SKILL.md"$'\n' run_guard 2>&1)"; th
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "flow-style metadata: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -q "devantler-tech/agent-skills" || fail "flow-style: should name upstream"
+  grep -q "devantler-tech/agent-skills" <<< "${out}" || fail "flow-style: should name upstream"
 fi
 pass "flow-style metadata.github-repo is provenance"
 
@@ -693,7 +693,7 @@ if out="$(CHANGED_PATHS=".agents/skills/flowopen/SKILL.md"$'\n' run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "multi-line flow mapping: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "multi-line flow mapping: should name the upstream"
 fi
 pass "a flow mapping spanning lines is read, and its provenance refused"
@@ -707,7 +707,7 @@ if out="$(CHANGED_PATHS=".agents/skills/anchored/SKILL.md"$'\n' run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "anchored metadata: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "anchored metadata: should name the upstream"
 fi
 pass "an anchored metadata mapping is resolved, and its provenance refused"
@@ -725,7 +725,7 @@ if out="$(CHANGED_PATHS=".agents/skills/anything/SKILL.md"$'\n' run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 2 ] || fail "unreadable base commit: rc=${rc} want=2"
-  printf '%s' "${out}" | grep -q "not present in this clone" || fail "unreadable base commit: should say why"
+  grep -q "not present in this clone" <<< "${out}" || fail "unreadable base commit: should say why"
 fi
 rm -f "${FAKE_GIT_STORE}/unreadable_commits"
 pass "an unreadable commit is UNKNOWN, not an absent skill root"
@@ -737,7 +737,7 @@ export FAKE_GIT_STORE="${tmp}/objects35"
 mkdir -p "${FAKE_GIT_STORE}/show" "${FAKE_GIT_STORE}/lstree"
 rm -rf "${tmp}/.agents"
 if out="$(run_guard 2>&1)"; then
-  printf '%s' "${out}" | grep -q "nothing to check" || fail "control 24b: should say nothing to check"
+  grep -q "nothing to check" <<< "${out}" || fail "control 24b: should say nothing to check"
 else
   rc=$?
   fail "control 24b: readable commits with no root should no-op: rc=${rc} want=0"
@@ -757,7 +757,7 @@ if out="$(CHANGED_PATHS=".agents/skills/dquoted/SKILL.md"$'\n' run_guard 2>&1)";
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "double-quoted provenance key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "double-quoted provenance key: should name the upstream"
 fi
 pass "a double-quoted provenance key is READ and refused, naming the upstream"
@@ -770,7 +770,7 @@ if out="$(CHANGED_PATHS=".agents/skills/squoted/SKILL.md"$'\n' run_guard 2>&1)";
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "single-quoted provenance key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "single-quoted provenance key: should name the upstream"
 fi
 pass "a single-quoted provenance key is READ and refused, naming the upstream"
@@ -805,7 +805,7 @@ if out="$(run_guard 2>&1)"; then
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "newline in path: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "newline in path: should name the upstream"
 fi
 rm -f "${FAKE_GIT_STORE}/diff_out"
@@ -841,7 +841,7 @@ if out="$(CHANGED_PATHS=".agents/skills/flowquoted/SKILL.md"$'\n' run_guard 2>&1
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "quoted flow key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "quoted flow key: should name the upstream"
 fi
 pass "a quoted key in a flow mapping is READ and refused, naming the upstream"
@@ -880,7 +880,7 @@ if out="$(CHANGED_PATHS=".agents/skills/spacedparent/SKILL.md"$'\n' run_guard 2>
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "spaced parent key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "spaced parent key: should name the upstream"
 fi
 pass "a whitespace-before-colon parent key is read, not ignored"
@@ -893,7 +893,7 @@ if out="$(CHANGED_PATHS=".agents/skills/quotedparent/SKILL.md"$'\n' run_guard 2>
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "quoted parent key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "quoted parent key: should name the upstream"
 fi
 pass "a quoted parent key is read, not ignored"
@@ -908,7 +908,7 @@ if out="$(CHANGED_PATHS=".agents/skills/spacedchild/SKILL.md"$'\n' run_guard 2>&
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "spaced child key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "spaced child key: should name the upstream"
 fi
 pass "a whitespace-before-colon child key is read, not treated as another key"
@@ -946,7 +946,7 @@ if out="$(CHANGED_PATHS=".agents/skills/escaped/SKILL.md"$'\n' run_guard 2>&1)";
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "escaped key: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "escaped key: should name the upstream"
 fi
 pass "an escaped quoted key is decoded, and its provenance refused"
@@ -987,7 +987,7 @@ if out="$(CHANGED_PATHS=".agents/skills/fragment/SKILL.md"$'\n' run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "fragment URL: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "agent-skills#frag" \
+  grep -qF -- "agent-skills#frag" <<< "${out}" \
     || fail "fragment URL: the fragment must survive the comment strip"
 fi
 pass "control: a '#' fragment inside a URL survives the comment strip"
@@ -1022,7 +1022,7 @@ if out="$(CHANGED_PATHS=".agents/skills/flowfind/SKILL.md"$'\n' run_guard 2>&1)"
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "flow find past comma: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "flow find past comma: should name the upstream"
 fi
 pass "control: provenance is still found in an entry after a comma-bearing one"
@@ -1071,7 +1071,7 @@ if out="$(CHANGED_PATHS=".agents/skills/anchorparent/SKILL.md"$'\n' run_guard 2>
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "control 32c: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "control 32c: should name the upstream"
 fi
 pass "control: an anchored metadata parent is resolved, not swallowed by the null carve-out"
@@ -1096,7 +1096,7 @@ if out="$(CHANGED_PATHS=".agents/skills/merged/SKILL.md"$'\n' run_guard 2>&1)"; 
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "merge alias: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "merge alias: should name the upstream"
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" || fail "merge alias: should name the upstream"
 fi
 pass "a merge alias is resolved, and its provenance refused"
 
@@ -1129,7 +1129,7 @@ if out="$(CHANGED_PATHS=".agents/skills/multiline/SKILL.md"$'\n' run_guard 2>&1)
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "multiline value: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "multiline value: should name the upstream"
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" || fail "multiline value: should name the upstream"
 fi
 pass "a provenance value on the following line is read, and refused"
 
@@ -1143,7 +1143,7 @@ if out="$(CHANGED_PATHS=".agents/skills/indentedroot/SKILL.md"$'\n' run_guard 2>
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "indented root: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" || fail "indented root: should name the upstream"
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" || fail "indented root: should name the upstream"
 fi
 pass "an indented root mapping is still the root"
 
@@ -1191,7 +1191,7 @@ if out="$(CHANGED_PATHS=".agents/skills/noyq/SKILL.md"$'\n' run_guard 2>&1)"; th
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "control 38 discrimination: with yq present rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "control 38 discrimination: should name the upstream when the parser is present"
 fi
 pass "control: an unavailable YAML parser is UNKNOWN, never local"
@@ -1269,7 +1269,7 @@ if out="$(run_guard 2>&1)"; then
 else
   rc=$?
   [ "${rc}" -eq 1 ] || fail "trailing-newline skill name: rc=${rc} want=1"
-  printf '%s' "${out}" | grep -qF -- "devantler-tech/agent-skills" \
+  grep -qF -- "devantler-tech/agent-skills" <<< "${out}" \
     || fail "trailing-newline skill name: should name the upstream"
 fi
 rm -f "${FAKE_GIT_STORE}/diff_out"
