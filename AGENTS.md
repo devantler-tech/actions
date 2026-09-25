@@ -136,6 +136,14 @@ guard rejects missing invocations and ignores step names, printed commands, here
 functions. Helper scripts use names without the
 `test-` prefix and are invoked by a tested entrypoint instead of needing an exemption list.
 
+`lint-readme-parity` also checks every reusable workflow's declared inputs and secrets against
+its own level-three section in the root README. Link that section to the workflow file and put
+each name in a `Secrets and Inputs`, `Inputs`, or `Secrets` table. Prose, fenced examples,
+HTML comments, and another workflow's table do not count. Internal reusable workflows are
+included. Run `bash .scripts/check-workflow-readme.sh` locally; its behavioral regressions live in
+`.github/tests/test-workflow-readme-parity.sh`. This checks documentation presence and input/secret
+classification; default values, descriptions, outputs, and reverse parity remain review concerns.
+
 ### Shipping a new capability behind an opt-in flag (feature-flag-first)
 
 **Release configuration warning:** `create-release.yaml` keeps `warn-missing-breaking-bang` off by default. Its inline reader inspects only unambiguous JSON without executing configuration or modifying files. `.github/tests/test-create-release-breaking-bang.sh` runs that exact reader against warning and silent fixtures and verifies the non-blocking opt-in boundary. Hosted dry-runs instantiate both flag states. Consumer rollout and flag retirement remain in #1347; a present header pattern is not proof that release rules produce a major version.
