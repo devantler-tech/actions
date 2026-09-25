@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.1](https://github.com/devantler-tech/actions/compare/v13.10.0...v13.10.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* enforce safe shell assertions in Actions CI ([#1381](https://github.com/devantler-tech/actions/issues/1381)) ([20b81e9](https://github.com/devantler-tech/actions/commit/20b81e94bdffe46a8404afbe11813a15f330ae45))
+
 ## [13.10.0](https://github.com/devantler-tech/actions/compare/v13.9.0...v13.10.0) (2026-09-25)
 
 
