@@ -153,6 +153,12 @@ The release is published with a GitHub App token, so the caller must set the `AP
 
 Release runs for one repository and ref run one at a time, in the order they were queued, and waiting runs are kept (up to GitHub's limit of 100) rather than cancelled. Two merges that land close together therefore produce two sequential release runs instead of racing for the same version. Callers need no `concurrency` block of their own.
 
+Consumers that maintain explicit `type!:` breaking-change handling can set `warn-missing-breaking-bang: true` to catch accidental removal. Before releasing, the workflow warns when an explicitly listed `@semantic-release/commit-analyzer` has no nonempty `parserOpts.breakingHeaderPattern`. The check reads JSON from `.releaserc`, `.releaserc.json`, or the `release` key in `package.json`; it never changes files or blocks a release. The default is off, so consumers that have not adopted this convention get no warning noise.
+
+This is a narrow configuration check, not proof that a commit will produce a major release. Default plugins, shared configurations, custom parser configs, presets (including `conventionalcommits`, which may provide their own handling), non-JSON files, and multiple competing config files are left to semantic-release. The guard does not execute configuration or infer which file wins. When restoring a lost parser setting, also verify that the consumer's release rules select a major version for breaking changes.
+
+Consumer rollout and the decision on removing this temporary flag are tracked in [#1347](https://github.com/devantler-tech/actions/issues/1347).
+
 #### Usage
 
 ```yaml
@@ -172,6 +178,7 @@ jobs:
 | `APP_CLIENT_ID`              | Variable        | -       | Yes      | GitHub App client ID used to mint the release token                       |
 | `APP_PRIVATE_KEY`            | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable)         |
 | `disable-issue-side-effects` | Input (boolean) | `false` | No       | Disable success/fail hooks and omit issue/pull-request token permissions  |
+| `warn-missing-breaking-bang` | Input (boolean) | `false` | No       | Warn about missing explicit breaking-header handling in supported JSON configurations |
 | `dry-run`                    | Input (boolean) | `false` | No       | Run semantic-release in dry-run mode (no tags or publishes)               |
 
 </details>
