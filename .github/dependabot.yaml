@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    # Frozen (devantler-tech/.github#236): no version-update pull requests. Security updates
+    # are unaffected by this limit and keep arriving until the repository is archived.
+    open-pull-requests-limit: 0
     schedule:
       interval: daily
     cooldown:
