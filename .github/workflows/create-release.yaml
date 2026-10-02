@@ -65,6 +65,62 @@ jobs:
         with:
           node-version: 22
 
+      - name: 📦 Align npm with consumer contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f package.json ]] || exit 0
+
+          set +e
+          npm_requirement="$(
+            jq -er '
+              [
+                (.packageManager? | strings | select(startswith("npm@")) | ltrimstr("npm@")),
+                (
+                  .devEngines.packageManager?
+                  | if type == "array" then .[] else . end
+                  | select(type == "object" and .name == "npm")
+                  | .version?
+                  | strings
+                )
+              ]
+              | unique
+              | if length == 0 then empty
+                elif length == 1 then .[0]
+                else error("contradictory npm package-manager contracts")
+                end
+            ' package.json
+          )"
+          jq_status=$?
+          set -e
+          if (( jq_status == 4 )); then
+            exit 0
+          elif (( jq_status != 0 )); then
+            echo '::error::package.json contains an unreadable or contradictory npm contract.' >&2
+            exit 1
+          fi
+
+          npm_range='^[[:space:]]*[\^~<>=]*[[:space:]]*([1-9][0-9]*)(\.[0-9xX*]+){0,2}([[:space:]]+[<>=~^]*[[:space:]]*[0-9]+(\.[0-9xX*]+){0,2})?[[:space:]]*$'
+          if [[ ! "$npm_requirement" =~ $npm_range ]]; then
+            echo "::error::Unsupported npm version requirement '$npm_requirement'; declare one numeric major or bounded range." >&2
+            exit 1
+          fi
+          npm_major="${BASH_REMATCH[1]}"
+
+          current_npm="$(npm --version)"
+          if [[ "${current_npm%%.*}" == "$npm_major" ]]; then
+            exit 0
+          fi
+
+          cd "$RUNNER_TEMP"
+          npm install --global "npm@$npm_major"
+          cd "$GITHUB_WORKSPACE"
+          installed_npm="$(npm --version)"
+          if [[ "${installed_npm%%.*}" != "$npm_major" ]]; then
+            echo "::error::npm $npm_major was requested, but npm $installed_npm is active." >&2
+            exit 1
+          fi
+
       - name: 🔎 Check breaking-change configuration
         id: breaking-bang-guard
         if: ${{ inputs.warn-missing-breaking-bang }}
