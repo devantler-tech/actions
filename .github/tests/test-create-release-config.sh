@@ -67,8 +67,12 @@ if [[ "$#" == 1 && "$1" == "--version" ]]; then
   cat "$RUNNER_TEMP/npm-version"
   exit 0
 fi
-if [[ "$#" == 3 && "$1" == "install" && "$2" == "--global" && "$3" == "npm@11" ]]; then
-  printf '%s\n' '11.6.2' > "$RUNNER_TEMP/npm-version"
+if [[ "$#" == 3 && "$1" == "install" && "$2" == "--global" ]]; then
+  case "$3" in
+    npm@11) printf '%s\n' '11.6.2' > "$RUNNER_TEMP/npm-version" ;;
+    npm@11.2.0) printf '%s\n' '11.2.0' > "$RUNNER_TEMP/npm-version" ;;
+    *) exit 1 ;;
+  esac
   printf '%s\n' "$3" >> "$RUNNER_TEMP/npm-installs"
   exit 0
 fi
@@ -98,6 +102,40 @@ printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
 )
 if [[ "$(cat "$tmp_dir/runner/npm-installs")" != "npm@11" ]]; then
   echo "create-release must install the npm major required by devEngines" >&2
+  exit 1
+fi
+
+rm -f "$tmp_dir/runner/npm-installs"
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "packageManager": "npm@11.2.0",
+  "devEngines": {"packageManager":{"name":"npm","version":"^11.0.0"}}
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ "$(cat "$tmp_dir/runner/npm-installs")" != "npm@11.2.0" ]]; then
+  echo "create-release must resolve compatible packageManager and devEngines declarations" >&2
+  exit 1
+fi
+
+rm -f "$tmp_dir/runner/npm-installs"
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {"packageManager":{"name":"npm","version":"11.2.0"}}
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+if (
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+); then
+  echo "create-release must reject a narrow npm requirement it cannot enforce exactly" >&2
   exit 1
 fi
 

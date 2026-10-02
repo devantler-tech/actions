@@ -71,53 +71,99 @@ jobs:
           set -euo pipefail
           [[ -f package.json ]] || exit 0
 
-          set +e
-          npm_requirement="$(
-            jq -er '
-              [
-                (.packageManager? | strings | select(startswith("npm@")) | ltrimstr("npm@")),
-                (
+          if ! npm_contract="$(
+            jq -ce '
+              {
+                packageManager: (
+                  .packageManager?
+                  | if type == "string" and startswith("npm@")
+                    then ltrimstr("npm@")
+                    else null
+                    end
+                ),
+                devEngines: ([
                   .devEngines.packageManager?
                   | if type == "array" then .[] else . end
                   | select(type == "object" and .name == "npm")
-                  | .version?
-                  | strings
-                )
-              ]
-              | unique
-              | if length == 0 then empty
-                elif length == 1 then .[0]
-                else error("contradictory npm package-manager contracts")
-                end
+                  | if (.version? | type) == "string"
+                    then .version
+                    else error("npm devEngines entries require a version")
+                    end
+                ])
+              }
             ' package.json
-          )"
-          jq_status=$?
-          set -e
-          if (( jq_status == 4 )); then
-            exit 0
-          elif (( jq_status != 0 )); then
-            echo '::error::package.json contains an unreadable or contradictory npm contract.' >&2
+          )"; then
+            echo '::error::package.json contains an unreadable npm contract.' >&2
             exit 1
           fi
 
-          npm_range='^[[:space:]]*[\^~<>=]*[[:space:]]*([1-9][0-9]*)(\.[0-9xX*]+){0,2}([[:space:]]+[<>=~^]*[[:space:]]*[0-9]+(\.[0-9xX*]+){0,2})?[[:space:]]*$'
-          if [[ ! "$npm_requirement" =~ $npm_range ]]; then
-            echo "::error::Unsupported npm version requirement '$npm_requirement'; declare one numeric major or bounded range." >&2
-            exit 1
+          package_manager_requirement="$(jq -r '.packageManager // empty' <<<"$npm_contract")"
+          dev_engine_requirements="$(jq -r '.devEngines[]' <<<"$npm_contract")"
+          if [[ -z "$package_manager_requirement" && -z "$dev_engine_requirements" ]]; then
+            exit 0
           fi
-          npm_major="${BASH_REMATCH[1]}"
+
+          npm_major=''
+          npm_target=''
+          target_is_exact=0
+          exact_range='^([1-9][0-9]*)\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [[ -n "$package_manager_requirement" ]]; then
+            if [[ ! "$package_manager_requirement" =~ $exact_range ]]; then
+              echo "::error::Unsupported packageManager npm version '$package_manager_requirement'; declare an exact npm version." >&2
+              exit 1
+            fi
+            npm_major="${BASH_REMATCH[1]}"
+            npm_target="$package_manager_requirement"
+            target_is_exact=1
+          fi
+
+          broad_major_range='^([1-9][0-9]*)(\.[xX*]){0,2}$'
+          caret_major_range='^\^([1-9][0-9]*)\.0\.0$'
+          bounded_major_range='^>=([1-9][0-9]*)\.0\.0[[:space:]]+<([1-9][0-9]*)\.0\.0$'
+          while IFS= read -r npm_requirement; do
+            [[ -n "$npm_requirement" ]] || continue
+            requirement_major=''
+            if [[ "$npm_requirement" =~ $broad_major_range ]]; then
+              requirement_major="${BASH_REMATCH[1]}"
+            elif [[ "$npm_requirement" =~ $caret_major_range ]]; then
+              requirement_major="${BASH_REMATCH[1]}"
+            elif [[ "$npm_requirement" =~ $bounded_major_range ]] \
+              && (( BASH_REMATCH[2] == BASH_REMATCH[1] + 1 )); then
+              requirement_major="${BASH_REMATCH[1]}"
+            elif (( target_is_exact == 1 )) && [[ "$npm_requirement" == "$npm_target" ]]; then
+              requirement_major="$npm_major"
+            else
+              echo "::error::Unsupported npm devEngines requirement '$npm_requirement'; use a complete-major range or pair a narrow requirement with the same exact packageManager version." >&2
+              exit 1
+            fi
+
+            if [[ -n "$npm_major" && "$requirement_major" != "$npm_major" ]]; then
+              echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
+              exit 1
+            fi
+            npm_major="$requirement_major"
+          done <<<"$dev_engine_requirements"
+
+          if [[ -z "$npm_target" ]]; then
+            npm_target="$npm_major"
+          fi
 
           current_npm="$(npm --version)"
-          if [[ "${current_npm%%.*}" == "$npm_major" ]]; then
+          if (( target_is_exact == 1 )) && [[ "$current_npm" == "$npm_target" ]]; then
+            exit 0
+          elif (( target_is_exact == 0 )) && [[ "${current_npm%%.*}" == "$npm_major" ]]; then
             exit 0
           fi
 
           cd "$RUNNER_TEMP"
-          npm install --global "npm@$npm_major"
+          npm install --global "npm@$npm_target"
           cd "$GITHUB_WORKSPACE"
           installed_npm="$(npm --version)"
-          if [[ "${installed_npm%%.*}" != "$npm_major" ]]; then
-            echo "::error::npm $npm_major was requested, but npm $installed_npm is active." >&2
+          if (( target_is_exact == 1 )) && [[ "$installed_npm" != "$npm_target" ]]; then
+            echo "::error::npm $npm_target was requested, but npm $installed_npm is active." >&2
+            exit 1
+          elif (( target_is_exact == 0 )) && [[ "${installed_npm%%.*}" != "$npm_major" ]]; then
+            echo "::error::npm major $npm_major was requested, but npm $installed_npm is active." >&2
             exit 1
           fi
 
