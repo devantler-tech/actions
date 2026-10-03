@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.6](https://github.com/devantler-tech/actions/compare/v13.10.5...v13.10.6) (2026-10-03)
+
+
+### Bug Fixes
+
+* **publish:** verify manifests before promoting release tags ([#1396](https://github.com/devantler-tech/actions/issues/1396)) ([72363e4](https://github.com/devantler-tech/actions/commit/72363e4e0405d09971a7a44e41ce1577c895c63e))
+
 ## [13.10.5](https://github.com/devantler-tech/actions/compare/v13.10.4...v13.10.5) (2026-10-03)
 
 
