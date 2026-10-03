@@ -49,6 +49,21 @@ if [[ "$off_state" != "unset" || "$on_state" != "true" ]]; then
   exit 1
 fi
 
+align_default="$(yq -r '.on.workflow_call.inputs."align-npm-with-consumer-contract".default' "$workflow")"
+align_type="$(yq -r '.on.workflow_call.inputs."align-npm-with-consumer-contract".type' "$workflow")"
+align_if="$(
+  yq -r '.jobs.release.steps[] | select(.name == "📦 Align npm with consumer contract") | .if' \
+    "$workflow"
+)"
+align_off="$(yq -r '.jobs."test-create-release".with."align-npm-with-consumer-contract" // "unset"' "$ci")"
+align_on="$(yq -r '.jobs."test-create-release-no-issue-side-effects".with."align-npm-with-consumer-contract"' "$ci")"
+if [[ "$align_default" != "false" || "$align_type" != "boolean" \
+   || "$align_if" != '${{ inputs.align-npm-with-consumer-contract }}' \
+   || "$align_off" != "unset" || "$align_on" != "true" ]]; then
+  echo "create-release must keep npm alignment opt-in and exercise both rollout states" >&2
+  exit 1
+fi
+
 align_npm_run="$(
   yq -r '.jobs.release.steps[] | select(.name == "📦 Align npm with consumer contract") | .run' "$workflow"
 )"
@@ -126,6 +141,76 @@ fi
 rm -f "$tmp_dir/runner/npm-installs"
 cat > "$tmp_dir/workspace/package.json" <<'EOF'
 {
+  "packageManager": "npm@11.2.0+sha224.00000000000000000000000000000000000000000000000000000000",
+  "devEngines": {"packageManager":{"name":"npm","version":"^11.0.0"}}
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ "$(cat "$tmp_dir/runner/npm-installs")" != "npm@11.2.0" ]]; then
+  echo "create-release must accept and strip packageManager integrity hashes" >&2
+  exit 1
+fi
+
+rm -f "$tmp_dir/runner/npm-installs"
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {"packageManager":{"name":"npm","onFail":"error"}}
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must ignore a versionless npm devEngines declaration" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {
+    "packageManager": [
+      {"name":"npm","version":"10.x","onFail":"error"},
+      {"name":"npm","version":"11.x","onFail":"error"}
+    ]
+  }
+}
+EOF
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must accept a satisfied alternative npm devEngines entry" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {"packageManager":{"name":"npm","version":"12.0.0","onFail":"warn"}}
+}
+EOF
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must not turn warn-only npm preferences into release gates" >&2
+  exit 1
+fi
+
+rm -f "$tmp_dir/runner/npm-installs"
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
   "devEngines": {"packageManager":{"name":"npm","version":"11.2.0"}}
 }
 EOF
@@ -136,6 +221,33 @@ if (
     RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
 ); then
   echo "create-release must reject a narrow npm requirement it cannot enforce exactly" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "packageManager": "npm@11.0.0-beta.1",
+  "devEngines": {"packageManager":{"name":"npm","version":"^11.0.0"}}
+}
+EOF
+if (
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+); then
+  echo "create-release must reject prerelease contracts it cannot compare semantically" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{"packageManager":"npm"}
+EOF
+if (
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+); then
+  echo "create-release must reject malformed present npm packageManager declarations" >&2
   exit 1
 fi
 

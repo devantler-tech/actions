@@ -7,6 +7,11 @@ on:
         required: false
         default: false
         type: boolean
+      align-npm-with-consumer-contract:
+        description: "Opt in to aligning npm with the checked-out consumer package-manager contract"
+        required: false
+        default: false
+        type: boolean
       warn-missing-breaking-bang:
         description: "Warn when an explicit JSON commit-analyzer config lacks breaking-header handling"
         required: false
@@ -66,6 +71,7 @@ jobs:
           node-version: 22
 
       - name: 📦 Align npm with consumer contract
+        if: ${{ inputs.align-npm-with-consumer-contract }}
         shell: bash
         run: |
           set -euo pipefail
@@ -75,19 +81,33 @@ jobs:
             jq -ce '
               {
                 packageManager: (
-                  .packageManager?
-                  | if type == "string" and startswith("npm@")
-                    then ltrimstr("npm@")
+                  if has("packageManager") and .packageManager != null
+                  then
+                    if (.packageManager | type) != "string"
+                    then error("packageManager must be a string")
+                    elif (.packageManager | startswith("npm"))
+                    then .packageManager
                     else null
                     end
+                  else null
+                  end
                 ),
                 devEngines: ([
                   .devEngines.packageManager?
                   | if type == "array" then .[] else . end
                   | select(type == "object" and .name == "npm")
-                  | if (.version? | type) == "string"
-                    then .version
-                    else error("npm devEngines entries require a version")
+                  | {
+                      version: (
+                        if .version == null then null
+                        elif (.version | type) == "string" then .version
+                        else error("npm devEngines versions must be strings")
+                        end
+                      ),
+                      onFail: (.onFail // "error")
+                    }
+                  | if (.onFail == "error" or .onFail == "warn" or .onFail == "ignore")
+                    then .
+                    else error("npm devEngines onFail must be error, warn, or ignore")
                     end
                 ])
               }
@@ -98,30 +118,50 @@ jobs:
           fi
 
           package_manager_requirement="$(jq -r '.packageManager // empty' <<<"$npm_contract")"
-          dev_engine_requirements="$(jq -r '.devEngines[]' <<<"$npm_contract")"
+          dev_engine_requirements="$(
+            jq -r '.devEngines[] | select(.onFail == "error" and .version != null) | .version' \
+              <<<"$npm_contract"
+          )"
           if [[ -z "$package_manager_requirement" && -z "$dev_engine_requirements" ]]; then
             exit 0
           fi
 
+          current_npm="$(npm --version)"
           npm_major=''
           npm_target=''
           target_is_exact=0
-          exact_range='^([1-9][0-9]*)\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          exact_range='^([1-9][0-9]*)\.[0-9]+\.[0-9]+$'
+          integrity_range='^(([1-9][0-9]*)\.[0-9]+\.[0-9]+)\+(sha224\.[0-9A-Fa-f]{56}|sha512\.[0-9A-Fa-f]{128})$'
           if [[ -n "$package_manager_requirement" ]]; then
-            if [[ ! "$package_manager_requirement" =~ $exact_range ]]; then
-              echo "::error::Unsupported packageManager npm version '$package_manager_requirement'; declare an exact npm version." >&2
+            case "$package_manager_requirement" in
+              npm@*) package_manager_requirement=${package_manager_requirement#npm@} ;;
+              *)
+                echo "::error::Malformed npm packageManager declaration '$package_manager_requirement'." >&2
+                exit 1
+                ;;
+            esac
+            if [[ "$package_manager_requirement" =~ $exact_range ]]; then
+              npm_major="${BASH_REMATCH[1]}"
+              npm_target="$package_manager_requirement"
+            elif [[ "$package_manager_requirement" =~ $integrity_range ]]; then
+              npm_target="${BASH_REMATCH[1]}"
+              npm_major="${BASH_REMATCH[2]}"
+            else
+              echo "::error::Unsupported packageManager npm descriptor '$package_manager_requirement'; declare one exact stable version, optionally with a sha224 or sha512 integrity hash." >&2
               exit 1
             fi
-            npm_major="${BASH_REMATCH[1]}"
-            npm_target="$package_manager_requirement"
             target_is_exact=1
           fi
 
           broad_major_range='^([1-9][0-9]*)(\.[xX*]){0,2}$'
           caret_major_range='^\^([1-9][0-9]*)\.0\.0$'
           bounded_major_range='^>=([1-9][0-9]*)\.0\.0[[:space:]]+<([1-9][0-9]*)\.0\.0$'
+          first_requirement_major=''
+          requirement_count=0
+          matching_requirement=0
           while IFS= read -r npm_requirement; do
             [[ -n "$npm_requirement" ]] || continue
+            requirement_count=$((requirement_count + 1))
             requirement_major=''
             if [[ "$npm_requirement" =~ $broad_major_range ]]; then
               requirement_major="${BASH_REMATCH[1]}"
@@ -133,22 +173,33 @@ jobs:
             elif (( target_is_exact == 1 )) && [[ "$npm_requirement" == "$npm_target" ]]; then
               requirement_major="$npm_major"
             else
-              echo "::error::Unsupported npm devEngines requirement '$npm_requirement'; use a complete-major range or pair a narrow requirement with the same exact packageManager version." >&2
+              echo "::error::Unsupported blocking npm devEngines requirement '$npm_requirement'; use a complete-major range or the same exact packageManager version." >&2
               exit 1
             fi
 
-            if [[ -n "$npm_major" && "$requirement_major" != "$npm_major" ]]; then
-              echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
-              exit 1
+            if [[ -z "$first_requirement_major" ]]; then
+              first_requirement_major="$requirement_major"
             fi
-            npm_major="$requirement_major"
+            if (( target_is_exact == 1 )) && [[ "$requirement_major" == "$npm_major" ]]; then
+              matching_requirement=1
+            elif (( target_is_exact == 0 )) \
+              && [[ "$requirement_major" == "${current_npm%%.*}" ]]; then
+              matching_requirement=1
+            fi
           done <<<"$dev_engine_requirements"
 
-          if [[ -z "$npm_target" ]]; then
-            npm_target="$npm_major"
+          if (( target_is_exact == 1 && requirement_count > 0 && matching_requirement == 0 )); then
+            echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
+            exit 1
+          elif (( target_is_exact == 0 && matching_requirement == 1 )); then
+            exit 0
+          elif (( target_is_exact == 0 && requirement_count > 0 )); then
+            npm_major="$first_requirement_major"
+            npm_target="$first_requirement_major"
+          elif (( target_is_exact == 0 )); then
+            exit 0
           fi
 
-          current_npm="$(npm --version)"
           if (( target_is_exact == 1 )) && [[ "$current_npm" == "$npm_target" ]]; then
             exit 0
           elif (( target_is_exact == 0 )) && [[ "${current_npm%%.*}" == "$npm_major" ]]; then

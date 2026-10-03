@@ -165,7 +165,7 @@ Consumer rollout and flag removal are tracked in [#1186](https://github.com/deva
 
 The release is published with a GitHub App token, so the caller must set the `APP_CLIENT_ID` repository/organization **variable** alongside the `APP_PRIVATE_KEY` **secret**. The App always needs `contents: write` (tags/releases). By default it also needs `issues: write` + `pull-requests: write` for semantic-release success/fail hooks. Set `disable-issue-side-effects: true` to suppress those hooks and mint the token with `contents: write` only.
 
-After checkout, the release job reads npm requirements from the consumer's `packageManager` field and npm entries under `devEngines.packageManager`. An exact `packageManager` version is installed exactly; otherwise `devEngines` must describe a complete npm major (`11`, `11.x`, `^11.0.0`, or `>=11.0.0 <12.0.0`) so installing the latest release in that major satisfies the whole declared contract. Compatible declarations resolve to the exact `packageManager` version, consumers with no npm declaration keep the version bundled with the configured Node runtime, and contradictory or narrower unenforceable requirements fail explicitly.
+Npm alignment is rollout-gated and off by default. Set `align-npm-with-consumer-contract: true` to read requirements from the consumer's `packageManager` field and blocking npm entries under `devEngines.packageManager` after checkout. An exact stable `packageManager` version is installed exactly; Corepack-style `sha224` and `sha512` integrity suffixes are validated and removed before installation. Otherwise, blocking `devEngines` entries must describe complete npm majors (`11`, `11.x`, `^11.0.0`, or `>=11.0.0 <12.0.0`). Arrays are alternatives: an already-satisfied major wins, or the first supported alternative is installed. Versionless entries and entries with `onFail: warn` or `ignore` do not create a release gate. Compatible declarations resolve to the exact `packageManager` version, consumers with no blocking npm version keep the bundled npm, and malformed, contradictory, prerelease, or narrower unenforceable contracts fail explicitly.
 
 Release runs for one repository and ref run one at a time, in the order they were queued, and waiting runs are kept (up to GitHub's limit of 100) rather than cancelled. Two merges that land close together therefore produce two sequential release runs instead of racing for the same version. Callers need no `concurrency` block of their own.
 
@@ -183,6 +183,7 @@ jobs:
     uses: devantler-tech/actions/.github/workflows/create-release.yaml@{ref} # ref
     with:
       disable-issue-side-effects: true
+      align-npm-with-consumer-contract: true
     secrets:
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
 ```
@@ -194,6 +195,7 @@ jobs:
 | `APP_CLIENT_ID`              | Variable        | -       | Yes      | GitHub App client ID used to mint the release token                       |
 | `APP_PRIVATE_KEY`            | Secret          | -       | Yes      | GitHub App private key (paired with the `APP_CLIENT_ID` variable)         |
 | `disable-issue-side-effects` | Input (boolean) | `false` | No       | Disable success/fail hooks and omit issue/pull-request token permissions  |
+| `align-npm-with-consumer-contract` | Input (boolean) | `false` | No | Align npm with compatible blocking consumer declarations after checkout |
 | `warn-missing-breaking-bang` | Input (boolean) | `false` | No       | Warn about missing explicit breaking-header handling in supported JSON configurations |
 | `dry-run`                    | Input (boolean) | `false` | No       | Run semantic-release in dry-run mode (no tags or publishes)               |
 
