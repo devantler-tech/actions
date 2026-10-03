@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.5](https://github.com/devantler-tech/actions/compare/v13.10.4...v13.10.5) (2026-10-03)
+
+
+### Bug Fixes
+
+* **release:** defer npm cache probe until alignment ([#1393](https://github.com/devantler-tech/actions/issues/1393)) ([ab37c21](https://github.com/devantler-tech/actions/commit/ab37c21ab0e021a13444bc5c481b884b25718349))
+
 ## [13.10.4](https://github.com/devantler-tech/actions/compare/v13.10.3...v13.10.4) (2026-10-03)
 
 
