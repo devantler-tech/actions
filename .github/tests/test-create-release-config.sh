@@ -72,6 +72,15 @@ if [[ -z "$align_npm_run" || "$align_npm_run" == "null" ]]; then
   exit 1
 fi
 
+setup_node_cache="$(
+  yq -r '.jobs.release.steps[] | select(.name == "📦 Setup Node.js") | .with."package-manager-cache"' \
+    "$workflow"
+)"
+if [[ "$setup_node_cache" != '${{ !inputs.align-npm-with-consumer-contract }}' ]]; then
+  echo "create-release must disable setup-node automatic npm probing until an opted-in consumer contract has been aligned" >&2
+  exit 1
+fi
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/bin" "$tmp_dir/runner" "$tmp_dir/workspace"
@@ -110,6 +119,17 @@ cat > "$tmp_dir/workspace/package.json" <<'EOF'
 }
 EOF
 printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+# setup-node's automatic cache probe invokes npm before the following alignment step. This fixture
+# deliberately rejects that pre-alignment call, so the workflow-level cache guard above is what
+# prevents the npm 10/devEngines npm 11 deadlock seen in the real release run for #1392.
+if (
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" npm config get cache
+); then
+  echo "fixture must reject setup-node's pre-alignment npm cache probe" >&2
+  exit 1
+fi
 (
   cd "$tmp_dir/workspace"
   env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
