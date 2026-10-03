@@ -174,6 +174,21 @@ fi
 
 cat > "$tmp_dir/workspace/package.json" <<'EOF'
 {
+  "devEngines": {"packageManager":[]}
+}
+EOF
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must treat an empty npm devEngines alternatives array as no constraint" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
   "packageManager": "npm@11.2.0",
   "devEngines": {
     "packageManager": [

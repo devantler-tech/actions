@@ -124,7 +124,7 @@ jobs:
                   | if ($package_manager | type) == "array"
                     then
                       if ($package_manager | length) == 0
-                      then error("devEngines.packageManager arrays must not be empty")
+                      then []
                       else [$package_manager[] | dev_engine_record]
                       end
                     else [$package_manager | dev_engine_record]
