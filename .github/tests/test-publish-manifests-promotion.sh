@@ -25,6 +25,7 @@ case "$1 $2" in
   'tag artifact')
     [[ "$4" == --tag ]] || exit 64
     [[ "$FAIL_AT" != version || "$5" == latest ]] || exit 1
+    [[ "$FAIL_AT" != latest || "$5" != latest ]] || exit 1
     if [[ "$SIGNED_PROMOTION" == true ]]; then
       [[ "$3" == "oci://$EXPECTED_ARTIFACT@$EXPECTED_DIGEST" && -f "$STATE/verified" ]] || touch "$STATE/unsafe-promotion"
     fi
@@ -60,7 +61,9 @@ cat >"$scratch/bin/docker" <<'EOF'
 printf '%s\n' "$EXPECTED_DIGEST"
 EOF
 chmod +x "$scratch/bin/flux" "$scratch/bin/cosign" "$scratch/bin/docker"
+# Report the failed expectation alongside the isolated publication trace.
 fail() { echo "FAIL: $*" >&2; cat "$scratch/out" "$state/calls" >&2; exit 1; }
+# Run the production step with fresh registry state and one injected boundary failure.
 run_case() {
   local failure="$1" version="$2" flag="$3" caller="$4" run_id="$5"
   state="$(mktemp -d "$scratch/case.XXXXXX")"
@@ -86,6 +89,10 @@ run_case none 1.2.3 true "$caller" 123 || fail 'stable release failed'
 [[ ! -f "$state/unsafe-promotion" ]] || fail 'promoted without verification or from a mutable source'
 [[ "$(<"$state/pushed")" == "oci://$artifact:staging-123-2" ]] || fail 'push exposed a version before signing'
 echo 'ok stable release promotes the verified produced digest'
+if run_case latest 1.2.3 true "$caller" 123; then fail 'latest promotion failure reported success'; fi
+[[ "$(<"$state/version")" == "$digest" && "$(<"$state/latest")" == old-latest ]] || fail 'latest failure did not preserve the verified version and previous latest'
+[[ ! -f "$state/unsafe-promotion" && -f "$state/verified" ]] || fail 'latest failure exposed an unverified version'
+echo 'ok latest failure is reported after publishing only a verified version'
 run_case none 1.2.3-rc.1 true "$caller" 123 || fail 'prerelease failed'
 [[ "$(<"$state/version")" == "$digest" && "$(<"$state/latest")" == old-latest ]] || fail 'prerelease moved latest'
 [[ ! -f "$state/unsafe-promotion" ]] || fail 'prerelease promoted without digest verification'

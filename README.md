@@ -539,7 +539,7 @@ jobs:
 
 Because the signing happens inside this reusable workflow, the cosign certificate identity (OIDC `subject`) is this workflow's path — `https://github.com/devantler-tech/actions/.github/workflows/publish-manifests.yaml@<ref>` — not the caller's. Verifiers (e.g. a Flux `OCIRepository` `verify.matchOIDCIdentity`) must match that.
 
-With `enable-signed-promotion: true` and `enable-caller-pin: true`, publication stages the artifact under a non-release tag, signs and verifies the produced digest, then promotes that same digest to its version. Only stable versions also update `latest`. This backport of [the maintained catalogue fix](https://github.com/devantler-tech/.github/pull/381) remains default-off for callers awaiting their reviewed migration.
+With `enable-signed-promotion: true` and `enable-caller-pin: true`, publication stages the artifact under a non-release tag, signs and verifies the produced digest, then promotes that same digest to its version. Only stable versions also update `latest`. The tag updates are sequential: if updating `latest` fails, publication fails, the verified version remains published, and `latest` is unchanged. This backport of [the maintained catalogue fix](https://github.com/devantler-tech/.github/pull/381) remains default-off for callers awaiting their reviewed migration.
 
 #### Usage
 
