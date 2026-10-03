@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.4](https://github.com/devantler-tech/actions/compare/v13.10.3...v13.10.4) (2026-10-03)
+
+
+### Bug Fixes
+
+* **release:** honor consumer npm requirements ([#1390](https://github.com/devantler-tech/actions/issues/1390)) ([e3b982a](https://github.com/devantler-tech/actions/commit/e3b982a124f58689a394c9384841bb9fbc343b8d))
+
 ## [13.10.3](https://github.com/devantler-tech/actions/compare/v13.10.2...v13.10.3) (2026-09-25)
 
 
