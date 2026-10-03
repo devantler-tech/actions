@@ -8,7 +8,7 @@ on:
         default: false
         type: boolean
       align-npm-with-consumer-contract:
-        description: "Opt in to aligning npm with the checked-out consumer package-manager contract"
+        description: "Temporary opt-in npm contract alignment; retirement tracked by devantler-tech/.github#392"
         required: false
         default: false
         type: boolean
@@ -81,7 +81,7 @@ jobs:
             jq -ce '
               {
                 packageManager: (
-                  if has("packageManager") and .packageManager != null
+                  if has("packageManager")
                   then
                     if (.packageManager | type) != "string"
                     then error("packageManager must be a string")
@@ -98,12 +98,23 @@ jobs:
                   | select(type == "object" and .name == "npm")
                   | {
                       version: (
-                        if .version == null then null
-                        elif (.version | type) == "string" then .version
-                        else error("npm devEngines versions must be strings")
+                        if has("version")
+                        then
+                          if (.version | type) == "string" then .version
+                          else error("npm devEngines versions must be strings when present")
+                          end
+                        else null
                         end
                       ),
-                      onFail: (.onFail // "error")
+                      onFail: (
+                        if has("onFail")
+                        then
+                          if (.onFail | type) == "string" then .onFail
+                          else error("npm devEngines onFail must be a string when present")
+                          end
+                        else "error"
+                        end
+                      )
                     }
                   | if (.onFail == "error" or .onFail == "warn" or .onFail == "ignore")
                     then .
@@ -118,11 +129,11 @@ jobs:
           fi
 
           package_manager_requirement="$(jq -r '.packageManager // empty' <<<"$npm_contract")"
-          dev_engine_requirements="$(
-            jq -r '.devEngines[] | select(.onFail == "error" and .version != null) | .version' \
+          dev_engine_records="$(
+            jq -c '.devEngines[] | select(.version != null)' \
               <<<"$npm_contract"
           )"
-          if [[ -z "$package_manager_requirement" && -z "$dev_engine_requirements" ]]; then
+          if [[ -z "$package_manager_requirement" && -z "$dev_engine_records" ]]; then
             exit 0
           fi
 
@@ -131,7 +142,6 @@ jobs:
           npm_target=''
           target_is_exact=0
           exact_range='^([1-9][0-9]*)\.[0-9]+\.[0-9]+$'
-          integrity_range='^(([1-9][0-9]*)\.[0-9]+\.[0-9]+)\+(sha224\.[0-9A-Fa-f]{56}|sha512\.[0-9A-Fa-f]{128})$'
           if [[ -n "$package_manager_requirement" ]]; then
             case "$package_manager_requirement" in
               npm@*) package_manager_requirement=${package_manager_requirement#npm@} ;;
@@ -143,11 +153,8 @@ jobs:
             if [[ "$package_manager_requirement" =~ $exact_range ]]; then
               npm_major="${BASH_REMATCH[1]}"
               npm_target="$package_manager_requirement"
-            elif [[ "$package_manager_requirement" =~ $integrity_range ]]; then
-              npm_target="${BASH_REMATCH[1]}"
-              npm_major="${BASH_REMATCH[2]}"
             else
-              echo "::error::Unsupported packageManager npm descriptor '$package_manager_requirement'; declare one exact stable version, optionally with a sha224 or sha512 integrity hash." >&2
+              echo "::error::Unsupported packageManager npm descriptor '$package_manager_requirement'; declare one exact stable version without an unverifiable integrity suffix." >&2
               exit 1
             fi
             target_is_exact=1
@@ -156,13 +163,16 @@ jobs:
           broad_major_range='^([1-9][0-9]*)(\.[xX*]){0,2}$'
           caret_major_range='^\^([1-9][0-9]*)\.0\.0$'
           bounded_major_range='^>=([1-9][0-9]*)\.0\.0[[:space:]]+<([1-9][0-9]*)\.0\.0$'
-          first_requirement_major=''
-          requirement_count=0
+          first_blocking_major=''
+          blocking_count=0
+          unsupported_blocking_requirement=''
           matching_requirement=0
-          while IFS= read -r npm_requirement; do
-            [[ -n "$npm_requirement" ]] || continue
-            requirement_count=$((requirement_count + 1))
+          while IFS= read -r dev_engine_record; do
+            [[ -n "$dev_engine_record" ]] || continue
+            npm_requirement="$(jq -r '.version' <<<"$dev_engine_record")"
+            failure_policy="$(jq -r '.onFail' <<<"$dev_engine_record")"
             requirement_major=''
+            supported_requirement=1
             if [[ "$npm_requirement" =~ $broad_major_range ]]; then
               requirement_major="${BASH_REMATCH[1]}"
             elif [[ "$npm_requirement" =~ $caret_major_range ]]; then
@@ -173,29 +183,43 @@ jobs:
             elif (( target_is_exact == 1 )) && [[ "$npm_requirement" == "$npm_target" ]]; then
               requirement_major="$npm_major"
             else
-              echo "::error::Unsupported blocking npm devEngines requirement '$npm_requirement'; use a complete-major range or the same exact packageManager version." >&2
-              exit 1
+              supported_requirement=0
             fi
 
-            if [[ -z "$first_requirement_major" ]]; then
-              first_requirement_major="$requirement_major"
-            fi
-            if (( target_is_exact == 1 )) && [[ "$requirement_major" == "$npm_major" ]]; then
+            if (( supported_requirement == 1 && target_is_exact == 1 )) \
+              && [[ "$requirement_major" == "$npm_major" ]]; then
               matching_requirement=1
-            elif (( target_is_exact == 0 )) \
+            elif (( supported_requirement == 1 && target_is_exact == 0 )) \
               && [[ "$requirement_major" == "${current_npm%%.*}" ]]; then
               matching_requirement=1
             fi
-          done <<<"$dev_engine_requirements"
 
-          if (( target_is_exact == 1 && requirement_count > 0 && matching_requirement == 0 )); then
-            echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
+            if [[ "$failure_policy" == "error" ]]; then
+              blocking_count=$((blocking_count + 1))
+              if (( supported_requirement == 1 )) && [[ -z "$first_blocking_major" ]]; then
+                first_blocking_major="$requirement_major"
+              elif (( supported_requirement == 0 )) \
+                && [[ -z "$unsupported_blocking_requirement" ]]; then
+                unsupported_blocking_requirement="$npm_requirement"
+              fi
+            fi
+          done <<<"$dev_engine_records"
+
+          if (( target_is_exact == 1 && blocking_count > 0 && matching_requirement == 0 )); then
+            if [[ -n "$unsupported_blocking_requirement" ]]; then
+              echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_blocking_requirement'; use a complete-major range or the exact packageManager version." >&2
+            else
+              echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
+            fi
             exit 1
           elif (( target_is_exact == 0 && matching_requirement == 1 )); then
             exit 0
-          elif (( target_is_exact == 0 && requirement_count > 0 )); then
-            npm_major="$first_requirement_major"
-            npm_target="$first_requirement_major"
+          elif (( target_is_exact == 0 )) && [[ -n "$first_blocking_major" ]]; then
+            npm_major="$first_blocking_major"
+            npm_target="$first_blocking_major"
+          elif (( target_is_exact == 0 )) && [[ -n "$unsupported_blocking_requirement" ]]; then
+            echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_blocking_requirement'; use a complete-major range." >&2
+            exit 1
           elif (( target_is_exact == 0 )); then
             exit 0
           fi

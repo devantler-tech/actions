@@ -146,13 +146,12 @@ cat > "$tmp_dir/workspace/package.json" <<'EOF'
 }
 EOF
 printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
-(
+if (
   cd "$tmp_dir/workspace"
   env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
     RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
-)
-if [[ "$(cat "$tmp_dir/runner/npm-installs")" != "npm@11.2.0" ]]; then
-  echo "create-release must accept and strip packageManager integrity hashes" >&2
+); then
+  echo "create-release must reject packageManager integrity hashes it cannot verify" >&2
   exit 1
 fi
 
@@ -183,6 +182,7 @@ cat > "$tmp_dir/workspace/package.json" <<'EOF'
   }
 }
 EOF
+printf '%s\n' '11.6.2' > "$tmp_dir/runner/npm-version"
 (
   cd "$tmp_dir/workspace"
   env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
@@ -190,6 +190,46 @@ EOF
 )
 if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
   echo "create-release must accept a satisfied alternative npm devEngines entry" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {
+    "packageManager": [
+      {"name":"npm","version":"~10.0.0","onFail":"error"},
+      {"name":"npm","version":"11.x","onFail":"error"}
+    ]
+  }
+}
+EOF
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must evaluate supported alternatives before rejecting a narrow one" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {
+    "packageManager": [
+      {"name":"npm","version":"12.x","onFail":"error"},
+      {"name":"npm","version":"11.x","onFail":"warn"}
+    ]
+  }
+}
+EOF
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must preserve non-blocking alternatives when one is already satisfied" >&2
   exit 1
 fi
 
@@ -250,6 +290,20 @@ if (
   echo "create-release must reject malformed present npm packageManager declarations" >&2
   exit 1
 fi
+
+for malformed_dev_engines in \
+  '{"devEngines":{"packageManager":{"name":"npm","version":null,"onFail":"error"}}}' \
+  '{"devEngines":{"packageManager":{"name":"npm","version":"11.x","onFail":null}}}'; do
+  printf '%s\n' "$malformed_dev_engines" > "$tmp_dir/workspace/package.json"
+  if (
+    cd "$tmp_dir/workspace"
+    env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+      RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+  ); then
+    echo "create-release must reject explicit null npm devEngines fields" >&2
+    exit 1
+  fi
+done
 
 rm -f "$tmp_dir/runner/npm-installs"
 cat > "$tmp_dir/workspace/package.json" <<'EOF'
