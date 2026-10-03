@@ -28,6 +28,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable-signed-promotion:
+        description: "Stage, sign and verify before exposing release tags. Requires enable-caller-pin; default-off during caller adoption."
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -122,6 +127,10 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_SIGNED_PROMOTION: ${{ inputs.enable-signed-promotion }}
+          JOB_WORKFLOW_REF: ${{ steps.caller.outputs.ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           # Default the OCI name to the caller repo; override (oci-name) for repos
@@ -129,6 +138,40 @@ jobs:
           NAME="${OCI_NAME:-$REPOSITORY}"
           VERSION="${REF_NAME#v}"
           ARTIFACT="${REGISTRY}/${NAME}/manifests"
+          if [ "${ENABLE_SIGNED_PROMOTION:-false}" = true ]; then
+            # Backport of .github#381 for consumers awaiting signer migration.
+            # This claim also supplies the certificate's SAN. Reject a missing
+            # caller-pin decision or mutable identity before registry writes.
+            if ! [[ "${JOB_WORKFLOW_REF:-}" =~ ^[^@]+@[0-9a-f]{40}$ ]]; then
+              echo "::error::signed promotion requires enable-caller-pin and a SHA-pinned signer identity"
+              exit 1
+            fi
+            if ! [[ "${RUN_ID:-}" =~ ^[0-9]+$ && "${RUN_ATTEMPT:-}" =~ ^[0-9]+$ ]]; then
+              echo "::error::signed promotion requires a numeric workflow run ID and attempt"
+              exit 1
+            fi
+            # Not a semantic version: Flux cannot select it before verification.
+            PUSHED="$(flux push artifact "oci://${ARTIFACT}:staging-${RUN_ID}-${RUN_ATTEMPT}" \
+              --path="${DEPLOY_PATH}" \
+              --source="${SERVER_URL}/${REPOSITORY}" \
+              --revision="${REF_NAME}@sha1:${SHA}" \
+              --creds "${ACTOR}:${GH_TOKEN}" --output json)"
+            DIGEST="$(printf '%s' "$PUSHED" | jq -er '.digest')"
+            if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::flux push did not report the pushed artifact digest"
+              exit 1
+            fi
+            cosign sign --yes "${ARTIFACT}@${DIGEST}"
+            cosign verify --certificate-identity "${SERVER_URL}/${JOB_WORKFLOW_REF}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${ARTIFACT}@${DIGEST}"
+            flux tag artifact "oci://${ARTIFACT}@${DIGEST}" --tag "$VERSION" --creds "${ACTOR}:${GH_TOKEN}"
+            case "$VERSION" in
+              *-*) ;; # Prereleases expose their signed version, never latest.
+              *) flux tag artifact "oci://${ARTIFACT}@${DIGEST}" --tag latest --creds "${ACTOR}:${GH_TOKEN}" ;;
+            esac
+            exit 0
+          fi
           flux push artifact "oci://${ARTIFACT}:${VERSION}" \
             --path="${DEPLOY_PATH}" \
             --source="${SERVER_URL}/${REPOSITORY}" \
