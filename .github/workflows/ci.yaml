@@ -3127,6 +3127,10 @@ jobs:
         shell: bash
         run: bash .github/tests/test-publish-caller-pin.sh
 
+      - name: ✍️ Check manifests are verified before release promotion
+        shell: bash
+        run: bash .github/tests/test-publish-manifests-promotion.sh
+
       - name: 📝 Check TODO scanner ignore-input forwarding
         shell: bash
         run: bash .github/tests/test-scan-todo-ignore-input.sh
@@ -3923,7 +3927,7 @@ jobs:
 
   test-publish-manifests-caller-pin:
     if: "${{ github.event_name == 'push' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
-    name: "[Test] Publish Manifests - Dry Run (caller-pin enabled)"
+    name: "[Test] Publish Manifests - Dry Run (caller-pin and promotion enabled)"
     uses: ./.github/workflows/publish-manifests.yaml
     # PUSH-ONLY — see test-deploy-github-pages. This job is a schema check; the
     # guard it covers runs in the skipped publish job.
@@ -3937,6 +3941,7 @@ jobs:
       # `if: ${{ !inputs.dry-run }}`, so the guard does not run — this proves the
       # input is accepted by name and type.
       enable-caller-pin: true
+      enable-signed-promotion: true
 
   test-scan-for-todo-comments:
     if: "${{ github.event_name != 'merge_group' && !startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release ') }}"
