@@ -79,6 +79,27 @@ jobs:
 
           if ! npm_contract="$(
             jq -ce '
+              def dev_engine_record:
+                if type != "object"
+                then error("devEngines.packageManager entries must be objects")
+                elif ((keys_unsorted - ["name", "version", "onFail"]) | length) != 0
+                then error("devEngines.packageManager entries contain unknown properties")
+                elif (has("name") | not) or ((.name | type) != "string")
+                then error("devEngines.packageManager names must be strings")
+                elif has("version") and ((.version | type) != "string")
+                then error("devEngines.packageManager versions must be strings when present")
+                elif has("onFail") and ((.onFail | type) != "string")
+                then error("devEngines.packageManager onFail must be a string when present")
+                elif has("onFail") and
+                  (.onFail != "error" and .onFail != "warn" and
+                   .onFail != "ignore" and .onFail != "download")
+                then error("devEngines.packageManager onFail must be error, warn, ignore, or download")
+                else {
+                  name: .name,
+                  version: (if has("version") then .version else null end),
+                  onFail: (if has("onFail") then .onFail else "error" end)
+                }
+                end;
               {
                 packageManager: (
                   if has("packageManager")
@@ -92,35 +113,24 @@ jobs:
                   else null
                   end
                 ),
-                devEngines: ([
-                  .devEngines.packageManager?
-                  | if type == "array" then .[] else . end
-                  | select(type == "object" and .name == "npm")
-                  | {
-                      version: (
-                        if has("version")
-                        then
-                          if (.version | type) == "string" then .version
-                          else error("npm devEngines versions must be strings when present")
-                          end
-                        else null
-                        end
-                      ),
-                      onFail: (
-                        if has("onFail")
-                        then
-                          if (.onFail | type) == "string" then .onFail
-                          else error("npm devEngines onFail must be a string when present")
-                          end
-                        else "error"
-                        end
-                      )
-                    }
-                  | if (.onFail == "error" or .onFail == "warn" or .onFail == "ignore")
-                    then .
-                    else error("npm devEngines onFail must be error, warn, or ignore")
+                devEngines: (
+                  if (has("devEngines") | not)
+                  then []
+                  elif (.devEngines | type) != "object"
+                  then error("devEngines must be an object")
+                  elif (.devEngines | has("packageManager") | not)
+                  then []
+                  else .devEngines.packageManager as $package_manager
+                  | if ($package_manager | type) == "array"
+                    then
+                      if ($package_manager | length) == 0
+                      then error("devEngines.packageManager arrays must not be empty")
+                      else [$package_manager[] | dev_engine_record]
+                      end
+                    else [$package_manager | dev_engine_record]
                     end
-                ])
+                  end
+                )
               }
             ' package.json
           )"; then
@@ -130,8 +140,7 @@ jobs:
 
           package_manager_requirement="$(jq -r '.packageManager // empty' <<<"$npm_contract")"
           dev_engine_records="$(
-            jq -c '.devEngines[] | select(.version != null)' \
-              <<<"$npm_contract"
+            jq -c '.devEngines[]' <<<"$npm_contract"
           )"
           if [[ -z "$package_manager_requirement" && -z "$dev_engine_records" ]]; then
             exit 0
@@ -163,14 +172,21 @@ jobs:
           broad_major_range='^([1-9][0-9]*)(\.[xX*]){0,2}$'
           caret_major_range='^\^([1-9][0-9]*)\.0\.0$'
           bounded_major_range='^>=([1-9][0-9]*)\.0\.0[[:space:]]+<([1-9][0-9]*)\.0\.0$'
-          first_blocking_major=''
-          blocking_count=0
-          unsupported_blocking_requirement=''
-          matching_requirement=0
+          first_installable_major=''
+          unsupported_requirement=''
+          dev_engines_satisfied=0
+          effective_failure_policy=''
           while IFS= read -r dev_engine_record; do
             [[ -n "$dev_engine_record" ]] || continue
-            npm_requirement="$(jq -r '.version' <<<"$dev_engine_record")"
+            engine_name="$(jq -r '.name' <<<"$dev_engine_record")"
             failure_policy="$(jq -r '.onFail' <<<"$dev_engine_record")"
+            effective_failure_policy="$failure_policy"
+            [[ "$engine_name" == "npm" ]] || continue
+            npm_requirement="$(jq -r '.version // empty' <<<"$dev_engine_record")"
+            if [[ -z "$npm_requirement" ]]; then
+              dev_engines_satisfied=1
+              continue
+            fi
             requirement_major=''
             supported_requirement=1
             if [[ "$npm_requirement" =~ $broad_major_range ]]; then
@@ -188,40 +204,43 @@ jobs:
 
             if (( supported_requirement == 1 && target_is_exact == 1 )) \
               && [[ "$requirement_major" == "$npm_major" ]]; then
-              matching_requirement=1
+              dev_engines_satisfied=1
             elif (( supported_requirement == 1 && target_is_exact == 0 )) \
               && [[ "$requirement_major" == "${current_npm%%.*}" ]]; then
-              matching_requirement=1
+              dev_engines_satisfied=1
             fi
 
-            if [[ "$failure_policy" == "error" ]]; then
-              blocking_count=$((blocking_count + 1))
-              if (( supported_requirement == 1 )) && [[ -z "$first_blocking_major" ]]; then
-                first_blocking_major="$requirement_major"
-              elif (( supported_requirement == 0 )) \
-                && [[ -z "$unsupported_blocking_requirement" ]]; then
-                unsupported_blocking_requirement="$npm_requirement"
-              fi
+            if (( supported_requirement == 1 )) && [[ -z "$first_installable_major" ]]; then
+              first_installable_major="$requirement_major"
+            elif (( supported_requirement == 0 )) && [[ -z "$unsupported_requirement" ]]; then
+              unsupported_requirement="$npm_requirement"
             fi
           done <<<"$dev_engine_records"
 
-          if (( target_is_exact == 1 && blocking_count > 0 && matching_requirement == 0 )); then
-            if [[ -n "$unsupported_blocking_requirement" ]]; then
-              echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_blocking_requirement'; use a complete-major range or the exact packageManager version." >&2
+          blocking_contract=0
+          if [[ "$effective_failure_policy" == "error" || "$effective_failure_policy" == "download" ]]; then
+            blocking_contract=1
+          fi
+          if (( target_is_exact == 1 && blocking_contract == 1 && dev_engines_satisfied == 0 )); then
+            if [[ -n "$unsupported_requirement" ]]; then
+              echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_requirement'; use a complete-major range or the exact packageManager version." >&2
             else
               echo '::error::package.json contains contradictory npm package-manager contracts.' >&2
             fi
             exit 1
-          elif (( target_is_exact == 0 && matching_requirement == 1 )); then
+          elif (( target_is_exact == 0 && dev_engines_satisfied == 1 )); then
             exit 0
-          elif (( target_is_exact == 0 )) && [[ -n "$first_blocking_major" ]]; then
-            npm_major="$first_blocking_major"
-            npm_target="$first_blocking_major"
-          elif (( target_is_exact == 0 )) && [[ -n "$unsupported_blocking_requirement" ]]; then
-            echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_blocking_requirement'; use a complete-major range." >&2
+          elif (( target_is_exact == 0 && blocking_contract == 0 )); then
+            exit 0
+          elif (( target_is_exact == 0 )) && [[ -n "$first_installable_major" ]]; then
+            npm_major="$first_installable_major"
+            npm_target="$first_installable_major"
+          elif (( target_is_exact == 0 )) && [[ -n "$unsupported_requirement" ]]; then
+            echo "::error::Unsupported blocking npm devEngines requirement '$unsupported_requirement'; use a complete-major range." >&2
             exit 1
           elif (( target_is_exact == 0 )); then
-            exit 0
+            echo '::error::Blocking devEngines.packageManager alternatives contain no supported npm requirement.' >&2
+            exit 1
           fi
 
           if (( target_is_exact == 1 )) && [[ "$current_npm" == "$npm_target" ]]; then

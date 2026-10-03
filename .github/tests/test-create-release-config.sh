@@ -174,6 +174,28 @@ fi
 
 cat > "$tmp_dir/workspace/package.json" <<'EOF'
 {
+  "packageManager": "npm@11.2.0",
+  "devEngines": {
+    "packageManager": [
+      {"name":"npm"},
+      {"name":"npm","version":"12.x","onFail":"error"}
+    ]
+  }
+}
+EOF
+printf '%s\n' '11.2.0' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must count a versionless alternative as satisfied" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
   "devEngines": {
     "packageManager": [
       {"name":"npm","version":"10.x","onFail":"error"},
@@ -235,6 +257,47 @@ fi
 
 cat > "$tmp_dir/workspace/package.json" <<'EOF'
 {
+  "packageManager": "npm@10.9.9",
+  "devEngines": {
+    "packageManager": [
+      {"name":"npm","version":"11.x","onFail":"error"},
+      {"name":"npm","version":"12.x","onFail":"warn"}
+    ]
+  }
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ -e "$tmp_dir/runner/npm-installs" ]]; then
+  echo "create-release must apply the final alternative's non-blocking policy" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
+  "devEngines": {
+    "packageManager": {"name":"npm","version":"11.x","onFail":"download"}
+  }
+}
+EOF
+printf '%s\n' '10.9.9' > "$tmp_dir/runner/npm-version"
+(
+  cd "$tmp_dir/workspace"
+  env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
+    RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
+)
+if [[ "$(cat "$tmp_dir/runner/npm-installs")" != "npm@11" ]]; then
+  echo "create-release must align npm for the download failure policy" >&2
+  exit 1
+fi
+
+rm -f "$tmp_dir/runner/npm-installs"
+cat > "$tmp_dir/workspace/package.json" <<'EOF'
+{
   "devEngines": {"packageManager":{"name":"npm","version":"12.0.0","onFail":"warn"}}
 }
 EOF
@@ -293,14 +356,17 @@ fi
 
 for malformed_dev_engines in \
   '{"devEngines":{"packageManager":{"name":"npm","version":null,"onFail":"error"}}}' \
-  '{"devEngines":{"packageManager":{"name":"npm","version":"11.x","onFail":null}}}'; do
+  '{"devEngines":{"packageManager":{"name":"npm","version":"11.x","onFail":null}}}' \
+  '{"devEngines":{"packageManager":"npm"}}' \
+  '{"devEngines":{"packageManager":{"version":"11.x"}}}' \
+  '{"devEngines":{"packageManager":{"name":"npm","version":"11.x","onFailure":"error"}}}'; do
   printf '%s\n' "$malformed_dev_engines" > "$tmp_dir/workspace/package.json"
   if (
     cd "$tmp_dir/workspace"
     env PATH="$tmp_dir/bin:$PATH" GITHUB_WORKSPACE="$tmp_dir/workspace" \
       RUNNER_TEMP="$tmp_dir/runner" bash -c "$align_npm_run"
   ); then
-    echo "create-release must reject explicit null npm devEngines fields" >&2
+    echo "create-release must reject malformed npm devEngines declarations" >&2
     exit 1
   fi
 done
