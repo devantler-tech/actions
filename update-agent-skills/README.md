@@ -1,5 +1,12 @@
 # Update Agent Skills
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained update-agent-skills guide](https://github.com/devantler-tech/.github/blob/main/actions/update-agent-skills/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Run [`gh skill update --all`](https://github.blog/changelog/2026-04-16-manage-agent-skills-with-github-cli/) against installed skills and report any changes. Pairs with [`setup-agent-skills`](../setup-agent-skills/README.md).
 
 The `github-*` frontmatter that `gh skill install` injects into each `SKILL.md` (github-repo, github-path, github-ref, github-tree-sha) is the source of truth — this action asks the CLI to refresh those files against their upstreams, then reports whether any of them changed. It is agent-neutral: it operates on the `SKILL.md` files in `dir`, so it refreshes skills installed for any agent (Copilot, Claude Code, …). No lockfile.

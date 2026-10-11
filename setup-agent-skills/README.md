@@ -1,5 +1,12 @@
 # Setup Agent Skills
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained setup-agent-skills guide](https://github.com/devantler-tech/.github/blob/main/actions/setup-agent-skills/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Install agent skills with the [`gh skill`](https://github.blog/changelog/2026-04-16-manage-agent-skills-with-github-cli/) CLI from a newline-separated list of `<owner/repo> <skill>[@pin]` entries, for **one or more agents** in a single step (e.g. GitHub Copilot and Claude Code).
 
 `gh skill install` writes upstream provenance (`metadata.github-*`) into each installed `SKILL.md`, so no lockfile is required — checked-in skills are self-describing and [`update-agent-skills`](../update-agent-skills/README.md) or `gh skill update --all` picks up drift natively.

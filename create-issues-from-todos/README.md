@@ -1,5 +1,12 @@
 # Create Issues from TODOs
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained create-issues-from-todos guide](https://github.com/devantler-tech/.github/blob/main/actions/create-issues-from-todos/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Scan code for TODO comments and automatically create corresponding GitHub issues. Authenticates via GitHub App, locates TODOs with file and line references, and can optionally add issues to a GitHub Project.
 
 ## Inputs

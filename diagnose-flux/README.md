@@ -1,5 +1,12 @@
 # Diagnose Flux on failure
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained diagnose-flux guide](https://github.com/devantler-tech/.github/blob/main/actions/diagnose-flux/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Dump Flux reconcile state, controller logs, and failing/CrashLooping pod logs to
 debug a stuck Flux deploy in CI/CD. When a system-test or prod deploy fails, the
 useful signal is spread across the Flux CRs (`Kustomization` / `HelmRelease` /

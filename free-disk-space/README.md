@@ -1,5 +1,12 @@
 # Free Disk Space
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained free-disk-space guide](https://github.com/devantler-tech/.github/blob/main/actions/free-disk-space/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Reclaim runner disk by removing large preinstalled toolchains a job never uses
 (Android SDK, .NET, GHC, …). GitHub-hosted `ubuntu-latest` runners ship ~14 GB
 free on `/`; a large module's `go build` / `go test ./...` build cache (and the

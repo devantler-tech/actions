@@ -1,5 +1,10 @@
 # Applied-fixes behavioral tests
 
+> **Legacy fixture contract.** Preserve this evidence with its owning tests;
+> current development lives in the
+> [maintained fixture guide](https://github.com/devantler-tech/.github/blob/main/.github/tests/applied-fixes/README.md).
+> This document is not proof of a current consumer rollout.
+
 The test driver extracts all three Bash steps from `apply-signed-fixes.yaml` with
 `yq` and executes them unchanged in disposable Git repositories. The only fake
 external boundary is GitHub's API. Its requests, returned verification objects,

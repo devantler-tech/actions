@@ -1,5 +1,12 @@
 # Validate shell pipelines
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained validate-shell-pipelines guide](https://github.com/devantler-tech/.github/blob/main/actions/validate-shell-pipelines/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Find shell assertions that can lose a producer's exit status when `grep` stops
 reading a pipe early. This action is being delivered behind a temporary opt-in;
 consumer validation and retirement of that input are tracked in

@@ -1,5 +1,12 @@
 # Cleanup GHCR Packages
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained cleanup-ghcr-packages guide](https://github.com/devantler-tech/.github/blob/main/actions/cleanup-ghcr-packages/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Clean up old GitHub Container Registry (GHCR) packages. Removes container images older than the specified duration while preserving the most recent tagged images.
 
 ## Inputs

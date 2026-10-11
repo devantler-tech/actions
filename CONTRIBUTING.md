@@ -1,10 +1,68 @@
 # Contributing
 
+## Choose the current owner first
+
+This catalogue is frozen. New integrations, capabilities and ordinary fixes
+belong in [devantler-tech/.github](https://github.com/devantler-tech/.github);
+start with its [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+This repository accepts only urgent fixes for consumers that have not migrated,
+each linked to its maintained-catalogue counterpart. Discuss that case in an
+[issue](https://github.com/devantler-tech/actions/issues) before changing code.
+The legacy conventions below remain reference material, not permission to add
+new actions here. Read [AGENTS.md](AGENTS.md) for the canonical contract.
+
+Keep credentials and sensitive findings out of public issues and PRs. Use the
+inherited [security policy](https://github.com/devantler-tech/.github/blob/main/.github/SECURITY.md)
+for private reporting. No publishing credential or production access is needed
+to clarify documentation.
+
+## Check a small documentation correction
+
+For an agreed legacy documentation correction, you need Git, Bash, Mike Farah
+`yq` v4, `jq` and standard Unix tools. Fork the repository, replace `YOUR-LOGIN`
+below, and start in a new directory:
+
+```sh
+git clone https://github.com/YOUR-LOGIN/actions.git
+cd actions
+git switch -c docs/legacy-reference
+```
+
+Clarify an entry-point sentence while preserving the legacy input/secret tables.
+From this checkout's root, run the repository's read-only documentation checks:
+
+```sh
+bash .scripts/check-workflow-readme.sh
+bash .github/tests/test-workflow-readme-parity.sh
+git diff --check
+```
+
+Success is exit 0, a workflow-parity summary and passing fixture assertions.
+These checks parse local YAML/Markdown and use disposable fixture directories;
+they do not submit a PR, publish, use secrets or run consumer automation. They
+do not prove that a live legacy consumer works. Hosted CI also checks the action
+interfaces, workflow wiring, security/pinning and its existing safe fixtures.
+Any action/workflow change additionally needs the checks in
+[AGENTS.md](AGENTS.md#validation-commands) and its relevant regression tests.
+
+Inspect your diff, stage only intended documentation paths, sign your commit
+with `git commit -S`, and push your branch to your own fork. Open a draft PR
+against `devantler-tech/actions:main` using the inherited
+[PR template](https://github.com/devantler-tech/.github/blob/main/.github/PULL_REQUEST_TEMPLATE.md).
+Use a Conventional Commit title, link the issue and maintained counterpart,
+record the actual validation and disclose AI assistance if used. Address review
+findings; native required CI and current-head substantive review still gate
+merge. Do not request GitHub Copilot review.
+
+Follow the inherited [code of conduct](https://github.com/devantler-tech/.github/blob/main/.github/CODE_OF_CONDUCT.md).
+Keep existing attribution and third-party licensing intact. There is no root
+license file here; do not infer a new licensing grant from this guide.
+
 ## Naming Conventions
 
 ### Action Directories
 
-Use the `<active-verb>-<purpose>` pattern:
+For an urgent legacy correction, preserve the existing `<active-verb>-<purpose>` pattern:
 
 - ✅ `enable-auto-merge-on-pr`, `setup-go-toolchain`, `login-to-ghcr`
 - ❌ `auto-merge-action`, `go-setup`, `ghcr`
@@ -46,7 +104,7 @@ Each action directory must contain:
 
 \`\`\`yaml
 steps:
-  - uses: devantler-tech/actions/<action-name>@main
+  - uses: devantler-tech/actions/<action-name>@<full-commit-sha>
     with:
       ...
 \`\`\`
@@ -71,18 +129,23 @@ release lifecycle, and Marketplace listing.
 
 ## Testing
 
-Every action must have a corresponding test workflow at `.github/workflows/test-<action-name>.yaml` that:
+Existing actions are tested as `test-<action-name>` jobs inside
+`.github/workflows/ci.yaml`, not as separate per-action workflow files. Preserve
+their required-check wiring and relevant positive/negative fixtures. Ordinary
+step-bearing jobs:
 
-1. Triggers on `pull_request` and `push` to `main`
-2. Uses `step-security/harden-runner` as the first step
-3. Checks out with `persist-credentials: false`
-4. Verifies the action works as expected
+1. Run through CI's declared triggers and change/eligibility conditions
+2. Use `step-security/harden-runner` as the first step; the workspace-independent aggregate is the documented exception
+3. Check out with `persist-credentials: false`
+4. Verify the action works as expected without production side effects
 
 ## Security
 
 - Run [zizmor](https://github.com/zizmorcore/zizmor) to scan for GitHub Actions vulnerabilities
-- Pin third-party actions to commit SHAs (enforced by `zizmor.yml`)
-- Actions under `actions/*`, `github/*`, and `devantler-tech/*` may use tag-based refs
+- Pin remote actions to full commit SHAs; first-party self-references follow the
+  exact-commit checkout/local-path rules in [AGENTS.md](AGENTS.md#self-references-within-this-repo-read-before-referencing-one-part-of-the-repo-from-another).
+- Do not copy the floating refs retained in legacy examples or introduce a
+  tag-based exception that contradicts the canonical contract.
 - **External action pin comment convention.** Annotate each third-party SHA pin so a
   reader can tell at a glance whether it tracks a tag or a branch:
   - Pinned to a release tag → `# v<version>` (e.g. `# v6.0.2`). This is the default;

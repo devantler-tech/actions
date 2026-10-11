@@ -1,5 +1,12 @@
 # Validate manifest naming
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained validate-naming guide](https://github.com/devantler-tech/.github/blob/main/actions/validate-naming/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Enforce shared naming conventions for Kubernetes resources and machine configuration
 patches. Repository-specific roots and exceptions live in a versioned YAML file.
 Validation reads files without modifying them or contacting a cluster.
