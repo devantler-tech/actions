@@ -271,6 +271,18 @@ validation jobs and toolchain readers use the same resolved directory. The resol
 comes from the workflow's immutable source and is removed before consumer validation.
 Existing non-Go skips remain skips. Keep `test-go-module-resolution.sh` passing.
 
+**Disposable PostgreSQL compatibility:** `enable-postgresql-fixture` remains false
+for omitted/false reusable calls. Input-free required validation opts in only through
+a tracked closed `.go-test-fixture.json` beside the resolved module. Immutable catalogue
+code accepts no remote endpoint, real credential, arbitrary SQL/script or container option.
+Each Test/Coverage job provisions a separate digest-pinned PostgreSQL 17 service with
+restricted migrator/runtime roles, read-only repository access and uncached full-scope
+tests; unconfigured commands and all other legacy defaults remain unchanged. The native
+legacy fixture caller is required and exercises workflow-only corrections too. Keep
+`test-go-postgresql-fixture.sh` and `test-go-postgresql-wiring.sh` passing and explicitly
+invoked in CI. This urgent mirror is actions#1410 of maintained .github#574; overall
+rollout and retirement remain .github#573. No generated read-only entrypoint is added here.
+
 **Task menu** (1–2 items/run; high care):
 
 - **Triage** new issues/PRs; one insightful comment on the oldest un-commented item.
