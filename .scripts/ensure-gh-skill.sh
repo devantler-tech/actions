@@ -26,7 +26,9 @@ set -euo pipefail
 retry() { bash "$(dirname "${BASH_SOURCE[0]}")/retry.sh" "$@"; }
 
 if command -v gh >/dev/null 2>&1 && gh skill --help >/dev/null 2>&1; then
-  current=$(gh --version | awk '/^gh version /{print $3; exit}')
+  # Select the first header while draining stdout: early exit can SIGPIPE
+  # the producer under pipefail. A producer failure still fails the probe.
+  current=$(gh --version | awk '/^gh version / && !seen { print $3; seen=1 }')
   if [ -z "$current" ]; then
     echo "::error::Could not determine the installed gh version from 'gh --version' output."
     exit 1
@@ -193,7 +195,7 @@ fi
 # above. A cli/cli build reports its own version truthfully, so asserting it here rejects
 # that substitution using only signals already verified. Same `sort -V -C` comparison as the
 # fast-return guard: success means REQUIRED <= installed.
-installed=$("$candidate" --version | awk '/^gh version /{print $3; exit}')
+installed=$("$candidate" --version | awk '/^gh version / && !seen { print $3; seen=1 }')
 if [ -z "$installed" ]; then
   echo "::error::Could not determine the downloaded gh version from 'gh --version' output."
   exit 1
