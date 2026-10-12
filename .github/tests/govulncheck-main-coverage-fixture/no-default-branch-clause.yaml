@@ -49,4 +49,4 @@ jobs:
         run: 'true'
       - uses: devantler/govulncheck-action@v0
         with:
-          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', needs.changes.outputs.module-directory) || '' }}

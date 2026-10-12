@@ -21,7 +21,7 @@ on:
         required: false
         type: string
         default: ""
-        description: "Go module directory to validate. Empty = repo root (the normal consumer case); the CI self-test sets it to a fixture so this workflow can run in a repo that is not itself a Go module."
+        description: "Tracked Go module directory. Empty called inputs select the root; input-free required runs prefer a tracked root module, otherwise the sole tracked nested module. Unsafe or ambiguous selection fails."
       scan-default-branch:
         required: false
         type: boolean
@@ -94,6 +94,7 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       govulncheck: ${{ steps.filter.outputs.govulncheck }}
       lintable: ${{ steps.filter.outputs.lintable }}
+      module-directory: ${{ steps.module-directory.outputs.module-directory }}
       # One decision, read by every fixer lane and every apply job: are signed auto-fix commits
       # enabled for this invocation? A workflow_call caller answers through the input. The
       # org-required direct run cannot: outside workflow_call the `inputs` context is EMPTY, so
@@ -203,13 +204,46 @@ jobs:
               - '.secretlintrc.*'
               - '.gitleaksignore'
 
+      - name: Reserve module helper checkout path
+        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+        shell: bash
+        run: |
+          [[ ! -e "$GITHUB_WORKSPACE/.devantler-tech-go-module" && ! -L "$GITHUB_WORKSPACE/.devantler-tech-go-module" ]]
+
+      - name: Checkout immutable module resolver
+        id: module-helper
+        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-go-module
+          persist-credentials: false
+          sparse-checkout: .github/scripts/resolve-go-module.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve tracked Go module
+        id: module-directory
+        shell: bash
+        env:
+          MODULE_DIRECTORY: ${{ inputs.working-directory }}
+          DIRECT_REQUIRED_RUN: ${{ toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}
+          RESOLVE_REQUIRED: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+        run: |
+          set -euo pipefail
+          [[ "$RESOLVE_REQUIRED" == true || "$RESOLVE_REQUIRED" == false ]]
+          [[ "$RESOLVE_REQUIRED" == true ]] || exit 0
+          trap 'rm -rf -- "$GITHUB_WORKSPACE/.devantler-tech-go-module"' EXIT
+          directory="$(bash "$GITHUB_WORKSPACE/.devantler-tech-go-module/.github/scripts/resolve-go-module.sh")"
+          printf 'module-directory=%s\n' "$directory" >>"$GITHUB_OUTPUT"
+
   tidy:
     name: 📦 Tidy
     runs-on: ubuntu-latest
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Preserve feature-branch checks; default-branch pushes opt in to read-only
     # validation. Resolve the consumer's actual default branch, including trunk.
     if: |
@@ -244,7 +278,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
 
       - name: 🧹 go mod tidy
         run: go mod tidy
@@ -288,7 +322,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Run when Go files change.
     if: |
       needs.changes.outputs.go == 'true'
@@ -314,14 +348,14 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
 
       - name: 🧹 Run golangci-lint
         id: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.11.4
-          working-directory: ${{ inputs.working-directory || '.' }}
+          working-directory: ${{ needs.changes.outputs.module-directory }}
           args: --fix
           # Skip the action's `config verify` step: it fetches the golangci-lint
           # JSONSchema over the network (golangci-lint.run), which intermittently
@@ -368,7 +402,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Keep pull-request coverage; add default-branch pushes only after opt-in.
     if: |
       needs.changes.outputs.go == 'true'
@@ -412,7 +446,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
           cache: true
 
       - name: 📥 Install deadcode
@@ -452,7 +486,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # A vulnerability scan's verdict depends on the vulnerability DATABASE as well as the
     # diff: an advisory published after a merge makes unchanged, already-merged code
     # vulnerable. Two separate conditions each hid that on the default branch —
@@ -580,11 +614,11 @@ jobs:
         # Keep exact-commit checkout until actionlint supports $/ (#1234).
         uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          work-dir: ${{ inputs.working-directory || '.' }}
+          work-dir: ${{ needs.changes.outputs.module-directory }}
           # No stable-channel override: scan using the version the caller ships.
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
           # uses: inputs stay checkout-root-relative, including nested modules.
-          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', needs.changes.outputs.module-directory) || '' }}
 
       # A timed-out step is reported as a failure, exactly like a reachable advisory, so the
       # elapsed time is what tells them apart: only an attempt that reached its deadline is
@@ -636,9 +670,9 @@ jobs:
         # Keep exact-commit checkout until actionlint supports $/ (#1234).
         uses: ./.devantler-tech-actions/.github/actions/govulncheck # zizmor: ignore[self-repository]
         with:
-          work-dir: ${{ inputs.working-directory || '.' }}
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
-          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}
+          work-dir: ${{ needs.changes.outputs.module-directory }}
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
+          allow-file: ${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', needs.changes.outputs.module-directory) || '' }}
 
   lint:
     name: 🧹 Lint - mega-linter
@@ -646,7 +680,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Run if Go files OR other lintable files changed (markdown, yaml, json, etc.)
     if: |
       (needs.changes.outputs.go == 'true' || needs.changes.outputs.lintable == 'true')
@@ -675,7 +709,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
 
       # Keep this `uses:` in lockstep with lint.yaml's MegaLinter step so both consumers run
       # the same image and the failure-mode self-test always exercises the real gate.
@@ -683,7 +717,7 @@ jobs:
         id: ml
         uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
         env:
-          DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
+          DEFAULT_WORKSPACE: ${{ needs.changes.outputs.module-directory }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -835,7 +869,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Run when Go files change.
     if: |
       needs.changes.outputs.go == 'true'
@@ -878,7 +912,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
           cache: true
 
       - name: 🛠️ Build
@@ -890,7 +924,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Run for Go changes or an opted-in default-branch invocation.
     #
     # `needs.changes.outputs.go` answers "did a Go SOURCE file change", which is a strictly
@@ -964,7 +998,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
           cache: true
 
       - name: 📥 Restore kubeconform schema cache
@@ -1006,7 +1040,7 @@ jobs:
     needs: [changes]
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory || '.' }}
+        working-directory: ${{ needs.changes.outputs.module-directory }}
     # Run when Go files change.
     if: |
       needs.changes.outputs.go == 'true'
@@ -1052,7 +1086,7 @@ jobs:
       - name: ⚙️ Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: ${{ inputs.working-directory || '.' }}/go.mod
+          go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
           cache: true
 
       - name: 📥 Restore kubeconform schema cache
@@ -1107,6 +1141,6 @@ jobs:
         continue-on-error: true
         uses: ./.devantler-tech-actions/upload-coverage
         with:
-          file: ${{ inputs.working-directory || '.' }}/coverage.cobertura.xml
+          file: ${{ needs.changes.outputs.module-directory }}/coverage.cobertura.xml
           language: Go
           label: code-coverage/go

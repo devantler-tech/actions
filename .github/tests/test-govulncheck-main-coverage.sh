@@ -305,13 +305,13 @@ fi
 # `allow-file` sends the action to the repo root. The action takes both of its path inputs
 # checkout-root-relative — pinned by the allowlist self-test in ci.yaml, which passes
 # `work-dir: .github/tests/govulncheck-allowlist` alongside a fully prefixed `allow-file`.
-# So the value must be composed from `inputs.working-directory`, exactly as the sibling
+# So the value must be composed from `needs.changes.outputs.module-directory`, exactly as the sibling
 # `go-version-file` input already is.
 allow_file="$(yq -r '.jobs.govulncheck.steps[] | select(.with != null) | .with["allow-file"] // ""' "$workflow" | grep -v '^$' | head -1)"
 if [[ -z "$allow_file" ]]; then
   fail "the govulncheck job passes no 'allow-file' input, so a committed .govulncheck-allow.txt is ignored and every risk-accepted advisory blocks the scan — see AGENTS.md, *Tested invariants*."
-elif ! grep -qF 'inputs.working-directory' <<<"$allow_file"; then
-  fail "'allow-file' is not composed from 'inputs.working-directory' (got: ${allow_file}). With a nested module the detection step finds e.g. services/api/.govulncheck-allow.txt while the scanner is pointed at the repo root, so the nested module's risk acceptance is silently dropped and the scan blocks on an advisory that was already accepted."
+elif ! grep -qF 'needs.changes.outputs.module-directory' <<<"$allow_file"; then
+  fail "'allow-file' is not composed from 'needs.changes.outputs.module-directory' (got: ${allow_file}). With a nested module the detection step finds e.g. services/api/.govulncheck-allow.txt while the scanner is pointed at the repo root, so the nested module's risk acceptance is silently dropped and the scan blocks on an advisory that was already accepted."
 fi
 
 if [[ "$status" -eq 0 ]]; then
