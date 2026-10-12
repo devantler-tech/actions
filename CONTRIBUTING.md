@@ -20,16 +20,19 @@ to clarify documentation.
 
 For an agreed legacy documentation correction, you need Git, Bash, Mike Farah
 `yq` v4, `jq` and standard Unix tools. Fork the repository, replace `YOUR-LOGIN`
-below, and start in a new directory:
+below, and enter a dedicated worktree:
 
 ```sh
 git clone https://github.com/YOUR-LOGIN/actions.git
 cd actions
-git switch -c docs/legacy-reference
+git worktree add -b docs/legacy-reference ../actions-legacy-reference HEAD
+cd ../actions-legacy-reference
 ```
 
-Clarify an entry-point sentence while preserving the legacy input/secret tables.
-From this checkout's root, run the repository's read-only documentation checks:
+Keep edits in this isolated worktree and read the canonical instructions before
+changing any file. Clarify an entry-point sentence while preserving the legacy
+input/secret tables. From this worktree's root, run the repository's read-only
+documentation checks:
 
 ```sh
 bash .scripts/check-workflow-readme.sh
