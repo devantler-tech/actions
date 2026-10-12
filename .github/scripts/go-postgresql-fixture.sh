@@ -87,8 +87,24 @@ provision() {
     and ([.Env[] | select(startswith("POSTGRES_DB="))] == ["POSTGRES_DB=postgres"])' <<<"$config" >/dev/null 2>&1 || fail 'service does not match the fixed fixture'
   # The service ID comes only from job.services, not consumer data. Execute in
   # that observed container; no consumer endpoint, credentials or SQL are read.
+  # Runner hardening can restart Docker after its initial service health check.
+  # Wait for the final TCP server in that same container before issuing SQL;
+  # the image's temporary initialization server only accepts Unix connections.
+  ready=false
+  for attempt in {1..30}; do
+    rc=0
+    docker exec "$container" pg_isready -h 127.0.0.1 -p 5432 -U "$owner" -d postgres -t 1 >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) ready=true; break ;;
+      1|2) ;; # Restarting/stopped container, or server not accepting connections.
+      *) fail 'service readiness command failed' ;;
+    esac
+    [[ "$attempt" == 30 ]] || sleep 2
+  done
+  [[ "$ready" == true ]] || fail 'service did not become TCP-ready within its bounded wait'
+  # Execute this batch once: retrying partially created roles is unsafe.
   docker exec -i --env PGPASSWORD=fixture-only "$container" \
-    psql -X -U "$owner" -d postgres -v ON_ERROR_STOP=1 >/dev/null <<SQL
+    psql -X -h 127.0.0.1 -p 5432 -U "$owner" -d postgres -v ON_ERROR_STOP=1 >/dev/null <<SQL
 CREATE ROLE $migrator LOGIN PASSWORD 'fixture-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 CREATE ROLE $runtime LOGIN PASSWORD 'fixture-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 CREATE DATABASE $database OWNER $migrator;
