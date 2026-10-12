@@ -164,11 +164,13 @@ const evaluate = (expr, values) => {
 const scope = skippedStep.env.RESOLVE_REQUIRED;
 for (const changed of ['go', 'govulncheck', 'lintable', 'none']) {
   for (const explicit of ['', 'server']) for (const defaultBranch of [false, true])
+    for (const event of ['pull_request', 'push', 'workflow_dispatch'])
     for (const scan of [false, true, 'false', 'true']) for (const test of [false, true, 'false', 'true']) {
     const values = {
       'inputs.working-directory': explicit,
       'inputs.scan-default-branch': scan,
       'inputs.test-default-branch': test,
+      'github.event_name': event,
       'steps.filter.outputs.go': changed === 'go' ? 'true' : 'false',
       'steps.filter.outputs.govulncheck': changed === 'govulncheck' ? 'true' : 'false',
       'steps.filter.outputs.lintable': changed === 'lintable' ? 'true' : 'false',
@@ -177,7 +179,7 @@ for (const changed of ['go', 'govulncheck', 'lintable', 'none']) {
     const scanEnabled = scan === true || scan === 'true';
     const testEnabled = test === true || test === 'true';
     const wanted = explicit !== '' || changed === 'go' || changed === 'lintable'
-      || (scanEnabled && (changed === 'govulncheck' || defaultBranch))
+      || (scanEnabled && ((changed === 'govulncheck' && event === 'pull_request') || defaultBranch))
       || (testEnabled && defaultBranch);
     assert.equal(evaluate(scope, values), wanted, 'selected validation lost its module resolver');
     assert.equal(evaluate(workflow.jobs.changes.steps.find(s => s.id === 'module-helper').if, values), wanted);

@@ -205,14 +205,14 @@ jobs:
               - '.gitleaksignore'
 
       - name: Reserve module helper checkout path
-        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && (steps.filter.outputs.govulncheck == 'true' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
         shell: bash
         run: |
           [[ ! -e "$GITHUB_WORKSPACE/.devantler-tech-go-module" && ! -L "$GITHUB_WORKSPACE/.devantler-tech-go-module" ]]
 
       - name: Checkout immutable module resolver
         id: module-helper
-        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && (steps.filter.outputs.govulncheck == 'true' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+        if: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
@@ -228,7 +228,7 @@ jobs:
         env:
           MODULE_DIRECTORY: ${{ inputs.working-directory }}
           DIRECT_REQUIRED_RUN: ${{ toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}
-          RESOLVE_REQUIRED: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && (steps.filter.outputs.govulncheck == 'true' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+          RESOLVE_REQUIRED: ${{ inputs.working-directory != '' || steps.filter.outputs.go == 'true' || steps.filter.outputs.lintable == 'true' || ((inputs.scan-default-branch == true || inputs.scan-default-branch == 'true') && ((steps.filter.outputs.govulncheck == 'true' && github.event_name == 'pull_request') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) || ((inputs.test-default-branch == true || inputs.test-default-branch == 'true') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
         run: |
           set -euo pipefail
           [[ "$RESOLVE_REQUIRED" == true || "$RESOLVE_REQUIRED" == false ]]
