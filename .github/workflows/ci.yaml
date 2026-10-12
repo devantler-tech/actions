@@ -3102,6 +3102,10 @@ jobs:
           go-version-file: .github/tests/go-valid-fixture/go.mod
           cache: false
 
+      - name: Read immutable pre-repair module-selection producer
+        shell: bash
+        run: git fetch --no-tags --depth=1 origin +ee2755420184ae3fc58368e928427a5ec3ba1de6:refs/agent-test/legacy-go-module-producer
+
       - name: Check tracked Go module resolution
         shell: bash
         run: bash .github/tests/test-go-module-resolution.sh

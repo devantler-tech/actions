@@ -6,6 +6,9 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 workflow="${1:-$root/.github/workflows/validate-go-project.yaml}"
 yq -o=json '.' "$workflow" >"$work/workflow.json"
+# Preserve the actual immutable producer, rather than inventing its old result.
+git -C "$root" show ee2755420184ae3fc58368e928427a5ec3ba1de6:.github/workflows/validate-go-project.yaml >"$work/legacy.yaml"
+yq -o=json '.' "$work/legacy.yaml" >"$work/legacy.json"
 node --input-type=module - "$root" "$work" <<'JS'
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,6 +16,7 @@ import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 const [source, scratch] = process.argv.slice(2);
 const workflow = JSON.parse(fs.readFileSync(path.join(scratch, 'workflow.json')));
+const legacy = JSON.parse(fs.readFileSync(path.join(scratch, 'legacy.json')));
 let controls = 0;
 function command(cmd, args, cwd, env = {}) {
   const result = spawnSync(cmd, args, {cwd, env: {...process.env, ...env}, encoding: 'utf8', timeout: cmd === 'go' ? 90000 : 20000});
@@ -43,8 +47,7 @@ function fixture(name, modules, untracked = []) {
 const directExpr = "${{ toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}";
 function resolve(dir, input = '', direct = true, extraEnv = {}) {
   const step = workflow.jobs.changes.steps.find(s => s.id === 'module-directory');
-  // Before the fix, exercise the workflow's real input/root binding rather than a test-only resolver.
-  if (!step) return {status: 0, output: input || '.', stderr: ''};
+  assert.ok(step, 'current workflow has no module resolver');
   assert.equal(step.shell, 'bash');
   assert.equal(step.if, undefined, 'resolution must not be optional');
   assert.equal(step['continue-on-error'] ?? false, false, 'resolution failures must block');
@@ -99,7 +102,26 @@ function expect(dir, input, direct, wanted, native = false) {
 expect(fixture('root', ['go.mod']), '', true, '.', true);
 expect(fixture('explicit', ['server/go.mod', 'other/go.mod']), 'server', false, 'server', true);
 expect(fixture('root-with-fixtures', ['go.mod', 'fixtures/go.mod']), '', true, '.');
-expect(fixture('nested', ['server/go.mod']), '', true, 'server', true);
+const nested = fixture('nested', ['server/go.mod']);
+const legacyValues = {"inputs.working-directory || '.'": '.'};
+const legacyBinding = legacy.jobs.test.defaults.run['working-directory'];
+const legacyDirectory = legacyBinding.replace(/\$\{\{ (.*?) \}\}/g, (_, expression) => {
+  assert.ok(Object.hasOwn(legacyValues, expression), 'unexpected historical binding');
+  return legacyValues[expression];
+});
+assert.equal(legacyDirectory, '.', 'historical producer no longer exhibits root selection');
+const legacySetup = legacy.jobs.test.steps.find(s => s.uses?.startsWith('actions/setup-go@'));
+const legacyVersionFile = legacySetup.with['go-version-file'].replace(/\$\{\{ (.*?) \}\}/g, (_, expression) => {
+  assert.ok(Object.hasOwn(legacyValues, expression), 'unexpected historical toolchain binding');
+  return legacyValues[expression];
+});
+assert.equal(legacyVersionFile, './go.mod');
+assert.equal(fs.existsSync(path.join(nested, legacyVersionFile)), false, 'historical module manifest unexpectedly exists');
+const legacyFailure = command('go', ['test', './...'], path.join(nested, legacyDirectory), {GOWORK: 'off', GOTOOLCHAIN: 'local'});
+assert.notEqual(legacyFailure.status, 0, 'actual historical selection validated the nested-only consumer');
+assert.match(legacyFailure.stdout + legacyFailure.stderr, /go.mod file not found|does not contain main module|cannot find main module/,
+  'historical failure was not the missing root module');
+expect(nested, '', true, 'server', true);
 expect(fixture('deep', ['services/api/go.mod']), '', true, 'services/api');
 expect(fixture('explicit-prefix', ['server/go.mod']), './server/', false, 'server');
 expect(fixture('called-root', ['go.mod', 'server/go.mod']), '', false, '.');
@@ -206,5 +228,5 @@ for (const step of workflow.jobs.govulncheck.steps.filter(s => s.with?.['work-di
 }
 assert.equal(workflow.jobs.coverage.steps.find(s => s.with?.label === 'code-coverage/go').with.file,
   `${resolved}/coverage.cobertura.xml`);
-console.log(`PASS: tracked root, explicit and direct nested modules, native defect rejection and ${controls} resolver controls`);
+console.log(`PASS: immutable legacy root-selection failure, repaired native nested module, defect rejection and ${controls} resolver controls`);
 JS
