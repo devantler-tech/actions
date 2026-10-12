@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.9](https://github.com/devantler-tech/actions/compare/v13.10.8...v13.10.9) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci:** find nested Go modules in legacy required runs ([#1405](https://github.com/devantler-tech/actions/issues/1405)) ([7e3be34](https://github.com/devantler-tech/actions/commit/7e3be349533d8fbc9fddffe73ac269a16db336a2))
+
 ## [13.10.8](https://github.com/devantler-tech/actions/compare/v13.10.7...v13.10.8) (2026-10-12)
 
 
