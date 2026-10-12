@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.10](https://github.com/devantler-tech/actions/compare/v13.10.9...v13.10.10) (2026-10-12)
+
+
+### Bug Fixes
+
+* **go:** mirror isolated PostgreSQL validation for legacy consumers ([#1411](https://github.com/devantler-tech/actions/issues/1411)) ([52e1780](https://github.com/devantler-tech/actions/commit/52e17809f0eb2be98184930325092d7aa31302e3))
+
 ## [13.10.9](https://github.com/devantler-tech/actions/compare/v13.10.8...v13.10.9) (2026-10-12)
 
 
