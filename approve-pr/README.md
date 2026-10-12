@@ -1,5 +1,12 @@
 # Approve PR
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained approve-pr guide](https://github.com/devantler-tech/.github/blob/main/actions/approve-pr/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Approve a pull request using a GitHub App identity. This is needed because `GITHUB_TOKEN` cannot provide independent approvals that satisfy branch protection rules requiring multiple reviewers.
 
 ## Inputs

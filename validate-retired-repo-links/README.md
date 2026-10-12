@@ -1,5 +1,12 @@
 # Validate retired repository links
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained validate-retired-repo-links guide](https://github.com/devantler-tech/.github/blob/main/actions/validate-retired-repo-links/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Catch documentation links that still send readers to a retired GitHub repository.
 Each consumer declares its retired repositories, files or directories to scan,
 and documented exceptions for historical records. The validator is read-only and

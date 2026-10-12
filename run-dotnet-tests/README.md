@@ -1,5 +1,12 @@
 # Run Dotnet Tests
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained run-dotnet-tests guide](https://github.com/devantler-tech/.github/blob/main/actions/run-dotnet-tests/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Test .NET solutions or projects across multiple platforms with code coverage reporting. Sets up the .NET 9 (STS) and .NET 10 (LTS) SDKs side-by-side, optionally restores private packages from GitHub Packages without persisting credentials, runs tests with coverage collection, and uploads the report to **GitHub Code Quality** (native PR coverage) on authenticated runs.
 
 > **Permissions:** the calling job must grant `code-quality: write` for the GitHub Code Quality upload. The coverage is merged into a single Cobertura report (via ReportGenerator) and uploaded once, from the Linux matrix leg only. The upload is best-effort (it never fails the build), requires the repo's **Code Quality** to be enabled (_Settings → Code quality_), and is skipped when `github-token` is empty.

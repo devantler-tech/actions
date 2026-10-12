@@ -1,5 +1,12 @@
 # Dependency Review
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained dependency-review guide](https://github.com/devantler-tech/.github/blob/main/actions/dependency-review/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Scan a pull request's dependency changes for known-vulnerable packages and
 disallowed licenses, using [GitHub Dependency Review][dra]. It diffs the base
 and head of a PR and surfaces any newly-introduced dependency that carries a

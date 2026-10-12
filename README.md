@@ -2,9 +2,25 @@
 
 > **This catalogue now lives in [devantler-tech/.github](https://github.com/devantler-tech/.github).** New work and releases happen there. Reference `devantler-tech/.github/actions/<action>@<sha>` and `devantler-tech/.github/.github/workflows/<file>@<sha>`. This repository only takes urgent fixes for consumers that have not been repointed yet, each linking its `devantler-tech/.github` counterpart, and is archived once nothing references it ([devantler-tech/.github#240](https://github.com/devantler-tech/.github/issues/240)).
 
-The shared CI/CD building blocks used across all DevantlerTech projects — both **composite actions** and **reusable `workflow_call` workflows** — in one repository. (The reusable workflows were merged in from `devantler-tech/reusable-workflows`, which is archived.)
+This is the **frozen legacy** catalogue of composite actions and reusable
+`workflow_call` workflows. It remains a reference for existing pinned consumers;
+it is not the starting point for new integrations. The reusable workflows were
+merged from the archived `devantler-tech/reusable-workflows` repository.
+
+For a new integration, start with the
+[maintained catalogue and its credential-free interface checks](https://github.com/devantler-tech/.github/blob/main/README.md).
+For a contribution, use its
+[contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+Do not simply replace a repository name in a live caller: review differences,
+pin the chosen full commit SHA, and validate that consumer in a migration PR.
 
 ## Using them
+
+The sections below document the **legacy contract**. Examples can require write
+credentials, deploy or publish artifacts, delete data, or change runner settings;
+they are not a safe first-use exercise. Do not copy floating refs from old
+examples. Substitute an explicitly reviewed full commit SHA for ref placeholders
+and use only authorized, disposable targets when exercising mutating behavior.
 
 An **action** is a step inside one of your jobs. A **reusable workflow** replaces a whole job. Both
 are called by path from this repository, pinned to a ref:
@@ -320,8 +336,11 @@ Cursor Automation PRs are eligible by the exact `cursor[bot]` author identity (`
 GitHub UI). This author check reads the pull request author; a `cursor[bot]` Bugbot comment or review
 does not count as trusted review evidence.
 
-**By default** it behaves as it always has: it approves the PR and arms auto-merge, bound to the
-commit it checked.
+**By default** it approves the PR and arms auto-merge after checking the current
+head. The head pin constrains the arming request, not a later automatic merge:
+a subsequent push can replace that head. Arming is not delivery or proof that
+only the evaluated commit can merge; the driver must confirm the actual merged
+head against its evaluated head.
 
 **With actor-trust enforcement turned on** — the `enforce-actor-trust` input, or the
 `ENFORCE_ACTOR_TRUST` repository/organization variable — every privileged pull-request, review,
@@ -857,7 +876,6 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 
 - **Automated Linting**: Runs `golangci-lint` and `mega-linter` to ensure code quality
 - **Auto-fix**: Runs fixers in every validation and, when explicitly enabled, commits their fixes through the signed-commit workflow. Read-only runs fail with the remaining diff instead of discarding it
-- **Copilot Integration**: When linting fails, automatically prompts Copilot on the PR to fix the remaining issues
 - **Supply-chain Scanning**: Runs [`govulncheck`](https://go.dev/blog/govulncheck) using a reviewed scanner version and an allowlist evaluator shipped with the workflow to fail the PR on known vulnerabilities your code actually calls (call-graph reachability, so imported-but-unreachable advisories don't block). A consumer can risk-accept a reachable advisory that has no upstream fix (`Fixed in: N/A`) by committing an optional `.govulncheck-allow.txt` at the repo root (one `GO-YYYY-NNNN  # justification` per line; `#` comments and blank lines ignored); the gate stays strict for everything else. Without an allowlist file the scan is strict. The scanner uses the Go version from the selected module’s `go.mod`; Go 1.25, 1.26, and 1.27 are covered by the compatibility fixtures. Scanner failures and invalid output always fail the check. A scan attempt that runs out of time is retried once, so a slow runner cannot leave an unattended dependency pull request stuck on a cancelled check; a finding or any other failure fails the check immediately and is never retried.
 - **Code Coverage**: Generates a Cobertura report and uploads it to **GitHub Code Quality** (native PR coverage).
 
@@ -903,4 +921,6 @@ Rollout and flag retirement are tracked in [#1170](https://github.com/devantler-
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the frozen-repository boundary and a
+credential-free documentation check. New capabilities belong in the maintained
+catalogue, not here.

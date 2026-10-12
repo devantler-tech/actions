@@ -1,5 +1,12 @@
 # Setup Go Toolchain
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained setup-go-toolchain guide](https://github.com/devantler-tech/.github/blob/main/actions/setup-go-toolchain/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Setup Go with private module discovery for devantler-tech repositories.
 
 ## Inputs

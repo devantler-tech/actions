@@ -1,5 +1,12 @@
 # Upsert Issue
 
+> **Frozen legacy reference.** For new integrations and contributions, use the
+> [maintained upsert-issue guide](https://github.com/devantler-tech/.github/blob/main/actions/upsert-issue/README.md)
+> and [contribution guide](https://github.com/devantler-tech/.github/blob/main/CONTRIBUTING.md).
+> The examples below describe legacy consumers, not a new-setup recommendation.
+> Keep existing calls pinned to a reviewed full commit SHA; do not copy floating
+> refs or change a consumer's automation without reviewing its migration.
+
 Create, update, reopen, or close a GitHub issue by title. Finds an existing issue with the same title and updates it, or creates a new one. Supports controlling the issue state (`open` / `closed`) to manage issue lifecycle — e.g., auto-closing when a report has no violations and reopening when violations recur.
 
 When several issues share the title, the newest open one is used, otherwise the newest closed one. With `open: "true"`, a closed match is reopened rather than duplicated, and the step fails if the reopen keeps failing, so a tracked problem is never left hidden behind a closed issue.

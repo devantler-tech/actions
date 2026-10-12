@@ -1,5 +1,9 @@
 # Internal fix exporter
 
+> **Frozen internal reference.** Current development and guidance live in the
+> [maintained exporter](https://github.com/devantler-tech/.github/blob/main/.github/actions/prepare-fixes/README.md).
+> This is an internal implementation contract, not a first-use consumer recipe.
+
 The Go workflow's tidy, golangci-lint, and MegaLinter jobs share this composite
 action for patch preparation and artifact upload. It holds no branch-write token
 and never signs or commits changes. The separate privileged signer consumes the
