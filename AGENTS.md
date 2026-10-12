@@ -283,6 +283,17 @@ legacy fixture caller is required and exercises workflow-only corrections too. K
 invoked in CI. This urgent mirror is actions#1410 of maintained .github#574; overall
 rollout and retirement remain .github#573. No generated read-only entrypoint is added here.
 
+**Urgent Go compiler compatibility mirror:** production and the native lint-finding
+fixture bind compatible v2.14.0 tooling while retaining the same immutable action
+SHA and rules. The real Go 1.27.2 fixture must fail on its deliberate errcheck
+finding, never an installation/configuration error. Both MegaLinter entrypoints
+bind the container compiler to their exact setup-go output; an omitted non-Go
+input preserves the local path. Keep `test-go-linter-toolchain.sh` and
+`test-megalinter-go-toolchain.sh` explicitly wired into required CI. This is the
+urgent mirror of maintained .github#578/v7.10.2 for actions#1413, not permission
+to add capabilities to this frozen catalogue. End-to-end consumer proof remains
+.github#577; root-configuration loading is separately tracked in .github#579.
+
 **Task menu** (1–2 items/run; high care):
 
 - **Triage** new issues/PRs; one insightful comment on the oldest un-commented item.

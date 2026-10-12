@@ -92,6 +92,7 @@ jobs:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
+        id: setup-go
         if: ${{ inputs.go-version-file != '' }}
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -104,6 +105,7 @@ jobs:
         id: ml
         uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
         env:
+          GOTOOLCHAIN: ${{ inputs.go-version-file != '' && format('go{0}', steps.setup-go.outputs.go-version) || 'local' }}
           DEFAULT_WORKSPACE: ${{ inputs.working-directory || '.' }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
