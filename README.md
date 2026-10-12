@@ -878,6 +878,7 @@ The workflow assumes skills were previously installed with [`devantler-tech/acti
 - **Auto-fix**: Runs fixers in every validation and, when explicitly enabled, commits their fixes through the signed-commit workflow. Read-only runs fail with the remaining diff instead of discarding it
 - **Supply-chain Scanning**: Runs [`govulncheck`](https://go.dev/blog/govulncheck) using a reviewed scanner version and an allowlist evaluator shipped with the workflow to fail the PR on known vulnerabilities your code actually calls (call-graph reachability, so imported-but-unreachable advisories don't block). A consumer can risk-accept a reachable advisory that has no upstream fix (`Fixed in: N/A`) by committing an optional `.govulncheck-allow.txt` in the selected Go module directory (one `GO-YYYY-NNNN  # justification` per line; `#` comments and blank lines ignored); the gate stays strict for everything else. Without an allowlist file the scan is strict. The scanner uses the Go version from the selected module’s `go.mod`; Go 1.25, 1.26, and 1.27 are covered by the compatibility fixtures. Scanner failures and invalid output always fail the check. A scan attempt that runs out of time is retried once, so a slow runner cannot leave an unattended dependency pull request stuck on a cancelled check; a finding or any other failure fails the check immediately and is never retried.
 - **Code Coverage**: Generates a Cobertura report and uploads it to **GitHub Code Quality** (native PR coverage).
+- **Disposable database tests**: Explicitly configured modules get separate digest-pinned PostgreSQL 17 services for full uncached Test and race/Coverage. No real credential or production endpoint is accepted.
 
 #### Usage
 
@@ -905,10 +906,39 @@ jobs:
 | `pr-owner`            | Input (string)  | -       | No       | Pull request author login (used to disable auto-commit for bot PRs)                                                                                                                                                             |
 | `apply-signed-fixes`  | Input (boolean) | `true`  | No       | Commit each fixer lane's auto-fixes back to the pull request branch as a signed commit (on by default; the org-required direct run is opted in by its workflow ref). Pass false to keep a caller read-only. Forks, Dependabot/Renovate branches and non-PR events are always read-only and fail with their diff if changes remain; other same-repository automation branches (release, bot-authored) do receive fixer commits like any contributor branch                                                                                                               |
 | `working-directory`   | Input (string)  | `""`    | No       | Tracked module directory. Empty called inputs select the root; input-free required runs prefer a tracked root module, otherwise the sole tracked nested module. Unsafe or ambiguous selection fails. |
+| `enable-postgresql-fixture` | Input (boolean) | `false` | No | Opt in to the tracked module-local PostgreSQL 17 fixture. Omitted/false called inputs stay inert; input-free required runs opt in only through a tracked declaration. Rollout and retirement: devantler-tech/.github#573. |
 | `manual-workflow-fixes` | Input (boolean) | `false` | No | Opt in to complete workflow-file patches for manual application, including after lint errors; existing upload eligibility still applies |
 | `scan-default-branch` | Input (boolean) | `false` | No       | Also run the vulnerability scan on every default-branch run, not just on pull requests. Off by default: a default branch that was green can legitimately go red once an advisory is published against code that already merged    |
 | `test-default-branch` | Input (boolean) | `true`  | No       | Run the Go test suite on every default-branch run, not just when the diff touched a Go file. On by default: a test can take a non-Go file as its subject, so a diff-only gate leaves the default branch reporting green over a suite it never ran. Set to `false` to accept a default branch that can report green without the suite having run          |
 | `maintenance-default-branch` | Input (boolean) | `false` | No | Also run tidy and dead-code analysis on default-branch pushes that change Go files. Findings fail validation without committing fixes to the default branch. Uses the repository's configured default branch name. |
+
+#### Disposable PostgreSQL compatibility
+
+This urgent legacy correction mirrors merged [devantler-tech/.github#574](https://github.com/devantler-tech/.github/pull/574).
+Existing consumers without a declaration start no service. Commit a closed `.go-test-fixture.json`
+beside the selected module to opt an input-free required run into a disposable fixture:
+
+```json
+{"kind":"postgresql17","namespace":"portal","database":"portal_identity_test"}
+```
+
+Reusable callers must additionally pass `enable-postgresql-fixture: true`; omitted/false inputs
+are inert even when a declaration exists. The helper accepts only these three bounded string
+fields and refuses duplicate keys, unsafe names, untracked/linked files and incomplete reads.
+There is no endpoint, credential, script, SQL, image or container-option input.
+
+Each Test/Coverage job receives its own fixed digest-pinned PostgreSQL 17 service. The helper
+creates separate restricted `portal_migrator`/`portal_runtime` roles, grants runtime schema use
+without schema ownership and exports `PORTAL_TEST_MIGRATION_DATABASE_URL` and
+`PORTAL_TEST_DATABASE_URL`. The deliberately public password `fixture-only` is solely for the
+new disposable service, never a production credential. Fixture runs retain full scope and race
+coverage but add `-count=1`; non-fixture commands are unchanged. Missing required fixture data or
+failed provisioning fails validation before publishing URLs. Test/Coverage retain read-only
+repository access plus existing coverage reporting authority. No unrelated maintained options or
+new caller interface are imported into this frozen repository.
+
+Legacy delivery is tracked in [#1410](https://github.com/devantler-tech/actions/issues/1410);
+the overall rollout remains [devantler-tech/.github#573](https://github.com/devantler-tech/.github/issues/573).
 
 To enable default-branch maintenance validation, pass `maintenance-default-branch: true`
 in a caller that runs on pushes to its default branch. Pull-request checks remain

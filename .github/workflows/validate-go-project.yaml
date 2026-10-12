@@ -22,6 +22,11 @@ on:
         type: string
         default: ""
         description: "Tracked Go module directory. Empty called inputs select the root; input-free required runs prefer a tracked root module, otherwise the sole tracked nested module. Unsafe or ambiguous selection fails."
+      enable-postgresql-fixture:
+        required: false
+        type: boolean
+        default: false
+        description: "Opt in to the tracked closed-schema PostgreSQL 17 test fixture. Called false/omitted inputs are inert. Input-free required runs opt in only through a tracked module-local declaration. No production endpoint or credentials are accepted; rollout and retirement: devantler-tech/.github#573."
       scan-default-branch:
         required: false
         type: boolean
@@ -72,7 +77,7 @@ on:
 # Adding a discriminator only ever splits groups further; it cannot merge two that were
 # separate, so this direction of change cannot reintroduce #587.
 concurrency:
-  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_id || '' }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}-${{ inputs.manual-workflow-fixes }}"
+  group: "validate-go-project-${{ github.repository }}-${{ github.ref }}-${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_id || '' }}-${{ github.workflow }}-${{ inputs.pr-owner }}-${{ inputs.working-directory }}-${{ inputs.scan-default-branch }}-${{ inputs.test-default-branch }}-${{ inputs.maintenance-default-branch }}-${{ inputs.apply-signed-fixes }}-${{ inputs.manual-workflow-fixes }}-${{ inputs.enable-postgresql-fixture }}"
   cancel-in-progress: true
 
 permissions: {}
@@ -91,10 +96,16 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ steps.filter.outputs.go }}
+      # The native legacy fixture must exercise changed workflow wiring too.
+      # All other consumers retain their existing path-filter decision.
+      go: ${{ (github.repository == 'devantler-tech/actions' && inputs.working-directory == '.github/tests/go-postgresql-fixture') && 'true' || steps.filter.outputs.go }}
       govulncheck: ${{ steps.filter.outputs.govulncheck }}
       lintable: ${{ steps.filter.outputs.lintable }}
       module-directory: ${{ steps.module-directory.outputs.module-directory }}
+      fixture-enabled: ${{ steps.fixture.outputs.enabled || 'false' }}
+      fixture-owner: ${{ steps.fixture.outputs.owner }}
+      fixture-namespace: ${{ steps.fixture.outputs.namespace }}
+      fixture-database: ${{ steps.fixture.outputs.database }}
       # One decision, read by every fixer lane and every apply job: are signed auto-fix commits
       # enabled for this invocation? A workflow_call caller answers through the input. The
       # org-required direct run cannot: outside workflow_call the `inputs` context is EMPTY, so
@@ -132,6 +143,8 @@ jobs:
               - '**/go.sum'
               - '**/.golangci.yml'
               - '**/.golangci.yaml'
+              - '.go-test-fixture.json'
+              - '**/.go-test-fixture.json'
             # The allowlist decides which advisories the vuln scan accepts, so a change to
             # it changes the gate's verdict on unchanged code: without this filter, editing
             # the allowlist skips the very scan that reads it.
@@ -236,6 +249,60 @@ jobs:
           trap 'rm -rf -- "$GITHUB_WORKSPACE/.devantler-tech-go-module"' EXIT
           directory="$(bash "$GITHUB_WORKSPACE/.devantler-tech-go-module/.github/scripts/resolve-go-module.sh")"
           printf 'module-directory=%s\n' "$directory" >>"$GITHUB_OUTPUT"
+
+      - name: Select PostgreSQL fixture mode
+        id: fixture-mode
+        shell: bash
+        env:
+          FIXTURE_MODULE: ${{ steps.module-directory.outputs.module-directory }}
+          FIXTURE_OPT_IN: ${{ inputs.enable-postgresql-fixture }}
+          DIRECT_REQUIRED_RUN: ${{ toJSON(inputs) == '{}' && contains(github.workflow_ref, '/.github/workflows/validate-go-project.yaml@') }}
+        run: |
+          set -euo pipefail
+          mode=disabled
+          if [[ -n "$FIXTURE_MODULE" ]]; then
+            if [[ "$FIXTURE_OPT_IN" == true ]]; then
+              mode=enabled
+            elif [[ "$DIRECT_REQUIRED_RUN" == true ]]; then
+              declaration="$FIXTURE_MODULE/.go-test-fixture.json"
+              tracked="$(git ls-files -- "$declaration")"
+              if [[ -n "$tracked" || -e "$declaration" || -L "$declaration" ]]; then mode=optional; fi
+            fi
+          fi
+          printf 'mode=%s\n' "$mode" >>"$GITHUB_OUTPUT"
+
+      - name: Reserve fixture reader checkout path
+        if: ${{ steps.fixture-mode.outputs.mode != 'disabled' }}
+        shell: bash
+        run: |
+          [[ ! -e "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" && ! -L "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" ]]
+
+      - name: Checkout immutable PostgreSQL fixture reader
+        if: ${{ steps.fixture-mode.outputs.mode != 'disabled' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-go-fixture
+          persist-credentials: false
+          sparse-checkout: .github/scripts/go-postgresql-fixture.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve PostgreSQL fixture declaration
+        id: fixture
+        if: ${{ steps.fixture-mode.outputs.mode != 'disabled' }}
+        shell: bash
+        env:
+          FIXTURE_MODULE: ${{ steps.module-directory.outputs.module-directory }}
+          FIXTURE_MODE: ${{ steps.fixture-mode.outputs.mode }}
+        run: |
+          set -euo pipefail
+          trap 'rm -rf -- "$GITHUB_WORKSPACE/.devantler-tech-go-fixture"' EXIT
+          fixture="$(bash "$GITHUB_WORKSPACE/.devantler-tech-go-fixture/.github/scripts/go-postgresql-fixture.sh" resolve "$FIXTURE_MODULE" "$FIXTURE_MODE")"
+          for field in enabled owner namespace database; do
+            value="$(jq -r --arg field "$field" '.[$field] // ""' <<<"$fixture")"
+            printf '%s=%s\n' "$field" "$value" >>"$GITHUB_OUTPUT"
+          done
 
   tidy:
     name: 📦 Tidy
@@ -922,6 +989,19 @@ jobs:
     name: 🧪 Test
     runs-on: ubuntu-latest
     needs: [changes]
+    services:
+      postgres:
+        image: ${{ needs.changes.outputs.fixture-enabled == 'true' && 'postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826' || '' }}
+        env:
+          POSTGRES_USER: ${{ needs.changes.outputs.fixture-owner }}
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: ${{ needs.changes.outputs.module-directory }}
@@ -960,7 +1040,7 @@ jobs:
         )
       )
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: 🛡️ Harden runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -1023,9 +1103,48 @@ jobs:
           restore-keys: |
             kubeconform-schema-cache-v1-${{ github.job }}-
 
-      - name: 🧪 Test
+      - name: Reserve PostgreSQL fixture helper path
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        working-directory: .
+        shell: bash
         run: |
-          go test ./...
+          [[ ! -e "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" && ! -L "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" ]]
+
+      - name: Checkout immutable PostgreSQL fixture provisioner
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-go-fixture
+          persist-credentials: false
+          sparse-checkout: .github/scripts/go-postgresql-fixture.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Prepare disposable PostgreSQL fixture
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        working-directory: .
+        shell: bash
+        timeout-minutes: 3
+        env:
+          FIXTURE_NAMESPACE: ${{ needs.changes.outputs.fixture-namespace }}
+          FIXTURE_DATABASE: ${{ needs.changes.outputs.fixture-database }}
+          FIXTURE_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          trap 'rm -rf -- "$GITHUB_WORKSPACE/.devantler-tech-go-fixture"' EXIT
+          fixture_env="$(bash "$GITHUB_WORKSPACE/.devantler-tech-go-fixture/.github/scripts/go-postgresql-fixture.sh" provision "$FIXTURE_NAMESPACE" "$FIXTURE_DATABASE" "$FIXTURE_SERVICE_ID")"
+          printf '%s\n' "$fixture_env" >>"$GITHUB_ENV"
+
+      - name: 🧪 Test
+        env:
+          FIXTURE_ENABLED: ${{ needs.changes.outputs.fixture-enabled }}
+        run: |
+          if [[ "${FIXTURE_ENABLED:-false}" == true ]]; then
+            go test -count=1 ./...
+          else
+            go test ./...
+          fi
 
       - name: 📤 Save kubeconform schema cache
         if: "!cancelled() && steps.kubeconform-cache.outputs.cache-hit != 'true'"
@@ -1038,6 +1157,19 @@ jobs:
     name: 📊 Code Coverage
     runs-on: ubuntu-latest
     needs: [changes]
+    services:
+      postgres:
+        image: ${{ needs.changes.outputs.fixture-enabled == 'true' && 'postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826' || '' }}
+        env:
+          POSTGRES_USER: ${{ needs.changes.outputs.fixture-owner }}
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: ${{ needs.changes.outputs.module-directory }}
@@ -1045,7 +1177,7 @@ jobs:
     if: |
       needs.changes.outputs.go == 'true'
     permissions:
-      contents: write
+      contents: read
       # Required by upload-coverage to post coverage to GitHub Code Quality. The CALLING workflow
       # must also grant this (a reusable workflow's token is capped by the caller's grant).
       code-quality: write
@@ -1101,12 +1233,51 @@ jobs:
           restore-keys: |
             kubeconform-schema-cache-v1-${{ github.job }}-
 
+      - name: Reserve PostgreSQL fixture helper path
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        working-directory: .
+        shell: bash
+        run: |
+          [[ ! -e "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" && ! -L "$GITHUB_WORKSPACE/.devantler-tech-go-fixture" ]]
+
+      - name: Checkout immutable PostgreSQL fixture provisioner
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .devantler-tech-go-fixture
+          persist-credentials: false
+          sparse-checkout: .github/scripts/go-postgresql-fixture.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Prepare disposable PostgreSQL fixture
+        if: ${{ needs.changes.outputs.fixture-enabled == 'true' }}
+        working-directory: .
+        shell: bash
+        timeout-minutes: 3
+        env:
+          FIXTURE_NAMESPACE: ${{ needs.changes.outputs.fixture-namespace }}
+          FIXTURE_DATABASE: ${{ needs.changes.outputs.fixture-database }}
+          FIXTURE_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          trap 'rm -rf -- "$GITHUB_WORKSPACE/.devantler-tech-go-fixture"' EXIT
+          fixture_env="$(bash "$GITHUB_WORKSPACE/.devantler-tech-go-fixture/.github/scripts/go-postgresql-fixture.sh" provision "$FIXTURE_NAMESPACE" "$FIXTURE_DATABASE" "$FIXTURE_SERVICE_ID")"
+          printf '%s\n' "$fixture_env" >>"$GITHUB_ENV"
+
       - name: 👨🏻‍🔧 Enable covdata (temp) see https://github.com/golang/go/issues/75031
         run: go env -w GOTOOLCHAIN=go1.26.0+auto
 
       - name: 📄 Generate coverage
+        env:
+          FIXTURE_ENABLED: ${{ needs.changes.outputs.fixture-enabled }}
         run: |
-          go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+          if [[ "${FIXTURE_ENABLED:-false}" == true ]]; then
+            go test -count=1 -race -coverprofile=coverage.txt -covermode=atomic ./...
+          else
+            go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+          fi
 
       - name: 📤 Save kubeconform schema cache
         if: "!cancelled() && steps.kubeconform-cache.outputs.cache-hit != 'true'"

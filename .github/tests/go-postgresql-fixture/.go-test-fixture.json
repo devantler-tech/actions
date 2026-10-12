@@ -1,0 +1,5 @@
+{
+  "kind": "postgresql17",
+  "namespace": "ci_fixture",
+  "database": "ci_fixture_workflow_test"
+}
