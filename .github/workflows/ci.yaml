@@ -5081,6 +5081,11 @@ jobs:
         run: |
           set -euo pipefail
           status=0
+          fixture_action="$(yq -r '.jobs."test-validate-go-lint-blocks".steps[] | select(.id == "lint") | .uses' .github/workflows/ci.yaml)"
+          if [[ "$fixture_action" != "${EXPECTED_LINT_ACTION#uses: }" ]]; then
+            echo '::error::The native lint fixture must use the same expected immutable action as production.'
+            status=1
+          fi
           for expected in "$EXPECTED_LINT_ACTION" "$EXPECTED_LINT_VERSION" "$EXPECTED_TEST_CMD"; do
             if ! grep -qF "$expected" "$GATE"; then
               echo "::error::$GATE no longer contains '$expected'. If the lint action/version or test command changed intentionally, update test-validate-go-lint-blocks / test-validate-go-test-blocks and these EXPECTED values so the self-tests keep exercising the real gate."
