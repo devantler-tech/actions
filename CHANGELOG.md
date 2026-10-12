@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.8](https://github.com/devantler-tech/actions/compare/v13.10.7...v13.10.8) (2026-10-12)
+
+
+### Bug Fixes
+
+* **installer:** drain legacy CLI version responses ([#1407](https://github.com/devantler-tech/actions/issues/1407)) ([767c5b2](https://github.com/devantler-tech/actions/commit/767c5b2794411e19d15d88a1e8fab47fb2d0ec7c))
+
 ## [13.10.7](https://github.com/devantler-tech/actions/compare/v13.10.6...v13.10.7) (2026-10-12)
 
 
