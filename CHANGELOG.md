@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.7](https://github.com/devantler-tech/actions/compare/v13.10.6...v13.10.7) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** resolve patched handlebars and brace-expansion in the release-please fixture ([#1402](https://github.com/devantler-tech/actions/issues/1402)) ([855a183](https://github.com/devantler-tech/actions/commit/855a18314084175742d7713d0014e97f356fe202))
+
 ## [13.10.6](https://github.com/devantler-tech/actions/compare/v13.10.5...v13.10.6) (2026-10-03)
 
 
