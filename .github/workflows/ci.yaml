@@ -3118,6 +3118,14 @@ jobs:
         shell: bash
         run: bash .github/tests/test-go-postgresql-wiring.sh
 
+      - name: Guard the compatible linter against its real Go 1.27 finding fixture
+        shell: bash
+        run: bash .github/tests/test-go-linter-toolchain.sh
+
+      - name: Guard the declared compiler inside both legacy MegaLinter entrypoints
+        shell: bash
+        run: bash .github/tests/test-megalinter-go-toolchain.sh
+
       - name: 🔐 Check Template Sync App-token routing
         shell: bash
         run: bash .github/tests/test-template-sync-token-routing.sh
@@ -4962,7 +4970,7 @@ jobs:
         continue-on-error: true
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.11.4
+          version: v2.14.0
           args: --fix --output.text.path=golangci-report.txt
           working-directory: .github/tests/golangci-lint-fixture
           verify: false
@@ -5068,11 +5076,16 @@ jobs:
           # Match full lines, not bare refs — refs/commands also appear in comments, so a
           # looser grep could false-pass if the real value changed while a comment did not.
           EXPECTED_LINT_ACTION: "uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a"
-          EXPECTED_LINT_VERSION: "version: v2.11.4"
+          EXPECTED_LINT_VERSION: "version: v2.14.0"
           EXPECTED_TEST_CMD: "go test ./..."
         run: |
           set -euo pipefail
           status=0
+          fixture_action="$(yq -r '.jobs."test-validate-go-lint-blocks".steps[] | select(.id == "lint") | .uses' .github/workflows/ci.yaml)"
+          if [[ "$fixture_action" != "${EXPECTED_LINT_ACTION#uses: }" ]]; then
+            echo '::error::The native lint fixture must use the same expected immutable action as production.'
+            status=1
+          fi
           for expected in "$EXPECTED_LINT_ACTION" "$EXPECTED_LINT_VERSION" "$EXPECTED_TEST_CMD"; do
             if ! grep -qF "$expected" "$GATE"; then
               echo "::error::$GATE no longer contains '$expected'. If the lint action/version or test command changed intentionally, update test-validate-go-lint-blocks / test-validate-go-test-blocks and these EXPECTED values so the self-tests keep exercising the real gate."

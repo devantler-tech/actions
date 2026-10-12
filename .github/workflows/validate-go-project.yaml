@@ -421,7 +421,7 @@ jobs:
         id: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.11.4
+          version: v2.14.0
           working-directory: ${{ needs.changes.outputs.module-directory }}
           args: --fix
           # Skip the action's `config verify` step: it fetches the golangci-lint
@@ -774,6 +774,7 @@ jobs:
           persist-credentials: false
 
       - name: ⚙️ Setup Go
+        id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.changes.outputs.module-directory }}/go.mod
@@ -784,6 +785,7 @@ jobs:
         id: ml
         uses: oxsecurity/megalinter/flavors/go@9949bad031045f366be2467e00e8371a7328a2e2 # v10.1.0
         env:
+          GOTOOLCHAIN: go${{ steps.setup-go.outputs.go-version }}
           DEFAULT_WORKSPACE: ${{ needs.changes.outputs.module-directory }}
           MEGALINTER_CONFIG: ${{ github.workspace }}/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: true
@@ -998,7 +1000,8 @@ jobs:
           POSTGRES_DB: postgres
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready
+          --restart unless-stopped
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U $POSTGRES_USER -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -1166,7 +1169,8 @@ jobs:
           POSTGRES_DB: postgres
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready
+          --restart unless-stopped
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U $POSTGRES_USER -d postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5

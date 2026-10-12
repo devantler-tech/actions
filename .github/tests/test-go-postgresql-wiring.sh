@@ -25,7 +25,7 @@ for job in test coverage; do
   JOB="$job" yq -e '[.jobs[strenv(JOB)].steps[] | select(.name == "Prepare disposable PostgreSQL fixture") | select(.env.FIXTURE_SERVICE_ID == strenv(FIXTURE_SERVICE_BINDING) and .env.FIXTURE_NAMESPACE == strenv(FIXTURE_NAMESPACE_BINDING) and .env.FIXTURE_DATABASE == strenv(FIXTURE_DATABASE_BINDING) and .if == strenv(FIXTURE_GUARD) and .["working-directory"] == ".")] | length == 1' "$workflow" >/dev/null || fail "$job cannot bind provisioning to its own service"
   JOB="$job" yq -e '[.jobs[strenv(JOB)].steps[] | select(.name == "Prepare disposable PostgreSQL fixture") | select(.["continue-on-error"] == true)] | length == 0' "$workflow" >/dev/null || fail 'provision failure can be ignored'
   JOB="$job" yq -e '[.jobs[strenv(JOB)].steps[] | select(.name == "Checkout immutable PostgreSQL fixture provisioner") | select(.if == strenv(FIXTURE_GUARD) and .with.repository == strenv(FIXTURE_REPOSITORY) and .with.ref == strenv(FIXTURE_REF) and .with["persist-credentials"] == false and .with.path == ".devantler-tech-go-fixture" and .with["sparse-checkout"] == ".github/scripts/go-postgresql-fixture.sh")] | length == 1' "$workflow" >/dev/null || fail 'fixture helper origin is not immutable'
-  JOB="$job" yq -o=json '.jobs[strenv(JOB)].services.postgres' "$workflow" | jq -e 'keys == ["env","image","options","ports"] and (.env | keys == ["POSTGRES_DB","POSTGRES_PASSWORD","POSTGRES_USER"]) and .ports == ["5432:5432"] and .options == "--health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5"' >/dev/null || fail 'service accepts additional authority'
+  JOB="$job" yq -o=json '.jobs[strenv(JOB)].services.postgres' "$workflow" | jq -e 'keys == ["env","image","options","ports"] and (.env | keys == ["POSTGRES_DB","POSTGRES_PASSWORD","POSTGRES_USER"]) and .ports == ["5432:5432"] and .options == "--restart unless-stopped --health-cmd \"pg_isready -h 127.0.0.1 -p 5432 -U $POSTGRES_USER -d postgres\" --health-interval 10s --health-timeout 5s --health-retries 5"' >/dev/null || fail 'service authority or restart/TCP-readiness contract changed'
 done
 GO_ADMISSION="\${{ (github.repository == 'devantler-tech/actions' && inputs.working-directory == '.github/tests/go-postgresql-fixture') && 'true' || steps.filter.outputs.go }}" yq -e '.jobs.changes.outputs.go == strenv(GO_ADMISSION)' "$workflow" >/dev/null || fail 'native fixture can skip workflow-only corrections'
 yq -o=json '.jobs | {"test":.test.permissions,"coverage":.coverage.permissions}' "$workflow" | jq -e '.test == {"contents":"read"} and .coverage == {"contents":"read","code-quality":"write"}' >/dev/null || fail 'fixture test workers gained repository-write authority'
@@ -166,6 +166,10 @@ for mutation in \
   '.on.workflow_call.inputs.enable-postgresql-fixture.default = true' \
   '.jobs.test.services.postgres.image = "postgres:latest"' \
   '.jobs.coverage.services.postgres.volumes = ["/:/host"]' \
+  '.jobs.test.services.postgres.options |= sub("--restart unless-stopped "; "")' \
+  '.jobs.coverage.services.postgres.options |= sub("unless-stopped"; "on-failure")' \
+  '.jobs.test.services.postgres.options |= sub("-h 127.0.0.1 "; "")' \
+  '.jobs.coverage.services.postgres.options |= sub("-p 5432"; "-p 5433")' \
   '.jobs.test.permissions.contents = "write"' \
   '.jobs.changes.outputs.go = "false"' \
   '(.jobs.changes.steps[] | select(.name == "Checkout immutable PostgreSQL fixture reader").with.ref) = "main"' \
@@ -179,4 +183,4 @@ for mutation in \
   yq "$mutation" "$workflow" >"$scratch/mutated.yaml"
   if bash "$0" --inspect "$scratch/mutated.yaml" >"$scratch/out" 2>"$scratch/error"; then fail "mutated workflow was admitted: $mutation"; fi
 done
-printf 'PASS: actual admission, immutable services, reader/provision cleanup, uncached legacy routing and thirteen workflow refusals\n'
+printf 'PASS: actual admission, recovering TCP services, reader/provision cleanup, uncached legacy routing and seventeen workflow refusals\n'
