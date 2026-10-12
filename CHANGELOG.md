@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.11](https://github.com/devantler-tech/actions/compare/v13.10.10...v13.10.11) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci:** validate portal code with its declared Go version ([#1414](https://github.com/devantler-tech/actions/issues/1414)) ([4f82b4f](https://github.com/devantler-tech/actions/commit/4f82b4f132544fa1280904c4ecd64513a71b6e91))
+
 ## [13.10.10](https://github.com/devantler-tech/actions/compare/v13.10.9...v13.10.10) (2026-10-12)
 
 
