@@ -1597,6 +1597,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 🧪 Drain complete CLI version observations
+        run: bash .github/tests/test-gh-version-observation.sh
+
       - name: 🧪 Exercise ensure-gh-skill.sh (guards, fast-return, platform/arch/integrity errors)
         shell: bash
         run: |
