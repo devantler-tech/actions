@@ -3093,6 +3093,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check tracked Go module resolution
+        shell: bash
+        run: bash .github/tests/test-go-module-resolution.sh
+
       - name: 🔐 Check Template Sync App-token routing
         shell: bash
         run: bash .github/tests/test-template-sync-token-routing.sh

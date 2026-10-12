@@ -41,10 +41,10 @@ GOOD_OUTPUTS="      go: \${{ steps.filter.outputs.go }}
 
 # The scanner has to be pointed at the allowlist the trigger fired on. The action resolves
 # its path inputs from the checkout root rather than from `work-dir`, so the value must be
-# composed from `inputs.working-directory`: a bare literal reaches the ROOT allowlist while
+# composed from `needs.changes.outputs.module-directory`: a bare literal reaches the ROOT allowlist while
 # the detection step — a `run:` step, so it honours defaults.run.working-directory — reports
 # the NESTED one as present.
-GOOD_ALLOW_FILE="\${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', inputs.working-directory || '.') || '' }}"
+GOOD_ALLOW_FILE="\${{ steps.govulncheck-allow.outputs.present == 'true' && format('{0}/.govulncheck-allow.txt', needs.changes.outputs.module-directory) || '' }}"
 ROOT_ONLY_ALLOW_FILE="\${{ steps.govulncheck-allow.outputs.present == 'true' && '.govulncheck-allow.txt' || '' }}"
 
 # emit <file> <defect-description> <input-default> <go-filter> <vuln-filter> <outputs> <gate> [allow-file]

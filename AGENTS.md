@@ -262,6 +262,15 @@ These conventions guide the autonomous **Agentic Engineer** — and any agentic 
 
 **Applied-fixes failure handling (tested invariant):** the signer requires a valid head-commit message before deciding that a signature check is unnecessary. Failed Git headline or head-identity reads fail the job before a commit request. `test-apply-signed-fixes-behavior.sh` executes the workflow's actual inline steps against disposable Git repositories and an offline API fixture, covering both signature paths, exact payload bytes, expected-head binding, no-change and replacement runs, patch conflicts, and operational errors. Its ablation suite proves that missing verification and softened read failures are detected. Test helpers stay outside the consumer tree; the privileged job still executes no checked-out code. The commit API publishes before the signature read, so post-publication verification failure does not prove that the branch remained unchanged; #1007 tracks that stronger requirement separately.
 
+**Go module selection:** Validation reads one complete tracked-file inventory.
+Explicit `working-directory` calls keep their selected module; empty called inputs
+select the repository root. Input-free required runs prefer a tracked root module,
+otherwise require exactly one tracked nested module. Missing, conflicted, linked,
+unsafe and ambiguous selections fail without publishing a directory. All eight
+validation jobs and toolchain readers use the same resolved directory. The resolver
+comes from the workflow's immutable source and is removed before consumer validation.
+Existing non-Go skips remain skips. Keep `test-go-module-resolution.sh` passing.
+
 **Task menu** (1–2 items/run; high care):
 
 - **Triage** new issues/PRs; one insightful comment on the oldest un-commented item.
