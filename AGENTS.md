@@ -280,7 +280,11 @@ restricted migrator/runtime roles, read-only repository access and uncached full
 tests; unconfigured commands and all other legacy defaults remain unchanged. The native
 legacy fixture caller is required and exercises workflow-only corrections too. Keep
 `test-go-postgresql-fixture.sh` and `test-go-postgresql-wiring.sh` passing and explicitly
-invoked in CI. This urgent mirror is actions#1410 of maintained .github#574; overall
+invoked in CI. Provisioning admits complete service configuration and lifecycle observations,
+starts one positively clean-stopped bound service at most once, then preserves bounded TCP
+readiness and SQL-once failure propagation. Keep `test-go-postgresql-recovery.sh` and its
+cleanup controls required in CI; actions#1417 mirrors maintained .github#586.
+This urgent mirror is actions#1410 of maintained .github#574; overall
 rollout and retirement remain .github#573. No generated read-only entrypoint is added here.
 
 **Urgent Go compiler compatibility mirror:** production and the native lint-finding

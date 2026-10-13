@@ -3,7 +3,9 @@
 set -euo pipefail
 export LC_ALL=C
 image='postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826'
+# Refuse invalid or unproven fixture data without publishing connection URLs.
 fail() { printf 'go-postgresql-fixture: %s\n' "$*" >&2; exit 2; }
+# Validate the closed identity grammar and derive the fixed role and env names.
 identities() {
   namespace="$1"; database="$2"
   [[ "$namespace" =~ ^[a-z][a-z0-9_]{0,31}$ ]] || fail 'invalid fixture namespace'
@@ -14,6 +16,7 @@ identities() {
   runtime="${namespace}_runtime"
   prefix="$(printf '%s' "$namespace" | tr '[:lower:]' '[:upper:]')"
 }
+# Normalize one tracked declaration; an explicit disabled mode reads no file.
 resolve() {
   [[ "$#" == 2 ]] || fail 'resolve needs a module and mode'
   module="$1"; mode="$2"
@@ -74,13 +77,17 @@ resolve() {
       owner:$owner, migrator:$migrator, runtime:$runtime,
       runtime_env:$runtime_env, migration_env:$migration_env}'
 }
+# Admit complete observations of the fixed service, recover one clean stop and
+# publish local fixture URLs only after one successful SQL batch.
 provision() {
   [[ "$#" == 3 ]] || fail 'provision needs normalized identities and a service identity'
   identities "$1" "$2"
   container="$3"
   [[ "$container" =~ ^[a-f0-9]{64}$ ]] || fail 'service identity is not bound'
   config="$(docker inspect "$container" --format '{{json .Config}}')" || fail 'service observation failed'
-  jq -e --arg image "$image" --arg owner "$owner" 'type == "object"
+  jq -se --arg image "$image" --arg owner "$owner" '
+    if length != 1 then error("ambiguous service configuration") else .[0] end |
+    type == "object"
     and .Image == $image and (.Env | type == "array")
     and ([.Env[] | select(startswith("POSTGRES_USER="))] == ["POSTGRES_USER=" + $owner])
     and ([.Env[] | select(startswith("POSTGRES_PASSWORD="))] == ["POSTGRES_PASSWORD=fixture-only"])
@@ -88,6 +95,21 @@ provision() {
   # The service ID comes only from job.services, not consumer data. Execute in
   # that observed container; no consumer endpoint, credentials or SQL are read.
   # Runner hardening can restart Docker after its initial service health check.
+  # Recover a cleanly stopped, still-bound service once, before any SQL. Never
+  # restart an unhealthy/failed service or replay a partially executed batch.
+  state="$(docker inspect "$container" --format '{{json .State}}')" || fail 'service state observation failed'
+  lifecycle="$(jq -ser '
+    if length != 1 then error("ambiguous service state") else .[0] end |
+    if type != "object" or .Error != "" or .ExitCode != 0
+      or .Paused != false or .Restarting != false
+      or .OOMKilled != false or .Dead != false then error("unsafe service state")
+    elif .Status == "running" and .Running == true then "running"
+    elif .Status == "exited" and .Running == false then "stopped"
+    else error("unsafe service state") end' <<<"$state")" || fail 'service state is not safe for provisioning'
+  if [[ "$lifecycle" == stopped ]]; then
+    started="$(docker start "$container")" || fail 'bound service start failed'
+    [[ "$started" == "$container" ]] || fail 'service start identity differs'
+  fi
   # Wait for the final TCP server in that same container before issuing SQL;
   # the image's temporary initialization server only accepts Unix connections.
   ready=false

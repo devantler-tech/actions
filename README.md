@@ -933,7 +933,12 @@ without schema ownership and exports `PORTAL_TEST_MIGRATION_DATABASE_URL` and
 `PORTAL_TEST_DATABASE_URL`. The deliberately public password `fixture-only` is solely for the
 new disposable service, never a production credential. Fixture runs retain full scope and race
 coverage but add `-count=1`; non-fixture commands are unchanged. Missing required fixture data or
-failed provisioning fails validation before publishing URLs. Test/Coverage retain read-only
+failed provisioning fails validation before publishing URLs. After complete fixed-service and
+lifecycle observations, provisioning can start its exact cleanly stopped service once, then
+require bounded TCP readiness before its single SQL batch. Unsafe or unknown lifecycle states
+refuse recovery. This mirrors [devantler-tech/.github#586](https://github.com/devantler-tech/.github/pull/586);
+the legacy recovery slice is [#1417](https://github.com/devantler-tech/actions/issues/1417).
+Test/Coverage retain read-only
 repository access plus existing coverage reporting authority. No unrelated maintained options or
 new caller interface are imported into this frozen repository.
 
