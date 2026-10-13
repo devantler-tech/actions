@@ -1,5 +1,12 @@
 # Changelog
 
+## [13.10.12](https://github.com/devantler-tech/actions/compare/v13.10.11...v13.10.12) (2026-10-13)
+
+
+### Bug Fixes
+
+* **go:** recover stopped PostgreSQL test services ([#1418](https://github.com/devantler-tech/actions/issues/1418)) ([13da43d](https://github.com/devantler-tech/actions/commit/13da43d5196ddcff0119c58090489e335ba7105f))
+
 ## [13.10.11](https://github.com/devantler-tech/actions/compare/v13.10.10...v13.10.11) (2026-10-12)
 
 
