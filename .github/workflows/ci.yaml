@@ -3328,6 +3328,21 @@ jobs:
           fi
           exit "$status"
 
+      - name: Set up the native PostgreSQL fixture's declared Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .github/tests/go-postgresql-fixture/go.mod
+          cache: false
+
+      - name: Reject incomplete native PostgreSQL cleanup observations
+        shell: bash
+        run: bash .github/tests/test-go-postgresql-recovery-cleanup.sh
+
+      - name: Recover a stopped PostgreSQL service and exercise actual restricted roles
+        timeout-minutes: 5
+        shell: bash
+        run: bash .github/tests/test-go-postgresql-recovery.sh
+
   test-zizmor:
     # Pull requests already run the organization-required standalone workflow.
     # Keep this reusable-workflow self-test for main pushes so the default-branch
